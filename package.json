@@ -1,0 +1,87 @@
+{
+  "name": "forgeai",
+  "displayName": "ForgeAI",
+  "description": "Autonomous AI coding assistant powered by Qwen3-Coder-397B",
+  "version": "1.0.0",
+  "publisher": "forgeai",
+  "icon": "resources/icon.png",
+  "engines": {
+    "vscode": "^1.115.0",
+    "node": ">=24.0.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "forgeai.open",
+        "title": "Open ForgeAI",
+        "category": "ForgeAI"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forgeai",
+          "title": "ForgeAI",
+          "icon": "resources/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "forgeai": [
+        {
+          "id": "forgeai.chatView",
+          "name": "Chat",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "npm run compile:extension && npm run compile:webview",
+    "compile:extension": "tsc -p ./tsconfig.extension.json",
+    "compile:webview": "vite build",
+    "watch": "concurrently \"npm run watch:extension\" \"npm run watch:webview\"",
+    "watch:extension": "tsc -watch -p ./tsconfig.extension.json",
+    "watch:webview": "vite",
+    "lint": "eslint src --ext ts,tsx",
+    "lint:fix": "eslint src --ext ts,tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "lucide-react": "^1.14.0",
+    "node-fetch": "^3.3.2",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "@tanstack/react-virtual": "^3.13.24",
+    "@types/node": "^24.12.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.118.0",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^8.2.2",
+    "esbuild": "^0.28.0",
+    "eslint": "^9.39.4",
+    "prettier": "^3.4.2",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5"
+  }
+}
