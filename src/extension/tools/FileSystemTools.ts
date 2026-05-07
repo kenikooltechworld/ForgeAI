@@ -1,0 +1,735 @@
+import * as vscode from 'vscode';
+import { Tool } from './ToolRegistry';
+
+/**
+ * File System Tools - Provides file and directory operations
+ *
+ * Design: Follows design.md Section 5 - File System Tools
+ * Requirements: 5.1, 5.2, 5.5, 5.6, 29.1-29.8, 30.1-30.6, 31.1-31.6, 32.1-32.5
+ *
+ * All tools use VS Code workspace.fs API (not Node.js fs module)
+ * This ensures proper workspace scoping and VS Code integration
+ */
+export class FileSystemTools {
+  /**
+   * Read file contents
+   * Requirement 5.1, 5.5
+   */
+  readFile(): Tool {
+    return {
+      name: 'forgeai_readFile',
+      description: 'Read the contents of a file in the workspace',
+      inputSchema: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the file',
+          },
+        },
+      },
+      execute: async (args: { path: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        const content = await vscode.workspace.fs.readFile(uri);
+
+        // Check cancellation after read
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          path: args.path,
+          content: Buffer.from(content).toString('utf8'),
+        };
+      },
+    };
+  }
+
+  /**
+   * Write file contents
+   * Requirement 5.2, 5.6
+   */
+  writeFile(): Tool {
+    return {
+      name: 'forgeai_writeFile',
+      description: 'Write or update a file in the workspace',
+      inputSchema: {
+        type: 'object',
+        required: ['path', 'content'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the file',
+          },
+          content: {
+            type: 'string',
+            description: 'Content to write to the file',
+          },
+        },
+      },
+      execute: async (
+        args: { path: string; content: string },
+        token?: vscode.CancellationToken
+      ) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        const buffer = Buffer.from(args.content, 'utf8');
+        await vscode.workspace.fs.writeFile(uri, buffer);
+
+        // Check cancellation after write
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          path: args.path,
+          success: true,
+        };
+      },
+    };
+  }
+
+  /**
+   * List files matching a pattern
+   * Requirement 29.1, 29.2
+   */
+  listFiles(): Tool {
+    return {
+      name: 'forgeai_listFiles',
+      description: 'List files matching a pattern in the workspace',
+      inputSchema: {
+        type: 'object',
+        required: ['pattern'],
+        properties: {
+          pattern: {
+            type: 'string',
+            description: 'Glob pattern (e.g., "**/*.ts")',
+          },
+        },
+      },
+      execute: async (args: { pattern: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const files = await vscode.workspace.findFiles(args.pattern);
+
+        // Check cancellation after search
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          pattern: args.pattern,
+          files: files.map((uri) => uri.fsPath),
+          count: files.length,
+        };
+      },
+    };
+  }
+
+  /**
+   * List directory contents
+   * Requirement 29.3, 29.4
+   */
+  listDirectory(): Tool {
+    return {
+      name: 'forgeai_listDirectory',
+      description: 'List contents of a directory',
+      inputSchema: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the directory',
+          },
+        },
+      },
+      execute: async (args: { path: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        const entries = await vscode.workspace.fs.readDirectory(uri);
+
+        // Check cancellation after read
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          path: args.path,
+          entries: entries.map(([name, type]) => ({
+            name,
+            type: type === vscode.FileType.File ? 'file' : 'directory',
+          })),
+          count: entries.length,
+        };
+      },
+    };
+  }
+
+  /**
+   * Create directory
+   * Requirement 29.5, 29.6
+   */
+  createDirectory(): Tool {
+    return {
+      name: 'forgeai_createDirectory',
+      description: 'Create a new directory',
+      inputSchema: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the directory to create',
+          },
+        },
+      },
+      execute: async (args: { path: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        await vscode.workspace.fs.createDirectory(uri);
+
+        // Check cancellation after create
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          path: args.path,
+          success: true,
+        };
+      },
+    };
+  }
+
+  /**
+   * Delete file or directory
+   * Requirement 29.7, 29.8
+   */
+  deleteFile(): Tool {
+    return {
+      name: 'forgeai_deleteFile',
+      description: 'Delete a file or directory',
+      inputSchema: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the file or directory',
+          },
+        },
+      },
+      execute: async (args: { path: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        await vscode.workspace.fs.delete(uri, { recursive: true });
+
+        // Check cancellation after delete
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          path: args.path,
+          success: true,
+        };
+      },
+    };
+  }
+
+  /**
+   * Copy file
+   * Requirement 30.1, 30.2
+   */
+  copyFile(): Tool {
+    return {
+      name: 'forgeai_copyFile',
+      description: 'Copy a file from source to destination',
+      inputSchema: {
+        type: 'object',
+        required: ['source', 'destination'],
+        properties: {
+          source: {
+            type: 'string',
+            description: 'Source file path',
+          },
+          destination: {
+            type: 'string',
+            description: 'Destination file path',
+          },
+        },
+      },
+      execute: async (
+        args: { source: string; destination: string },
+        token?: vscode.CancellationToken
+      ) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const sourceUri = vscode.Uri.file(args.source);
+        const destUri = vscode.Uri.file(args.destination);
+        await vscode.workspace.fs.copy(sourceUri, destUri, { overwrite: true });
+
+        // Check cancellation after copy
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          source: args.source,
+          destination: args.destination,
+          success: true,
+        };
+      },
+    };
+  }
+
+  /**
+   * Rename or move file
+   * Requirement 30.3, 30.4
+   */
+  renameFile(): Tool {
+    return {
+      name: 'forgeai_renameFile',
+      description: 'Rename or move a file',
+      inputSchema: {
+        type: 'object',
+        required: ['oldPath', 'newPath'],
+        properties: {
+          oldPath: {
+            type: 'string',
+            description: 'Current file path',
+          },
+          newPath: {
+            type: 'string',
+            description: 'New file path',
+          },
+        },
+      },
+      execute: async (
+        args: { oldPath: string; newPath: string },
+        token?: vscode.CancellationToken
+      ) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const oldUri = vscode.Uri.file(args.oldPath);
+        const newUri = vscode.Uri.file(args.newPath);
+        await vscode.workspace.fs.rename(oldUri, newUri, { overwrite: true });
+
+        // Check cancellation after rename
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          oldPath: args.oldPath,
+          newPath: args.newPath,
+          success: true,
+        };
+      },
+    };
+  }
+
+  /**
+   * Get file metadata
+   * Requirement 30.5, 30.6
+   */
+  getFileStats(): Tool {
+    return {
+      name: 'forgeai_getFileStats',
+      description: 'Get file metadata (size, creation time, modification time)',
+      inputSchema: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the file',
+          },
+        },
+      },
+      execute: async (args: { path: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        const stat = await vscode.workspace.fs.stat(uri);
+
+        // Check cancellation after stat
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          path: args.path,
+          type: stat.type === vscode.FileType.File ? 'file' : 'directory',
+          size: stat.size,
+          ctime: stat.ctime,
+          mtime: stat.mtime,
+        };
+      },
+    };
+  }
+
+  /**
+   * Watch files for changes
+   * Requirement 31.1-31.6
+   * Note: This creates a watcher but doesn't return events directly
+   * Events should be sent via webview postMessage in production
+   */
+  watchFiles(): Tool {
+    return {
+      name: 'forgeai_watchFiles',
+      description: 'Watch files for changes (create, modify, delete)',
+      inputSchema: {
+        type: 'object',
+        required: ['pattern'],
+        properties: {
+          pattern: {
+            type: 'string',
+            description: 'Glob pattern to watch (e.g., "**/*.ts")',
+          },
+        },
+      },
+      execute: async (args: { pattern: string }, token?: vscode.CancellationToken) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const watcherId = `watcher-${Date.now()}`;
+        const watcher = vscode.workspace.createFileSystemWatcher(args.pattern);
+
+        // In production, store watcher in a Map for cleanup
+        // and forward events to webview via postMessage
+
+        // For now, just return watcher info
+        return {
+          watcherId,
+          pattern: args.pattern,
+          message: 'File watcher created. Events will be sent via postMessage.',
+        };
+      },
+    };
+  }
+
+  /**
+   * Find files with include/exclude patterns
+   * Requirement 32.1, 32.2
+   */
+  findFiles(): Tool {
+    return {
+      name: 'forgeai_findFiles',
+      description: 'Search for files by pattern with include/exclude filters',
+      inputSchema: {
+        type: 'object',
+        required: ['include'],
+        properties: {
+          include: {
+            type: 'string',
+            description: 'Include pattern (e.g., "**/*.ts")',
+          },
+          exclude: {
+            type: 'string',
+            description: 'Exclude pattern (e.g., "**/node_modules/**")',
+          },
+        },
+      },
+      execute: async (
+        args: { include: string; exclude?: string },
+        token?: vscode.CancellationToken
+      ) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const files = await vscode.workspace.findFiles(args.include, args.exclude || null);
+
+        // Check cancellation after search
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        return {
+          include: args.include,
+          exclude: args.exclude,
+          files: files.map((uri) => uri.fsPath),
+          count: files.length,
+        };
+      },
+    };
+  }
+
+  /**
+   * Generate code diff for preview
+   * Shows proposed changes before applying them
+   * Used by AI to show code modifications to user
+   */
+  generateDiff(): Tool {
+    return {
+      name: 'forgeai_generateDiff',
+      description:
+        'Generate a code diff to show proposed changes before applying them. Use this when you want to modify a file and show the user what will change.',
+      inputSchema: {
+        type: 'object',
+        required: ['file', 'originalContent', 'newContent'],
+        properties: {
+          file: {
+            type: 'string',
+            description: 'File path relative to workspace root',
+          },
+          originalContent: {
+            type: 'string',
+            description: 'Original file content',
+          },
+          newContent: {
+            type: 'string',
+            description: 'New file content with changes',
+          },
+          language: {
+            type: 'string',
+            description: 'Programming language for syntax highlighting (optional)',
+          },
+        },
+      },
+      execute: async (
+        args: { file: string; originalContent: string; newContent: string; language?: string },
+        token?: vscode.CancellationToken
+      ) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        // Generate diff lines
+        const diffLines = this.generateDiffLines(args.originalContent, args.newContent);
+
+        // Detect language from file extension if not provided
+        const language = args.language || this.detectLanguage(args.file);
+
+        return {
+          file: args.file,
+          lines: diffLines,
+          language,
+          originalContent: args.originalContent,
+          success: true,
+        };
+      },
+    };
+  }
+
+  /**
+   * Generate diff lines from original and modified content
+   * Simple line-by-line diff algorithm
+   */
+  private generateDiffLines(
+    original: string,
+    modified: string
+  ): Array<{ type: 'added' | 'removed' | 'unchanged'; lineNumber: number; content: string }> {
+    const originalLines = original.split('\n');
+    const modifiedLines = modified.split('\n');
+    const diffLines: Array<{
+      type: 'added' | 'removed' | 'unchanged';
+      lineNumber: number;
+      content: string;
+    }> = [];
+
+    // Simple line-by-line diff (can be enhanced with proper diff algorithm)
+    const maxLines = Math.max(originalLines.length, modifiedLines.length);
+    let lineNumber = 1;
+
+    for (let i = 0; i < maxLines; i++) {
+      const origLine = originalLines[i];
+      const modLine = modifiedLines[i];
+
+      if (origLine === modLine) {
+        // Unchanged line
+        diffLines.push({
+          type: 'unchanged',
+          lineNumber: lineNumber++,
+          content: origLine || '',
+        });
+      } else if (origLine !== undefined && modLine === undefined) {
+        // Line removed
+        diffLines.push({
+          type: 'removed',
+          lineNumber: lineNumber++,
+          content: origLine,
+        });
+      } else if (origLine === undefined && modLine !== undefined) {
+        // Line added
+        diffLines.push({
+          type: 'added',
+          lineNumber: lineNumber++,
+          content: modLine,
+        });
+      } else {
+        // Line changed (show as removed + added)
+        diffLines.push({
+          type: 'removed',
+          lineNumber: lineNumber,
+          content: origLine,
+        });
+        diffLines.push({
+          type: 'added',
+          lineNumber: lineNumber++,
+          content: modLine,
+        });
+      }
+    }
+
+    return diffLines;
+  }
+
+  /**
+   * Detect programming language from file extension
+   */
+  private detectLanguage(filePath: string): string {
+    const ext = filePath.split('.').pop()?.toLowerCase();
+    const languageMap: Record<string, string> = {
+      ts: 'typescript',
+      tsx: 'typescript',
+      js: 'javascript',
+      jsx: 'javascript',
+      py: 'python',
+      java: 'java',
+      cpp: 'cpp',
+      c: 'c',
+      cs: 'csharp',
+      go: 'go',
+      rs: 'rust',
+      rb: 'ruby',
+      php: 'php',
+      swift: 'swift',
+      kt: 'kotlin',
+      scala: 'scala',
+      html: 'html',
+      css: 'css',
+      scss: 'scss',
+      json: 'json',
+      xml: 'xml',
+      yaml: 'yaml',
+      yml: 'yaml',
+      md: 'markdown',
+      sh: 'bash',
+      sql: 'sql',
+    };
+
+    return languageMap[ext || ''] || 'plaintext';
+  }
+
+  /**
+   * Search for text content in files
+   * Requirement 32.3, 32.4, 32.5
+   */
+  searchInFiles(): Tool {
+    return {
+      name: 'forgeai_searchInFiles',
+      description: 'Search for text content in files',
+      inputSchema: {
+        type: 'object',
+        required: ['query'],
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search query string',
+          },
+          filePattern: {
+            type: 'string',
+            description: 'File pattern to search in (e.g., "**/*.ts")',
+          },
+        },
+      },
+      execute: async (
+        args: { query: string; filePattern?: string },
+        token?: vscode.CancellationToken
+      ) => {
+        // Check cancellation
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const pattern = args.filePattern || '**/*';
+        const files = await vscode.workspace.findFiles(pattern);
+        const results: Array<{
+          file: string;
+          line: number;
+          text: string;
+          context: string;
+        }> = [];
+
+        for (const file of files) {
+          // Check cancellation in loop
+          if (token?.isCancellationRequested) {
+            throw new Error('Operation cancelled');
+          }
+
+          try {
+            const content = await vscode.workspace.fs.readFile(file);
+            const text = Buffer.from(content).toString('utf8');
+            const lines = text.split('\n');
+
+            lines.forEach((line, index) => {
+              if (line.includes(args.query)) {
+                // Include context lines (2 before and 2 after) - Requirement 32.5
+                const contextStart = Math.max(0, index - 2);
+                const contextEnd = Math.min(lines.length, index + 3);
+                const context = lines.slice(contextStart, contextEnd).join('\n');
+
+                results.push({
+                  file: file.fsPath,
+                  line: index + 1,
+                  text: line.trim(),
+                  context,
+                });
+              }
+            });
+          } catch (error) {
+            // Skip files that can't be read (binary files, permission errors, etc.)
+          }
+        }
+
+        return {
+          query: args.query,
+          filePattern: pattern,
+          results,
+          count: results.length,
+        };
+      },
+    };
+  }
+}

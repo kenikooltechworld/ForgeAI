@@ -116,17 +116,19 @@ Phase 1 focuses exclusively on the foundation layer. Multi-agent orchestration (
 4. THE React_Application SHALL load within 2 seconds on initial render
 5. THE React_Application SHALL handle hot module replacement during development
 
-### Requirement 8: Tailwind CSS v4.0 Integration
+### Requirement 8: Native CSS with VS Code Theme Integration
 
-**User Story:** As a developer, I want styling with Tailwind CSS v4.0, so that I can use utility classes with VS Code CSS variables for perfect theme integration.
+**User Story:** As a developer, I want styling with native CSS using VS Code CSS variables, so that the UI integrates seamlessly with VS Code themes without additional build dependencies.
 
 #### Acceptance Criteria
 
-1. THE React_Application SHALL import Tailwind CSS v4.0 styles
-2. THE Tailwind_Configuration SHALL define theme variables using @theme directive
-3. THE React_Application SHALL access VS Code CSS variables using the syntax "bg-(--vscode-editor-background)"
-4. THE React_Application SHALL support all VS Code theme variables including editor, input, button, and sidebar colors
-5. THE Tailwind_Build SHALL complete within 500ms for incremental changes
+1. THE React_Application SHALL use native CSS with VS Code CSS variables directly
+2. THE globals.css SHALL define utility classes for common VS Code theme colors (bg-editor, bg-input, text-editor, etc.)
+3. THE React_Components SHALL primarily use CSS classes from globals.css for styling (preferred approach)
+4. THE React_Components MAY use inline styles ONLY for truly dynamic values (e.g., width based on percentage, position based on calculations)
+5. THE React_Components SHALL NOT use inline styles for static theme colors or layout properties that can be defined in CSS classes
+6. THE React_Application SHALL support all VS Code theme variables including editor, input, button, and sidebar colors
+7. THE CSS_Build SHALL have minimal overhead with no additional CSS processing dependencies
 
 ### Requirement 9: Zustand v5 State Management
 
@@ -530,31 +532,34 @@ Phase 1 focuses exclusively on the foundation layer. Multi-agent orchestration (
 4. WHEN data loading fails, THE Error_Boundary SHALL catch the error and display a user-friendly error message with retry button
 5. THE use() hook SHALL integrate with React's concurrent rendering for smooth transitions
 
-## Tailwind CSS v4.0 Integration
+## Native CSS with VS Code Theme Integration
 
-### Requirement 41: VS Code Theme Variable Syntax
+### Requirement 41: VS Code CSS Variable Usage
 
-**User Story:** As a developer, I want to use Tailwind CSS v4.0's new syntax for VS Code theme variables, so that styling integrates seamlessly with VS Code themes.
-
-#### Acceptance Criteria
-
-1. THE Tailwind_Configuration SHALL use the @theme directive to define custom theme variables
-2. THE React_Components SHALL use the syntax "bg-(--vscode-editor-background)" to access VS Code CSS variables (NOT "bg-[var(--vscode-editor-background)]")
-3. THE React_Components SHALL use the syntax "text-(--vscode-editor-foreground)" for text colors
-4. THE React_Components SHALL use the syntax "border-(--vscode-input-border)" for border colors
-5. THE Tailwind_Build SHALL complete incremental builds within 500ms for development hot reload
-
-### Requirement 42: Dynamic Utility Values
-
-**User Story:** As a developer, I want Tailwind CSS v4.0's dynamic utility values to work automatically, so that I can use arbitrary numeric values without configuration.
+**User Story:** As a developer, I want to use native CSS with VS Code CSS variables, so that styling integrates seamlessly with VS Code themes without build dependencies.
 
 #### Acceptance Criteria
 
-1. THE Tailwind_Engine SHALL support arbitrary numeric values for spacing utilities (e.g., "mt-29", "w-17") without configuration
-2. THE Tailwind_Engine SHALL support arbitrary numeric values for grid utilities (e.g., "grid-cols-15") without configuration
-3. THE Tailwind_Engine SHALL support arbitrary opacity values (e.g., "opacity-75") without configuration
-4. THE Tailwind_Engine SHALL support data attribute selectors (e.g., "data-current:opacity-100") without configuration
-5. THE Tailwind_Build SHALL generate only the utility classes actually used in the codebase for optimal bundle size
+1. THE globals.css SHALL define utility classes using VS Code CSS variables (e.g., .bg-editor { background-color: var(--vscode-editor-background); })
+2. THE React_Components SHALL use standard CSS syntax to access VS Code CSS variables: var(--vscode-editor-background)
+3. THE React_Components SHALL use inline styles or CSS classes for VS Code theme colors
+4. THE React_Components SHALL support all VS Code theme variables including editor, input, button, and sidebar colors
+5. THE CSS_Build SHALL have minimal overhead with no additional processing required
+
+### Requirement 42: Component Styling Best Practices
+
+**User Story:** As a developer, I want clear styling guidelines following VS Code extension conventions, so that the UI is maintainable and performs optimally.
+
+#### Acceptance Criteria
+
+1. THE React_Components SHALL primarily use CSS classes from globals.css (preferred method for 90%+ of styling)
+2. THE React_Components MAY use CSS modules (.module.css) for complex component-specific styles that don't fit utility classes
+3. THE React_Components MAY use inline styles ONLY for truly dynamic values that change based on props/state (e.g., `style={{ width: \`${progress}%\` }}`)
+4. THE React_Components SHALL NOT use inline styles for static values that can be CSS classes (e.g., avoid `style={{ backgroundColor: 'var(--vscode-editor-background)' }}`, use `className="bg-editor"` instead)
+5. THE Component_Styles SHALL follow VS Code extension styling conventions with global CSS as the primary approach
+6. THE CSS_Bundle SHALL be optimized with minimal unused styles
+
+**Rationale:** Global CSS files provide better performance (loaded once), automatic theme integration, and follow VS Code extension best practices used by official extensions like GitHub Copilot and GitLens.
 
 ## Zustand v5 State Management
 

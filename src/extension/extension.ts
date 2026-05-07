@@ -1,134 +1,221 @@
-import * as vscode from "vscode";
-import { Logger } from "./utils/Logger";
-import { StorageManager } from "./storage/StorageManager";
-import { CommandManager } from "./utils/CommandManager";
-import { WebviewManager } from "./utils/WebviewManager";
+import * as vscode from 'vscode';
+import { StorageManager } from './storage/StorageManager';
+import { Logger } from './utils/Logger';
+import { CommandManager } from './utils/CommandManager';
+import { WebviewManager } from './utils/WebviewManager';
 
 /**
- * Service interface for type safety
- * All services must implement the dispose method for proper cleanup
- */
-interface IService {
-  dispose(): void;
-}
-
-/**
- * ForgeAI Extension - Main extension class
- *
- * This class manages the lifecycle of the ForgeAI extension, including:
- * - Service initialization (Logger, Storage, Ollama)
- * - Command registration
- * - Provider registration (Language Model Chat Provider, Chat Participant)
- * - Webview management
+ * ForgeAI Extension - Production-ready OOP architecture
+ * Follows VS Code extension best practices with proper service initialization and disposal
  */
 export class ForgeAIExtension {
-  private readonly services: Map<string, IService> = new Map();
-  private logger!: Logger;
-  private storage!: StorageManager;
-  private commandManager!: CommandManager;
-  private webviewManager!: WebviewManager;
+  private readonly services: Map<string, any> = new Map();
+  private webviewManager?: WebviewManager;
 
-  constructor(private readonly _context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {}
 
-  /**
-   * Activate the extension
-   * Called by VS Code when the extension is activated
-   */
   public async activate(): Promise<void> {
+    await this.initializeServices();
+    this.registerCommands();
+    this.registerProviders();
+
+    this.context.subscriptions.push(new vscode.Disposable(() => this.deactivate()));
+
+    const logger = this.services.get('logger') as Logger;
+    logger.info('ForgeAI extension activated successfully');
+  }
+
+  private async initializeServices(): Promise<void> {
+    // Initialize core services
+    const logger = new Logger(this.context);
+    const storage = new StorageManager(this.context);
+
+    this.services.set('logger', logger);
+    this.services.set('storage', storage);
+
+    // Initialize Ollama client
+    const { OllamaClient } = await import('./ollama/OllamaClient');
+    const ollama = new OllamaClient('http://localhost:11434', logger);
+    this.services.set('ollama', ollama);
+
+    // Initialize Tool Registry (Task 4.1)
+    const { ToolRegistry } = await import('./tools/ToolRegistry');
+    const toolRegistry = new ToolRegistry(this.context, logger);
+    toolRegistry.registerAllTools();
+    this.services.set('toolRegistry', toolRegistry);
+
+    // Check Ollama availability
+    const isAvailable = await ollama.isAvailable();
+    if (isAvailable) {
+      logger.info('Ollama is available and ready');
+    } else {
+      logger.warn('Ollama is not running. Please start Ollama to use AI features.');
+    }
+
+    logger.info('Core services initialized');
+  }
+
+  private registerCommands(): void {
+    const logger = this.services.get('logger') as Logger;
+    const commandManager = new CommandManager(this.context, logger);
+
+    commandManager.registerCommand('forgeai.open', () => this.openForgeAI());
+    commandManager.registerCommand('forgeai.manage', () => this.manageForgeAI());
+    commandManager.registerCommand('forgeai.resetOnboarding', () => this.resetOnboarding());
+
+    this.context.subscriptions.push(commandManager);
+    logger.info('Commands registered');
+  }
+
+  private registerProviders(): void {
+    const logger = this.services.get('logger') as Logger;
+    const storage = this.services.get('storage') as StorageManager;
+    const ollama = this.services.get('ollama');
+    const toolRegistry = this.services.get('toolRegistry');
+
     try {
-      this.initializeServices();
-      this.registerCommands();
+      // Register webview provider
+      this.webviewManager = new WebviewManager(this.context, storage, logger, ollama, toolRegistry);
 
-      this.logger.info("ForgeAI extension activated successfully");
-
-      // Register disposal handler
-      this._context.subscriptions.push(new vscode.Disposable(() => this.deactivate()));
-    } catch (error) {
-      console.error("Failed to activate ForgeAI extension:", error);
-      vscode.window.showErrorMessage(
-        `ForgeAI activation failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      const webviewDisposable = vscode.window.registerWebviewViewProvider(
+        'forgeai.chatView',
+        this.webviewManager,
+        {
+          webviewOptions: {
+            retainContextWhenHidden: true,
+          },
+        }
       );
+
+      this.context.subscriptions.push(webviewDisposable);
+      logger.info('Webview provider registered successfully for view ID: forgeai.chatView');
+
+      // Register Language Model Chat Provider (Task 11.1)
+      this.registerLanguageModelChatProvider(logger, ollama, toolRegistry);
+
+      // Register Chat Participant (Task 11.2)
+      this.registerChatParticipant(logger, ollama, toolRegistry);
+    } catch (error) {
+      logger.error('Failed to register providers', error);
       throw error;
     }
   }
 
-  /**
-   * Initialize all services required by the extension
-   */
-  private initializeServices(): void {
-    // Initialize logger first (needed by other services)
-    this.logger = new Logger(this._context);
-    this.services.set("logger", this.logger);
-    this.logger.info("Initializing ForgeAI services...");
-
-    // Initialize storage manager
-    this.storage = new StorageManager(this._context, this.logger);
-    this.services.set("storage", this.storage);
-    this.logger.info("Storage manager initialized");
-
-    // Initialize webview manager and register provider
-    this.webviewManager = new WebviewManager(this._context, this.storage, this.logger);
-    this.webviewManager.register(); // Register the WebviewViewProvider
-    this.services.set("webview", this.webviewManager);
-    this.logger.info("Webview manager initialized");
-
-    this.logger.info("All services initialized successfully");
-  }
-
-  /**
-   * Register all commands provided by the extension
-   */
-  private registerCommands(): void {
-    this.commandManager = new CommandManager(this._context, this.logger);
-
-    // Register "forgeai.open" command
-    this.commandManager.registerCommand("forgeai.open", () => this.openForgeAI());
-
-    this.logger.info("Commands registered successfully");
-  }
-
-  /**
-   * Open the ForgeAI webview panel
-   */
-  private openForgeAI(): void {
+  private async registerLanguageModelChatProvider(
+    logger: Logger,
+    ollama: any,
+    toolRegistry: any
+  ): Promise<void> {
     try {
-      this.logger.info("Opening ForgeAI panel");
-      this.webviewManager.createOrShow();
+      const { LanguageModelChatProvider } = await import('./providers/LanguageModelChatProvider');
+      const provider = new LanguageModelChatProvider(ollama, logger, toolRegistry);
+
+      const disposable = vscode.lm.registerLanguageModelChatProvider('forgeai', provider, {
+        vendor: 'forgeai',
+        name: 'ForgeAI',
+        version: '1.0.0',
+      });
+
+      this.context.subscriptions.push(disposable);
+      logger.info('Language Model Chat Provider registered successfully');
     } catch (error) {
-      this.logger.error("Failed to open ForgeAI panel", error);
-      vscode.window.showErrorMessage(
-        `Failed to open ForgeAI: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
+      logger.error('Failed to register Language Model Chat Provider', error);
+      // Don't throw - this is optional functionality
     }
   }
 
-  /**
-   * Deactivate the extension
-   * Called by VS Code when the extension is deactivated
-   */
-  private deactivate(): void {
-    this.logger.info("Deactivating ForgeAI extension...");
+  private async registerChatParticipant(
+    logger: Logger,
+    ollama: any,
+    toolRegistry: any
+  ): Promise<void> {
+    try {
+      const { ChatParticipant } = await import('./providers/ChatParticipant');
+      // Pass OllamaClient (ollama), ToolRegistry, and Logger
+      const chatParticipant = new ChatParticipant(ollama, toolRegistry, logger);
 
-    // Dispose all services
-    this.services.forEach((service, name) => {
-      if (service && typeof service.dispose === "function") {
-        try {
-          service.dispose();
-          this.logger.info(`Service disposed: ${name}`);
-        } catch (error) {
-          this.logger.error(`Failed to dispose service: ${name}`, error);
-        }
-      }
+      const participant = vscode.chat.createChatParticipant(
+        'forgeai.assistant',
+        chatParticipant.handleRequest.bind(chatParticipant)
+      );
+
+      participant.iconPath = vscode.Uri.joinPath(
+        this.context.extensionUri,
+        'resources',
+        'forgeai-icon.svg'
+      );
+      participant.followupProvider = {
+        provideFollowups: chatParticipant.provideFollowups.bind(chatParticipant),
+      };
+
+      this.context.subscriptions.push(participant);
+      logger.info('Chat Participant registered successfully with AgentLoop integration');
+    } catch (error) {
+      logger.error('Failed to register Chat Participant', error);
+      // Don't throw - this is optional functionality
+    }
+  }
+
+  private async openForgeAI(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    logger.info('Opening ForgeAI view');
+
+    if (this.webviewManager) {
+      await this.webviewManager.reveal();
+    }
+  }
+
+  private manageForgeAI(): void {
+    vscode.window.showInformationMessage(
+      'ForgeAI settings and model management will be available here soon.'
+    );
+  }
+
+  private async resetOnboarding(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const storage = this.services.get('storage') as StorageManager;
+
+    logger.info('Resetting onboarding tooltips');
+
+    // Reset onboarding state to default (all tooltips will show again)
+    await storage.setGlobalValue('forgeai.onboarding', {
+      hasSeenThinkingTooltip: false,
+      hasSeenToolTooltip: false,
+      hasSeenCodeChangeTooltip: false,
     });
 
+    // Notify the webview to reload the onboarding state
+    if (this.webviewManager) {
+      // The webview will automatically reload the state on next open
+      vscode.window.showInformationMessage(
+        'Onboarding tooltips have been reset. They will appear again on your next interaction.'
+      );
+    }
+
+    logger.info('Onboarding tooltips reset successfully');
+  }
+
+  private deactivate(): void {
+    const logger = this.services.get('logger') as Logger;
+    logger.info('Deactivating ForgeAI extension');
+
+    // Dispose all services
+    this.services.forEach((service) => {
+      if ('dispose' in service && typeof service.dispose === 'function') {
+        service.dispose();
+      }
+    });
     this.services.clear();
-    this.logger.info("ForgeAI extension deactivated");
+
+    if (this.webviewManager) {
+      this.webviewManager.dispose();
+      this.webviewManager = undefined;
+    }
   }
 }
 
 /**
  * Extension activation entry point
- * Called by VS Code when the extension is activated
  */
 export function activate(context: vscode.ExtensionContext): Promise<void> {
   const extension = new ForgeAIExtension(context);
@@ -137,8 +224,7 @@ export function activate(context: vscode.ExtensionContext): Promise<void> {
 
 /**
  * Extension deactivation entry point
- * Called by VS Code when the extension is deactivated
  */
 export function deactivate(): void {
-  // Cleanup handled by ForgeAIExtension disposal
+  // Cleanup handled by ForgeAIExtension
 }

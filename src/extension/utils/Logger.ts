@@ -1,25 +1,18 @@
-import * as vscode from "vscode";
+import * as vscode from 'vscode';
 
 /**
- * Logger - Structured logging for ForgeAI extension
- *
- * Provides logging functionality with different severity levels (info, warn, error)
- * and outputs to a dedicated VS Code output channel.
+ * Production-ready Logger service for ForgeAI extension
+ * Provides structured logging with timestamps and error tracking
  */
 export class Logger implements vscode.Disposable {
   private readonly outputChannel: vscode.OutputChannel;
 
   constructor(context: vscode.ExtensionContext) {
-    this.outputChannel = vscode.window.createOutputChannel("ForgeAI");
+    this.outputChannel = vscode.window.createOutputChannel('ForgeAI');
     context.subscriptions.push(this.outputChannel);
   }
 
-  /**
-   * Log an informational message
-   * @param message The message to log
-   * @param args Additional arguments to log (will be JSON stringified)
-   */
-  public info(message: string, ...args: unknown[]): void {
+  public info(message: string, ...args: any[]): void {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] [INFO] ${message}`;
     this.outputChannel.appendLine(formatted);
@@ -29,12 +22,22 @@ export class Logger implements vscode.Disposable {
     }
   }
 
-  /**
-   * Log a warning message
-   * @param message The message to log
-   * @param args Additional arguments to log (will be JSON stringified)
-   */
-  public warn(message: string, ...args: unknown[]): void {
+  public error(message: string, error?: Error | unknown): void {
+    const timestamp = new Date().toISOString();
+    const formatted = `[${timestamp}] [ERROR] ${message}`;
+    this.outputChannel.appendLine(formatted);
+
+    if (error instanceof Error) {
+      this.outputChannel.appendLine(`Error: ${error.message}`);
+      this.outputChannel.appendLine(`Stack: ${error.stack}`);
+    } else if (error) {
+      this.outputChannel.appendLine(JSON.stringify(error, null, 2));
+    }
+
+    this.outputChannel.show(true);
+  }
+
+  public warn(message: string, ...args: any[]): void {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] [WARN] ${message}`;
     this.outputChannel.appendLine(formatted);
@@ -44,32 +47,6 @@ export class Logger implements vscode.Disposable {
     }
   }
 
-  /**
-   * Log an error message
-   * @param message The message to log
-   * @param error Optional error object or unknown value
-   */
-  public error(message: string, error?: Error | unknown): void {
-    const timestamp = new Date().toISOString();
-    const formatted = `[${timestamp}] [ERROR] ${message}`;
-    this.outputChannel.appendLine(formatted);
-
-    if (error instanceof Error) {
-      this.outputChannel.appendLine(`Error: ${error.message}`);
-      if (error.stack) {
-        this.outputChannel.appendLine(`Stack: ${error.stack}`);
-      }
-    } else if (error) {
-      this.outputChannel.appendLine(JSON.stringify(error, null, 2));
-    }
-
-    // Show output channel for errors
-    this.outputChannel.show(true);
-  }
-
-  /**
-   * Dispose the logger and clean up resources
-   */
   public dispose(): void {
     this.outputChannel.dispose();
   }

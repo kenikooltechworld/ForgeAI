@@ -1,36 +1,6 @@
-# Dependencies
-node_modules/
-
-# Build outputs
-dist/
-out/
-build/
-.next/
-.nuxt/
-.cache/
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-
-# Package files
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-
-# Generated files
-*.min.js
-*.min.css
-
-# Documentation
-CHANGELOG.md
+node_modules
+dist
+.git
+.vscode
+.kiro
+.qodo

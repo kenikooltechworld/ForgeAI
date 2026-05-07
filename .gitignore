@@ -6,39 +6,43 @@ pnpm-lock.yaml
 
 # Build outputs
 dist/
-out/
-*.vsix
-
-# TypeScript
+build/
 *.tsbuildinfo
 
-# IDE
+# Editor and IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+.eslintcache
 
 # OS
-.DS_Store
 Thumbs.db
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Environment
-.env
-.env.local
-.env.*.local
+.AppleDouble
+.LSOverride
+._*
 
 # Testing
 coverage/
 .nyc_output/
 
-# Temporary files
-*.tmp
-*.temp
-.cache/
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Misc
+.env
+.env.local
+.env.*.local
+*.vsix
+
+# Storybook
+storybook-static/

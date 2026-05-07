@@ -4,6 +4,7 @@
 **Research Date:** May 3, 2026  
 **Focus Areas:** Interface Design, Thinking Visualization, Activity Feeds, Conversation Persistence, First Launch Experience  
 **Primary Sources:**
+
 - [Xcapit - Designing UX for AI Agents](https://www.xcapit.com/en/blog/designing-ux-ai-agents)
 - [InfoQ - Cursor 3 Agent-First Interface](https://www.infoq.com/news/2026/04/cursor-3-agent-first-interface/)
 - [MindStudio - Claude Interactive Visualization](https://www.mindstudio.ai/blog/what-is-claude-interactive-visualization-generative-ui)
@@ -19,6 +20,7 @@
 This research provides a comprehensive analysis of UI/UX architecture patterns for building ForgeAI's autonomous AI coding assistant interface. The key finding is that **modern AI assistants require a fundamental shift from traditional chat interfaces to agent-centric, activity-driven experiences** that make AI thinking visible, tool execution transparent, and conversations persistent.
 
 **Key Findings:**
+
 - ✅ **Split-screen architecture** - Chat/activity stream + live code preview (Claude Artifacts pattern)
 - ✅ **Inline thinking visualization** - Show AI reasoning process in real-time (ThinkChain pattern)
 - ✅ **Real-time activity feed** - Live tool execution status with expandable details
@@ -29,9 +31,11 @@ This research provides a comprehensive analysis of UI/UX architecture patterns f
 - ⚠️ **Trust through transparency** - Confidence indicators, "Why?" buttons, escape hatches
 
 **Critical Insight from Xcapit:**
+
 > "Nobody wants to see the prompt. The best AI experience is one where the user doesn't think about AI at all. The agent's capabilities are woven so naturally into the workflow that they feel like features of the product, not interactions with an AI system."
 
 **Recommended Architecture:**
+
 - **Primary Interface:** Split-screen with activity stream + live preview
 - **Interaction Model:** Command palette (Cmd+K) + suggestion chips + natural language
 - **Thinking Visualization:** Collapsible inline blocks with confidence indicators
@@ -80,9 +84,9 @@ The first launch experience is the user's introduction to ForgeAI. It must be we
 │                                                                 │
 │            Your autonomous AI coding assistant                  │
 │                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │ ✓ Connected to Qwen3-Coder-397B (Cloud)                  │ │
-│  │   Fast, intelligent, and ready to help                    │ │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │ ✓ Connected to Qwen3-Coder-397B (Cloud)                   │  │
+│  │   Fast, intelligent, and ready to help                    │  │
 │  └───────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
@@ -138,14 +142,16 @@ When the user has no active conversations:
 ### First Interaction Flow
 
 **Step 1: User clicks "Fix a bug"**
+
 ```
-ForgeAI: I'll help you fix a bug. Can you describe the issue, 
+ForgeAI: I'll help you fix a bug. Can you describe the issue,
 or should I analyze recent error logs and test failures?
 
 [Describe the bug]  [Analyze logs]  [Check test failures]
 ```
 
 **Step 2: User describes bug**
+
 ```
 User: The login form crashes when email is empty
 
@@ -160,13 +166,14 @@ ForgeAI: 🧠 Let me investigate...
 ```
 
 **Step 3: Show fix with explanation**
+
 ```
-ForgeAI: I found the issue! The form doesn't validate empty 
+ForgeAI: I found the issue! The form doesn't validate empty
 email before submission. Here's the fix:
 
 [Code diff shown in preview panel]
 
-This adds email validation before the API call, preventing 
+This adds email validation before the API call, preventing
 the crash.
 
 [Apply Fix]  [Explain More]  [Show Tests]
@@ -177,6 +184,7 @@ the crash.
 Show contextual tooltips on first use:
 
 **First message sent:**
+
 ```
 ┌─────────────────────────────────────────┐
 │ 💡 Tip: ForgeAI shows its thinking      │
@@ -188,6 +196,7 @@ Show contextual tooltips on first use:
 ```
 
 **First tool execution:**
+
 ```
 ┌─────────────────────────────────────────┐
 │ 💡 Tip: Click any tool card to see     │
@@ -198,6 +207,7 @@ Show contextual tooltips on first use:
 ```
 
 **First code change:**
+
 ```
 ┌─────────────────────────────────────────┐
 │ 💡 Tip: All changes can be undone.     │
@@ -285,6 +295,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ### Left Panel: Activity Stream & Conversation
 
 **Components:**
+
 1. **Tab Bar** - Browser-like tabs for multiple conversations
 2. **Activity Stream** - Real-time feed of AI actions
 3. **Conversation History** - User messages + AI responses
@@ -340,6 +351,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 **Dynamic Content Based on Context:**
 
 **1. Code Diff View (when showing changes):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ src/auth/login.ts              [×]      │
@@ -356,6 +368,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ```
 
 **2. Test Results View (when running tests):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ Test Results                   [×]      │
@@ -380,6 +393,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ```
 
 **3. File Preview (when reading files):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ src/auth/login.ts              [×]      │
@@ -401,6 +415,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ```
 
 **4. Documentation View (when explaining):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ Authentication Flow Explanation [×]     │
@@ -424,6 +439,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ```
 
 **5. Empty State (no active preview):**
+
 ```
 ┌─────────────────────────────────────────┐
 │                                         │
@@ -438,6 +454,7 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ### Tab Management
 
 **Tab Bar Features:**
+
 - **Multiple conversations** - Each tab is independent
 - **Persistent across sessions** - Saved to VS Code workspaceState
 - **Drag to reorder** - Organize tabs
@@ -445,11 +462,13 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 - **New tab with +** - Start fresh conversation
 
 **Tab States:**
+
 ```
 [Active Tab]  [Inactive Tab]  [Thinking... ⏳]  [Error ⚠️]  [+]
 ```
 
 **Tab Context Menu (right-click):**
+
 ```
 ┌─────────────────────────┐
 │ Rename                  │
@@ -466,27 +485,29 @@ Based on research from Cursor 3, Claude Artifacts, and Xcapit UX patterns, the m
 ### Responsive Behavior
 
 **Narrow Window (< 1200px):**
+
 - Right panel collapses
 - Activity stream takes full width
 - Preview opens in modal/overlay when needed
 
 **Wide Window (> 1600px):**
+
 - Right panel can show multiple views (code + tests)
 - Activity stream can expand for more context
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `Cmd+K` | Open command palette |
-| `Cmd+T` | New conversation tab |
-| `Cmd+W` | Close current tab |
-| `Cmd+Shift+T` | Reopen closed tab |
-| `Cmd+1-9` | Switch to tab 1-9 |
-| `Cmd+Enter` | Send message |
-| `Cmd+/` | Toggle thinking visibility |
-| `Cmd+Shift+H` | Toggle history sidebar |
-| `Esc` | Cancel current operation |
+| Shortcut      | Action                     |
+| ------------- | -------------------------- |
+| `Cmd+K`       | Open command palette       |
+| `Cmd+T`       | New conversation tab       |
+| `Cmd+W`       | Close current tab          |
+| `Cmd+Shift+T` | Reopen closed tab          |
+| `Cmd+1-9`     | Switch to tab 1-9          |
+| `Cmd+Enter`   | Send message               |
+| `Cmd+/`       | Toggle thinking visibility |
+| `Cmd+Shift+H` | Toggle history sidebar     |
+| `Esc`         | Cancel current operation   |
 
 **Conclusion:** Split-screen architecture provides the best balance between conversation flow and live feedback, following proven patterns from Claude Artifacts and Cursor 3.
 
@@ -509,6 +530,7 @@ Based on ThinkChain and Xcapit research, showing the AI's thinking process is es
 ### Thinking Block Component
 
 **Collapsed State (Default):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🧠 Thinking                              [Expand ▼]     │
@@ -517,6 +539,7 @@ Based on ThinkChain and Xcapit research, showing the AI's thinking process is es
 ```
 
 **Expanded State:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🧠 Thinking                              [Collapse ▲]   │
@@ -540,6 +563,7 @@ Based on ThinkChain and Xcapit research, showing the AI's thinking process is es
 ### Thinking with Confidence Indicators
 
 **High Confidence (Green):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🧠 Thinking                              ✅ High         │
@@ -554,6 +578,7 @@ Based on ThinkChain and Xcapit research, showing the AI's thinking process is es
 ```
 
 **Medium Confidence (Amber):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🧠 Thinking                              ⚠️  Medium      │
@@ -570,6 +595,7 @@ Based on ThinkChain and Xcapit research, showing the AI's thinking process is es
 ```
 
 **Low Confidence (Red):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🧠 Thinking                              🔴 Low          │
@@ -624,7 +650,7 @@ User: Fix the login crash when email is empty
 │ Status: ✓ Complete (1.2s)                               │
 └─────────────────────────────────────────────────────────┘
 
-ForgeAI: I found the issue! The form doesn't validate 
+ForgeAI: I found the issue! The form doesn't validate
 the email field before submission. Here's the fix:
 
 [Code diff shown in right panel]
@@ -716,6 +742,7 @@ When user clicks "Why this approach?":
 ### Thinking Block States
 
 **1. Thinking (In Progress):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ 🧠 Thinking...                  ⏳      │
@@ -724,6 +751,7 @@ When user clicks "Why this approach?":
 ```
 
 **2. Thinking (Complete):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ 🧠 Thinking                  [Expand ▼] │
@@ -732,6 +760,7 @@ When user clicks "Why this approach?":
 ```
 
 **3. Thinking (Error):**
+
 ```
 ┌─────────────────────────────────────────┐
 │ 🧠 Thinking                  ⚠️  Error   │
@@ -785,18 +814,19 @@ Based on LangChain frontend patterns and Xcapit research, users need to see **wh
 
 **Visual Status Indicators:**
 
-| State | Icon | Color | Description |
-|-------|------|-------|-------------|
-| Queued | ⏳ | Gray | Tool waiting to execute |
-| Running | 🔄 | Blue | Tool currently executing |
-| Complete | ✓ | Green | Tool finished successfully |
-| Warning | ⚠️ | Amber | Tool completed with warnings |
-| Failed | ❌ | Red | Tool execution failed |
-| Cancelled | ⏸️ | Gray | User cancelled execution |
+| State     | Icon | Color | Description                  |
+| --------- | ---- | ----- | ---------------------------- |
+| Queued    | ⏳   | Gray  | Tool waiting to execute      |
+| Running   | 🔄   | Blue  | Tool currently executing     |
+| Complete  | ✓    | Green | Tool finished successfully   |
+| Warning   | ⚠️   | Amber | Tool completed with warnings |
+| Failed    | ❌   | Red   | Tool execution failed        |
+| Cancelled | ⏸️   | Gray  | User cancelled execution     |
 
 ### Tool Card Component
 
 **Collapsed State (Default):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 readFile                              [Expand ▼]     │
@@ -806,6 +836,7 @@ Based on LangChain frontend patterns and Xcapit research, users need to see **wh
 ```
 
 **Expanded State:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 readFile                              [Collapse ▲]   │
@@ -903,6 +934,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ### Tool-Specific Cards
 
 **1. File Read:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 📖 readFile                              ✓ Complete     │
@@ -915,6 +947,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **2. File Write:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ✏️  writeFile                             ✓ Complete     │
@@ -928,6 +961,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **3. Search:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔍 grepSearch                            ✓ Complete     │
@@ -945,6 +979,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **4. Test Execution:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🧪 runTests                              ✓ Complete     │
@@ -965,6 +1000,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **5. Command Execution:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚡ executePwsh                           ✓ Complete     │
@@ -990,6 +1026,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **6. API Call:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🌐 apiCall                               ✓ Complete     │
@@ -1017,6 +1054,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ### Error Handling in Tool Cards
 
 **Failed Tool Execution:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 readFile                              ❌ Failed       │
@@ -1034,6 +1072,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **Tool with Warnings:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 writeFile                             ⚠️  Warning     │
@@ -1056,6 +1095,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 **For Long-Running Tools:**
 
 **1. Indeterminate Progress:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 analyzeCodebase                       🔄 Running     │
@@ -1066,6 +1106,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **2. Determinate Progress:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 runTests                              🔄 Running     │
@@ -1077,6 +1118,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ```
 
 **3. Multi-Step Progress:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 deployToProduction                    🔄 Running     │
@@ -1095,6 +1137,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ### Cancellation & Intervention
 
 **User Can Cancel Long-Running Tools:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔧 analyzeCodebase                       🔄 Running     │
@@ -1120,6 +1163,7 @@ ForgeAI: ✓ Fix applied successfully! All tests passing.
 ### Activity Stream Filtering
 
 **Filter Controls:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Activity Stream                          [Filter ▼]     │
@@ -1182,13 +1226,13 @@ globalState (cross-workspace)
 
 ```typescript
 interface Conversation {
-  id: string;                    // Unique conversation ID
-  workspaceId: string;           // Workspace identifier
-  tabId: string;                 // Tab identifier
-  title: string;                 // Auto-generated or user-set
-  createdAt: number;             // Timestamp
-  updatedAt: number;             // Last activity timestamp
-  messages: Message[];           // All messages
+  id: string; // Unique conversation ID
+  workspaceId: string; // Workspace identifier
+  tabId: string; // Tab identifier
+  title: string; // Auto-generated or user-set
+  createdAt: number; // Timestamp
+  updatedAt: number; // Last activity timestamp
+  messages: Message[]; // All messages
   metadata: ConversationMetadata;
 }
 
@@ -1197,19 +1241,19 @@ interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
-  toolCalls?: ToolCall[];        // Tools executed
-  thinking?: ThinkingBlock[];    // AI reasoning
+  toolCalls?: ToolCall[]; // Tools executed
+  thinking?: ThinkingBlock[]; // AI reasoning
   confidence?: 'high' | 'medium' | 'low';
-  attachments?: Attachment[];    // Files, images, etc.
+  attachments?: Attachment[]; // Files, images, etc.
 }
 
 interface ToolCall {
   id: string;
-  tool: string;                  // Tool name
-  args: Record<string, any>;     // Tool arguments
-  result?: any;                  // Tool result
+  tool: string; // Tool name
+  args: Record<string, any>; // Tool arguments
+  result?: any; // Tool result
   status: 'queued' | 'running' | 'complete' | 'failed';
-  duration?: number;             // Execution time (ms)
+  duration?: number; // Execution time (ms)
   timestamp: number;
 }
 
@@ -1218,15 +1262,15 @@ interface ThinkingBlock {
   content: string;
   confidence?: 'high' | 'medium' | 'low';
   timestamp: number;
-  collapsed: boolean;            // UI state
+  collapsed: boolean; // UI state
 }
 
 interface ConversationMetadata {
-  model: string;                 // Model used
-  totalTokens: number;           // Token usage
-  toolCallsCount: number;        // Number of tools called
-  tags: string[];                // User-defined tags
-  starred: boolean;              // User starred
+  model: string; // Model used
+  totalTokens: number; // Token usage
+  toolCallsCount: number; // Number of tools called
+  tags: string[]; // User-defined tags
+  starred: boolean; // User starred
 }
 ```
 
@@ -1304,6 +1348,7 @@ interface ConversationMetadata {
 ```
 
 **Context Menu (click ⋮):**
+
 ```
 ┌─────────────────────────┐
 │ Open in New Tab         │
@@ -1353,6 +1398,7 @@ interface ConversationMetadata {
 ```
 
 **Search Features:**
+
 - Full-text search across all messages
 - Search in thinking blocks
 - Search in tool results
@@ -1369,18 +1415,18 @@ interface ConversationMetadata {
 function generateTitle(firstMessage: string): string {
   // Take first 50 characters
   let title = firstMessage.substring(0, 50);
-  
+
   // Remove incomplete words at the end
   const lastSpace = title.lastIndexOf(' ');
   if (lastSpace > 0) {
     title = title.substring(0, lastSpace);
   }
-  
+
   // Add ellipsis if truncated
   if (firstMessage.length > 50) {
     title += '...';
   }
-  
+
   return title;
 }
 
@@ -1393,6 +1439,7 @@ function generateTitle(firstMessage: string): string {
 ```
 
 **User Can Rename:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ Rename Conversation                                     │
@@ -1413,13 +1460,14 @@ function generateTitle(firstMessage: string): string {
 **Export Options:**
 
 **1. Export as Markdown:**
-```markdown
+
+````markdown
 # Fix authentication bug
 
 **Date:** May 3, 2026, 2:30 PM  
 **Model:** Qwen3-Coder-397B  
 **Messages:** 12  
-**Files Changed:** 3  
+**Files Changed:** 3
 
 ---
 
@@ -1432,6 +1480,7 @@ I need to understand the current authentication implementation first.
 Let me read the login component.
 
 **ForgeAI (Tool: readFile):**
+
 - File: src/auth/login.ts
 - Status: Complete (234ms)
 
@@ -1447,10 +1496,12 @@ submission. Here's the fix:
 - const token = req.token;
 + const token = req.token || null;
 ```
+````
 
 **User:** Apply the fix
 
 **ForgeAI (Tool: writeFile):**
+
 - File: src/auth/login.ts
 - Status: Complete (89ms)
 - Changes: +1 line, -1 line
@@ -1460,13 +1511,16 @@ submission. Here's the fix:
 ---
 
 ## Files Changed
+
 - src/auth/login.ts (+1, -1)
 
 ## Tools Used
+
 - readFile (2 times)
 - writeFile (1 time)
 - runTests (1 time)
-```
+
+````
 
 **2. Export as JSON:**
 ```json
@@ -1511,7 +1565,7 @@ submission. Here's the fix:
     "tags": ["bug", "authentication"]
   }
 }
-```
+````
 
 ### Conversation Restoration
 
@@ -1558,16 +1612,17 @@ interface StoragePolicy {
   maxConversationsPerWorkspace: 100;
   maxMessageAge: 90 * 24 * 60 * 60 * 1000; // 90 days
   maxTotalSize: 50 * 1024 * 1024; // 50 MB
-  
+
   // Auto-delete unstarred conversations older than 90 days
   autoDeleteOld: true;
-  
+
   // Keep starred conversations forever
   keepStarred: true;
 }
 ```
 
 **Storage Warning:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Storage Warning                                      │
@@ -1600,6 +1655,7 @@ globalState.setKeysForSync(['starred-conversations']);
 ```
 
 **Sync Indicator:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⭐ Fix authentication bug                    ☁️ Synced   │
@@ -1617,16 +1673,17 @@ globalState.setKeysForSync(['starred-conversations']);
 interface PrivacySettings {
   // Redact API keys, tokens, passwords
   redactSecrets: boolean;
-  
+
   // Don't store file contents, only references
   storeFileReferences: boolean;
-  
+
   // Encrypt conversations at rest
   encryptStorage: boolean;
 }
 ```
 
 **Redaction Example:**
+
 ```
 Original: "API key: sk_live_abc123xyz789"
 Stored:   "API key: [REDACTED]"
@@ -1645,16 +1702,19 @@ Based on Xcapit research, progressive autonomy allows users to gradually increas
 ### Three Autonomy Levels
 
 **Tier 1: Supervised Mode (Default for New Users)**
+
 - AI suggests actions but takes none
 - User approves every tool execution
 - Best for: First-time users, critical operations
 
 **Tier 2: Semi-Autonomous Mode (Recommended)**
+
 - AI acts autonomously for routine tasks
 - Asks permission for unusual actions
 - Best for: Regular users, most workflows
 
 **Tier 3: Autonomous Mode (Power Users)**
+
 - AI operates fully independently
 - Reports results after completion
 - Best for: Trusted workflows, experienced users
@@ -1768,20 +1828,15 @@ Based on Xcapit research, progressive autonomy allows users to gradually increas
 ```typescript
 // Always require approval (safety-critical)
 const alwaysRequireApproval = [
-  'deleteFile',           // File deletion
-  'executePwsh',          // Shell commands
-  'apiCall',              // External API calls
-  'deployToProduction',   // Production deployments
-  'modifyDatabase',       // Database changes
+  'deleteFile', // File deletion
+  'executePwsh', // Shell commands
+  'apiCall', // External API calls
+  'deployToProduction', // Production deployments
+  'modifyDatabase', // Database changes
 ];
 
 // Never require approval (read-only)
-const neverRequireApproval = [
-  'readFile',
-  'listDirectory',
-  'grepSearch',
-  'getDiagnostics',
-];
+const neverRequireApproval = ['readFile', 'listDirectory', 'grepSearch', 'getDiagnostics'];
 ```
 
 **Conclusion:** Progressive autonomy allows users to start safe and gradually increase efficiency as trust builds. The 3-tier system provides clear boundaries and user control.
@@ -1816,6 +1871,7 @@ Based on Xcapit research: "Trust is earned incrementally through consistent, tra
 ```
 
 **In Messages:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ForgeAI:                                 ✅ High         │
@@ -1898,6 +1954,7 @@ Based on Xcapit research: "Trust is earned incrementally through consistent, tra
 **Every Action is Reversible:**
 
 **Undo Button (Always Visible):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ✓ File updated: src/auth/login.ts                       │
@@ -1907,6 +1964,7 @@ Based on Xcapit research: "Trust is earned incrementally through consistent, tra
 ```
 
 **Undo History:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 📜 Undo History                                          │
@@ -1928,6 +1986,7 @@ Based on Xcapit research: "Trust is earned incrementally through consistent, tra
 ```
 
 **Confirmation for Irreversible Actions:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Confirm Deletion                                     │
@@ -1948,6 +2007,7 @@ Based on Xcapit research: "Trust is earned incrementally through consistent, tra
 ### Trust Indicators
 
 **Trust Score (Optional):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 📊 ForgeAI Performance (Last 7 Days)                     │
@@ -1988,6 +2048,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ### Error Message Patterns
 
 **❌ Bad Error Message:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ❌ Error                                                 │
@@ -1999,6 +2060,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ```
 
 **✅ Good Error Message:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Partial Completion                                   │
@@ -2022,6 +2084,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ### Error Categories
 
 **1. Transient Errors (Retry-able):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Temporary Issue                                      │
@@ -2038,6 +2101,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ```
 
 **2. Permanent Errors (Alternative Needed):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ❌ File Not Found                                        │
@@ -2059,6 +2123,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ```
 
 **3. Ambiguous Errors (Need Clarification):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Need More Information                                │
@@ -2077,6 +2142,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ```
 
 **4. Confidence Errors (AI Uncertain):**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔴 Low Confidence                                        │
@@ -2101,6 +2167,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ### Partial Success Handling
 
 **When Some Operations Succeed:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Partial Success                                      │
@@ -2123,6 +2190,7 @@ Based on Xcapit research: "The quality of an AI product is measured not by how o
 ### Recovery Suggestions
 
 **AI Suggests Recovery Actions:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ❌ Build Failed                                          │
@@ -2156,6 +2224,7 @@ Based on Xcapit research, valuable agent tasks often unfold over minutes or hour
 ### Progress Indicators
 
 **Linear Progress:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔄 Analyzing Codebase                                    │
@@ -2171,6 +2240,7 @@ Based on Xcapit research, valuable agent tasks often unfold over minutes or hour
 ```
 
 **Step-by-Step Progress:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔄 Deploying to Production                               │
@@ -2190,6 +2260,7 @@ Based on Xcapit research, valuable agent tasks often unfold over minutes or hour
 ### Checkpoints
 
 **Pause for Review:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⏸️  Checkpoint: Review Generated Tests                   │
@@ -2216,6 +2287,7 @@ Based on Xcapit research, valuable agent tasks often unfold over minutes or hour
 ### Human Approval Gates
 
 **High-Stakes Actions:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚠️  Approval Required                                    │
@@ -2248,6 +2320,7 @@ Based on Xcapit research, valuable agent tasks often unfold over minutes or hour
 **Common Multi-Step Workflows:**
 
 **1. Bug Fix Workflow:**
+
 ```
 Step 1: Analyze bug report
 Step 2: Read relevant files
@@ -2259,6 +2332,7 @@ Step 7: Verify fix
 ```
 
 **2. Feature Implementation Workflow:**
+
 ```
 Step 1: Understand requirements
 Step 2: Design architecture
@@ -2270,6 +2344,7 @@ Step 7: Review and refine
 ```
 
 **3. Refactoring Workflow:**
+
 ```
 Step 1: Analyze current code
 Step 2: Identify improvements
@@ -2282,6 +2357,7 @@ Step 6: Verify no regressions
 ### Workflow Visualization
 
 **Visual Workflow Progress:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔄 Feature Implementation Workflow                       │
@@ -2350,6 +2426,7 @@ Based on Xcapit research, the "blank prompt problem" is a major UX failure. Comm
 ```
 
 **With Search:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔍 Command Palette                              [Esc]   │
@@ -2378,6 +2455,7 @@ Based on Xcapit research, the "blank prompt problem" is a major UX failure. Comm
 **Contextual Quick Actions:**
 
 **1. Empty State Suggestions:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
@@ -2390,6 +2468,7 @@ Based on Xcapit research, the "blank prompt problem" is a major UX failure. Comm
 ```
 
 **2. After User Message:**
+
 ```
 User: The login form is broken
 
@@ -2399,6 +2478,7 @@ ForgeAI: I'll help you fix the login form. What would you like me to do?
 ```
 
 **3. After AI Response:**
+
 ```
 ForgeAI: I found the issue! Missing email validation.
 
@@ -2406,6 +2486,7 @@ ForgeAI: I found the issue! Missing email validation.
 ```
 
 **4. Context-Aware Suggestions:**
+
 ```
 [Current file: src/auth/login.ts]
 
@@ -2458,6 +2539,7 @@ Quick actions for this file:
 ### Recent Commands
 
 **Quick Access to Recent Actions:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ 🔍 Command Palette                                       │
@@ -2478,6 +2560,7 @@ Quick actions for this file:
 ### Custom Commands
 
 **User-Defined Quick Actions:**
+
 ```
 ┌─────────────────────────────────────────────────────────┐
 │ ⚙️  Custom Commands                                      │
@@ -2539,9 +2622,9 @@ async function streamAgentResponse(
         options: {
           temperature: 0.7,
           // Enable thinking/reasoning
-          think: true
-        }
-      })
+          think: true,
+        },
+      }),
     });
 
     const reader = response.body?.getReader();
@@ -2561,13 +2644,13 @@ async function streamAgentResponse(
 
         try {
           const data = JSON.parse(line);
-          
+
           // Send different message types to webview
           if (data.thinking) {
             webview.postMessage({
               type: 'thinking',
               content: data.thinking,
-              confidence: data.confidence || 'medium'
+              confidence: data.confidence || 'medium',
             });
           } else if (data.tool_call) {
             // Tool execution started
@@ -2575,29 +2658,29 @@ async function streamAgentResponse(
               type: 'toolCall',
               tool: data.tool_call.name,
               args: data.tool_call.arguments,
-              status: 'running'
+              status: 'running',
             });
-            
+
             // Execute tool
             const result = await executeTool(
               data.tool_call.name,
               data.tool_call.arguments,
               context
             );
-            
+
             // Send result
             webview.postMessage({
               type: 'toolCall',
               tool: data.tool_call.name,
               args: data.tool_call.arguments,
               status: result.success ? 'complete' : 'failed',
-              result: result.data
+              result: result.data,
             });
           } else if (data.message) {
             // Regular response
             webview.postMessage({
               type: 'message',
-              content: data.message.content
+              content: data.message.content,
             });
           }
         } catch (e) {
@@ -2608,11 +2691,10 @@ async function streamAgentResponse(
 
     // Stream complete
     webview.postMessage({ type: 'complete' });
-    
   } catch (error) {
     webview.postMessage({
       type: 'error',
-      content: `Failed to connect to Ollama: ${error.message}`
+      content: `Failed to connect to Ollama: ${error.message}`,
     });
   }
 }
@@ -2626,25 +2708,23 @@ async function executeTool(
   try {
     switch (tool) {
       case 'readFile':
-        const content = await vscode.workspace.fs.readFile(
-          vscode.Uri.file(args.path)
-        );
+        const content = await vscode.workspace.fs.readFile(vscode.Uri.file(args.path));
         return {
           success: true,
-          data: new TextDecoder().decode(content)
+          data: new TextDecoder().decode(content),
         };
-        
+
       case 'writeFile':
         await vscode.workspace.fs.writeFile(
           vscode.Uri.file(args.path),
           new TextEncoder().encode(args.content)
         );
         return { success: true, data: 'File written successfully' };
-        
+
       case 'grepSearch':
         // Implement search logic
         return { success: true, data: [] };
-        
+
       default:
         return { success: false, data: `Unknown tool: ${tool}` };
     }
@@ -2681,62 +2761,76 @@ function ActivityStream() {
     // Listen for messages from extension
     const handler = (event: MessageEvent) => {
       const message = event.data;
-      
+
       switch (message.type) {
         case 'thinking':
-          setActivities(prev => [...prev, {
-            id: crypto.randomUUID(),
-            type: 'thinking',
-            content: message.content,
-            confidence: message.confidence,
-            timestamp: Date.now(),
-            expanded: false
-          }]);
+          setActivities((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              type: 'thinking',
+              content: message.content,
+              confidence: message.confidence,
+              timestamp: Date.now(),
+              expanded: false,
+            },
+          ]);
           break;
-          
+
         case 'toolCall':
           if (message.status === 'running') {
             // Add new tool call
-            setActivities(prev => [...prev, {
-              id: crypto.randomUUID(),
-              type: 'toolCall',
-              content: '',
-              tool: message.tool,
-              args: message.args,
-              status: 'running',
-              timestamp: Date.now(),
-              expanded: false
-            }]);
+            setActivities((prev) => [
+              ...prev,
+              {
+                id: crypto.randomUUID(),
+                type: 'toolCall',
+                content: '',
+                tool: message.tool,
+                args: message.args,
+                status: 'running',
+                timestamp: Date.now(),
+                expanded: false,
+              },
+            ]);
           } else {
             // Update existing tool call
-            setActivities(prev => prev.map(item =>
-              item.tool === message.tool && item.status === 'running'
-                ? { ...item, status: message.status, result: message.result }
-                : item
-            ));
+            setActivities((prev) =>
+              prev.map((item) =>
+                item.tool === message.tool && item.status === 'running'
+                  ? { ...item, status: message.status, result: message.result }
+                  : item
+              )
+            );
           }
           break;
-          
+
         case 'message':
-          setActivities(prev => [...prev, {
-            id: crypto.randomUUID(),
-            type: 'message',
-            content: message.content,
-            timestamp: Date.now()
-          }]);
+          setActivities((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              type: 'message',
+              content: message.content,
+              timestamp: Date.now(),
+            },
+          ]);
           break;
-          
+
         case 'complete':
           setIsStreaming(false);
           break;
-          
+
         case 'error':
-          setActivities(prev => [...prev, {
-            id: crypto.randomUUID(),
-            type: 'message',
-            content: `Error: ${message.content}`,
-            timestamp: Date.now()
-          }]);
+          setActivities((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              type: 'message',
+              content: `Error: ${message.content}`,
+              timestamp: Date.now(),
+            },
+          ]);
           setIsStreaming(false);
           break;
       }
@@ -2754,26 +2848,23 @@ function ActivityStream() {
   }, [activities]);
 
   const toggleExpand = (id: string) => {
-    setActivities(prev => prev.map(item =>
-      item.id === id ? { ...item, expanded: !item.expanded } : item
-    ));
+    setActivities((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, expanded: !item.expanded } : item))
+    );
   };
 
   return (
     <div className="flex flex-col h-full">
       {/* Activity Stream */}
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-2"
-      >
-        {activities.map(activity => (
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2">
+        {activities.map((activity) => (
           <ActivityCard
             key={activity.id}
             activity={activity}
             onToggleExpand={() => toggleExpand(activity.id)}
           />
         ))}
-        
+
         {isStreaming && (
           <div className="flex items-center gap-2 text-sm text-(--vscode-descriptionForeground)">
             <span className="animate-pulse">●</span>
@@ -2792,7 +2883,7 @@ function ActivityStream() {
 
 function ActivityCard({
   activity,
-  onToggleExpand
+  onToggleExpand,
 }: {
   activity: ActivityItem;
   onToggleExpand: () => void;
@@ -2808,17 +2899,11 @@ function ActivityCard({
         <span className="text-lg">🧠</span>
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs text-(--vscode-descriptionForeground)">
-              Thinking
-            </span>
-            {activity.confidence && (
-              <ConfidenceBadge level={activity.confidence} />
-            )}
+            <span className="text-xs text-(--vscode-descriptionForeground)">Thinking</span>
+            {activity.confidence && <ConfidenceBadge level={activity.confidence} />}
           </div>
           <div className="text-sm text-(--vscode-editor-foreground)">
-            {activity.expanded
-              ? activity.content
-              : activity.content.substring(0, 100) + '...'}
+            {activity.expanded ? activity.content : activity.content.substring(0, 100) + '...'}
           </div>
           <button className="text-xs text-(--vscode-textLink-foreground) mt-1">
             {activity.expanded ? 'Collapse ▲' : 'Expand ▼'}
@@ -2838,9 +2923,7 @@ function ActivityCard({
       >
         <StatusIcon status={activity.status!} />
         <div className="flex-1">
-          <div className="text-xs text-(--vscode-descriptionForeground) mb-1">
-            Tool Execution
-          </div>
+          <div className="text-xs text-(--vscode-descriptionForeground) mb-1">Tool Execution</div>
           <code className="text-sm text-(--vscode-editor-foreground)">
             {activity.tool}({JSON.stringify(activity.args)})
           </code>
@@ -2857,9 +2940,7 @@ function ActivityCard({
   return (
     <div className="flex items-start gap-2 p-3 rounded">
       <span className="text-lg">🤖</span>
-      <div className="flex-1 text-sm text-(--vscode-editor-foreground)">
-        {activity.content}
-      </div>
+      <div className="flex-1 text-sm text-(--vscode-editor-foreground)">{activity.content}</div>
     </div>
   );
 }
@@ -2868,7 +2949,7 @@ function ConfidenceBadge({ level }: { level: 'high' | 'medium' | 'low' }) {
   const config = {
     high: { icon: '✅', label: 'High', color: 'text-green-500' },
     medium: { icon: '⚠️', label: 'Medium', color: 'text-yellow-500' },
-    low: { icon: '🔴', label: 'Low', color: 'text-red-500' }
+    low: { icon: '🔴', label: 'Low', color: 'text-red-500' },
   };
 
   const { icon, label, color } = config[level];
@@ -2886,7 +2967,7 @@ function StatusIcon({ status }: { status: string }) {
     queued: '⏳',
     running: '🔄',
     complete: '✓',
-    failed: '❌'
+    failed: '❌',
   };
 
   return <span className="text-lg">{icons[status] || '●'}</span>;
@@ -2902,7 +2983,7 @@ function MessageInput({ disabled }: { disabled: boolean }) {
     // Send message to extension
     vscode.postMessage({
       command: 'sendMessage',
-      text: message
+      text: message,
     });
 
     setMessage('');
@@ -2974,17 +3055,17 @@ class ConversationStorageService {
   async saveConversation(conversation: Conversation): Promise<void> {
     const workspaceId = this.getWorkspaceId();
     const key = `conversation_${workspaceId}_${conversation.id}`;
-    
+
     await this.context.workspaceState.update(key, {
       ...conversation,
-      savedAt: Date.now()
+      savedAt: Date.now(),
     });
   }
 
   async loadConversation(conversationId: string): Promise<Conversation | null> {
     const workspaceId = this.getWorkspaceId();
     const key = `conversation_${workspaceId}_${conversationId}`;
-    
+
     return this.context.workspaceState.get<Conversation>(key) || null;
   }
 
@@ -2992,7 +3073,7 @@ class ConversationStorageService {
     const workspaceId = this.getWorkspaceId();
     const keys = this.context.workspaceState.keys();
     const prefix = `conversation_${workspaceId}_`;
-    
+
     const conversations: Conversation[] = [];
     for (const key of keys) {
       if (key.startsWith(prefix)) {
@@ -3000,7 +3081,7 @@ class ConversationStorageService {
         if (conv) conversations.push(conv);
       }
     }
-    
+
     // Sort by most recent first
     return conversations.sort((a, b) => b.updatedAt - a.updatedAt);
   }
@@ -3014,22 +3095,17 @@ class ConversationStorageService {
   async searchConversations(query: string): Promise<Conversation[]> {
     const allConversations = await this.loadAllConversations();
     const lowerQuery = query.toLowerCase();
-    
-    return allConversations.filter(conv => {
+
+    return allConversations.filter((conv) => {
       // Search in title
       if (conv.title.toLowerCase().includes(lowerQuery)) return true;
-      
+
       // Search in messages
-      return conv.messages.some(msg =>
-        msg.content.toLowerCase().includes(lowerQuery)
-      );
+      return conv.messages.some((msg) => msg.content.toLowerCase().includes(lowerQuery));
     });
   }
 
-  async exportConversation(
-    conversationId: string,
-    format: 'markdown' | 'json'
-  ): Promise<string> {
+  async exportConversation(conversationId: string, format: 'markdown' | 'json'): Promise<string> {
     const conversation = await this.loadConversation(conversationId);
     if (!conversation) throw new Error('Conversation not found');
 
@@ -3050,13 +3126,13 @@ class ConversationStorageService {
         markdown += `**User:** ${message.content}\n\n`;
       } else {
         markdown += `**ForgeAI:** ${message.content}\n\n`;
-        
+
         if (message.thinking) {
           for (const think of message.thinking) {
             markdown += `*Thinking: ${think.content}*\n\n`;
           }
         }
-        
+
         if (message.toolCalls) {
           for (const tool of message.toolCalls) {
             markdown += `*Tool: ${tool.tool}(${JSON.stringify(tool.args)})*\n\n`;
@@ -3142,6 +3218,7 @@ ForgeAIExtension (VS Code Extension)
 ### Core Components
 
 **1. ForgeAIExtension (extension.ts)**
+
 ```typescript
 import * as vscode from 'vscode';
 import ConversationStorageService from './services/storage';
@@ -3149,65 +3226,48 @@ import { streamAgentResponse } from './services/ollama';
 
 export function activate(context: vscode.ExtensionContext) {
   const storageService = new ConversationStorageService(context);
-  
+
   // Register command to open ForgeAI
-  const openCommand = vscode.commands.registerCommand(
-    'forgeai.open',
-    () => {
-      const panel = vscode.window.createWebviewPanel(
-        'forgeai',
-        'ForgeAI',
-        vscode.ViewColumn.One,
-        {
-          enableScripts: true,
-          retainContextWhenHidden: true,
-          localResourceRoots: [
-            vscode.Uri.joinPath(context.extensionUri, 'dist')
-          ]
+  const openCommand = vscode.commands.registerCommand('forgeai.open', () => {
+    const panel = vscode.window.createWebviewPanel('forgeai', 'ForgeAI', vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'dist')],
+    });
+
+    // Set webview HTML
+    panel.webview.html = getWebviewContent(panel.webview, context);
+
+    // Handle messages from webview
+    panel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case 'sendMessage':
+            await streamAgentResponse(message.text, panel.webview, context);
+            break;
+
+          case 'saveConversation':
+            await storageService.saveConversation(message.conversation);
+            break;
+
+          case 'loadConversations':
+            const conversations = await storageService.loadAllConversations();
+            panel.webview.postMessage({
+              command: 'conversationsLoaded',
+              conversations,
+            });
+            break;
         }
-      );
-
-      // Set webview HTML
-      panel.webview.html = getWebviewContent(panel.webview, context);
-
-      // Handle messages from webview
-      panel.webview.onDidReceiveMessage(
-        async (message) => {
-          switch (message.command) {
-            case 'sendMessage':
-              await streamAgentResponse(
-                message.text,
-                panel.webview,
-                context
-              );
-              break;
-              
-            case 'saveConversation':
-              await storageService.saveConversation(message.conversation);
-              break;
-              
-            case 'loadConversations':
-              const conversations = await storageService.loadAllConversations();
-              panel.webview.postMessage({
-                command: 'conversationsLoaded',
-                conversations
-              });
-              break;
-          }
-        },
-        undefined,
-        context.subscriptions
-      );
-    }
-  );
+      },
+      undefined,
+      context.subscriptions
+    );
+  });
 
   context.subscriptions.push(openCommand);
 }
 
-function getWebviewContent(
-  webview: vscode.Webview,
-  context: vscode.ExtensionContext
-): string {
+function getWebviewContent(webview: vscode.Webview, context: vscode.ExtensionContext): string {
   const scriptUri = webview.asWebviewUri(
     vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview.js')
   );
@@ -3232,6 +3292,7 @@ function getWebviewContent(
 ```
 
 **2. Main App Component (App.tsx)**
+
 ```typescript
 import { useState } from 'react';
 import SplitView from './components/SplitView';
@@ -3252,13 +3313,13 @@ function App() {
         e.preventDefault();
         setShowCommandPalette(true);
       }
-      
+
       // Cmd+Shift+H or Ctrl+Shift+H
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'h') {
         e.preventDefault();
         setShowHistory(!showHistory);
       }
-      
+
       // Escape
       if (e.key === 'Escape') {
         setShowCommandPalette(false);
@@ -3297,6 +3358,7 @@ export default App;
 ```
 
 **3. State Management (Zustand)**
+
 ```typescript
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -3324,17 +3386,17 @@ interface ForgeAIStore {
   addTab: () => void;
   closeTab: (tabId: string) => void;
   switchTab: (tabId: string) => void;
-  
+
   // Messages
   messages: Record<string, Message[]>;
   addMessage: (tabId: string, message: Message) => void;
-  
+
   // UI State
   showHistory: boolean;
   showCommandPalette: boolean;
   toggleHistory: () => void;
   toggleCommandPalette: () => void;
-  
+
   // Settings
   autonomyLevel: 'supervised' | 'semi-autonomous' | 'autonomous';
   thinkingVisible: boolean;
@@ -3353,71 +3415,70 @@ const useForgeAIStore = create<ForgeAIStore>()(
       showCommandPalette: false,
       autonomyLevel: 'semi-autonomous',
       thinkingVisible: true,
-      
+
       // Tab actions
       addTab: () => {
         const newTab: Tab = {
           id: crypto.randomUUID(),
           title: 'New Conversation',
           conversationId: crypto.randomUUID(),
-          createdAt: Date.now()
+          createdAt: Date.now(),
         };
-        
+
         set((state) => ({
           tabs: [...state.tabs, newTab],
           activeTabId: newTab.id,
           messages: {
             ...state.messages,
-            [newTab.id]: []
-          }
+            [newTab.id]: [],
+          },
         }));
       },
-      
+
       closeTab: (tabId) => {
         const state = get();
         const tabs = state.tabs.filter((t) => t.id !== tabId);
-        const activeTabId = state.activeTabId === tabId
-          ? tabs[tabs.length - 1]?.id || null
-          : state.activeTabId;
-        
+        const activeTabId =
+          state.activeTabId === tabId ? tabs[tabs.length - 1]?.id || null : state.activeTabId;
+
         set({ tabs, activeTabId });
       },
-      
+
       switchTab: (tabId) => {
         set({ activeTabId: tabId });
       },
-      
+
       // Message actions
       addMessage: (tabId, message) => {
         set((state) => ({
           messages: {
             ...state.messages,
-            [tabId]: [...(state.messages[tabId] || []), message]
-          }
+            [tabId]: [...(state.messages[tabId] || []), message],
+          },
         }));
       },
-      
+
       // UI actions
       toggleHistory: () => {
         set((state) => ({ showHistory: !state.showHistory }));
       },
-      
+
       toggleCommandPalette: () => {
         set((state) => ({ showCommandPalette: !state.showCommandPalette }));
       },
-      
+
       // Settings actions
       setAutonomyLevel: (level) => {
         set({ autonomyLevel: level as any });
       },
-      
+
       setThinkingVisible: (visible) => {
         set({ thinkingVisible: visible });
-      }
+      },
     }),
     {
       name: 'forgeai-store',
-      storage: vscodeStorage // Custom VS Code storage adapter
+      storage: vscodeStorage, // Custom VS Code storage adapter
     }
   )
 );
@@ -3476,6 +3537,7 @@ forgeai-extension/
 ### Build Configuration
 
 **package.json:**
+
 ```json
 {
   "name": "forgeai",
@@ -3485,9 +3547,7 @@ forgeai-extension/
   "engines": {
     "vscode": "^1.85.0"
   },
-  "activationEvents": [
-    "onCommand:forgeai.open"
-  ],
+  "activationEvents": ["onCommand:forgeai.open"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -3526,6 +3586,7 @@ forgeai-extension/
 ```
 
 **tailwind.config.js:**
+
 ```javascript
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -3534,10 +3595,10 @@ export default {
     extend: {
       colors: {
         // VS Code theme colors will be injected via CSS variables
-      }
-    }
+      },
+    },
   },
-  plugins: []
+  plugins: [],
 };
 ```
 
@@ -3560,28 +3621,33 @@ export default {
 ### Implementation Priority
 
 **Phase 1: Core UI (Weeks 1-2)**
+
 - ✅ Split-screen layout
 - ✅ Activity stream with thinking blocks
 - ✅ Tool execution cards
 - ✅ Message input/output
 
 **Phase 2: Persistence (Week 3)**
+
 - ✅ Conversation storage (VS Code workspaceState)
 - ✅ Tab management
 - ✅ History sidebar
 
 **Phase 3: Intelligence (Week 4)**
+
 - ✅ Ollama streaming integration
 - ✅ Tool execution
 - ✅ Thinking visualization
 
 **Phase 4: Trust & Control (Week 5)**
+
 - ✅ Progressive autonomy
 - ✅ Confidence indicators
 - ✅ Approval dialogs
 - ✅ Undo/escape hatches
 
 **Phase 5: Polish (Week 6)**
+
 - ✅ Command palette
 - ✅ Suggestion chips
 - ✅ Error handling
@@ -3605,6 +3671,7 @@ export default {
 ## Additional Resources
 
 ### Official Documentation
+
 - [VS Code Webview API](https://code.visualstudio.com/api/extension-guides/webview)
 - [VS Code Extension Capabilities](https://code.visualstudio.com/api/extension-capabilities/common-capabilities)
 - [React 19 Documentation](https://react.dev)
@@ -3612,6 +3679,7 @@ export default {
 - [Tailwind CSS v4.0](https://tailwindcss.com/blog/tailwindcss-v4)
 
 ### Research Sources
+
 - [Xcapit - Designing UX for AI Agents](https://www.xcapit.com/en/blog/designing-ux-ai-agents)
 - [InfoQ - Cursor 3 Agent-First Interface](https://www.infoq.com/news/2026/04/cursor-3-agent-first-interface/)
 - [MindStudio - Claude Interactive Visualization](https://www.mindstudio.ai/blog/what-is-claude-interactive-visualization-generative-ui)
@@ -3619,4 +3687,3 @@ export default {
 - [Microsoft - Chat History Storage Patterns](https://devblogs.microsoft.com/agent-framework/chat-history-storage-patterns-in-microsoft-agent-framework)
 - [Cloudscape Design System - GenAI History](https://cloudscape.design/patterns/genai/history/)
 - [LangChain - Frontend Patterns](https://docs.langchain.com/oss/javascript/langchain/frontend/tool-calling)
-

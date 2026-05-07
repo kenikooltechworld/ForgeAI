@@ -1,46 +1,46 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
-import { resolve } from "path";
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-
+  plugins: [react()],
   build: {
-    target: "es2022",
-    outDir: "dist",
-    sourcemap: true,
-    minify: "esbuild",
-    cssCodeSplit: false, // Don't split CSS into separate files
-    emptyOutDir: false, // Don't clear dist folder (extension files are there)
-
-    codeSplitting: false, // Inline all imports into single bundle (replaces inlineDynamicImports)
-
+    outDir: 'dist/webview',
+    emptyOutDir: true,
+    lib: {
+      entry: resolve(__dirname, 'src/webview/index.tsx'),
+      formats: ['es'],
+    },
     rollupOptions: {
-      input: {
-        webview: resolve(__dirname, "src/webview/index.tsx"),
-      },
       output: {
-        entryFileNames: "webview.js",
-        chunkFileNames: "[name]-[hash].js",
-        assetFileNames: "webview.[ext]", // Extract CSS as webview.css
+        entryFileNames: 'index.js',
+        chunkFileNames: '[name]-[hash].js',
+        assetFileNames: (assetInfo) => {
+          // Use static name for CSS to avoid hardcoding hash in extension
+          if (assetInfo.name === 'style.css') {
+            return 'style.css';
+          }
+          return '[name]-[hash][extname]';
+        },
       },
     },
-
-    chunkSizeWarningLimit: 100,
+    target: 'ES2022',
+    minify: 'terser',
+    sourcemap: true,
   },
-
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    'process.env': '{}',
+    global: 'globalThis',
+  },
+  server: {
+    port: 5173,
+    hmr: true,
+  },
   resolve: {
     alias: {
-      "@": resolve(__dirname, "src/webview"),
-    },
-  },
-
-  server: {
-    port: 3000,
-    strictPort: true,
-    hmr: {
-      port: 3000,
+      '@webview': resolve(__dirname, 'src/webview'),
+      '@types': resolve(__dirname, 'src/webview/types'),
     },
   },
 });

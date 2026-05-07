@@ -11,7 +11,27 @@ This **REVISED** implementation plan builds ForgeAI incrementally with **visible
 - ✅ **Incremental testing** - Test in Extension Development Host after each task
 - ✅ **Early feedback** - Catch UI/UX issues before building complex features
 
-The implementation uses TypeScript throughout, with React 19 for the webview UI, Zustand v5 for state management, and Tailwind CSS v4.0 for styling. The extension integrates with Ollama for AI capabilities using the Qwen3-Coder-397B model.
+The implementation uses TypeScript throughout, with React 19 for the webview UI, Zustand v5 for state management, and native CSS with VS Code theme integration for styling. The extension integrates with Ollama for AI capabilities using the Qwen3-Coder-397B model.
+
+## Styling Guidelines (IMPORTANT)
+
+**All components MUST follow VS Code extension styling best practices:**
+
+1. **Primary Method: Global CSS Classes (90%+ of styling)**
+   - Use CSS classes from `globals.css` (e.g., `className="bg-editor text-editor"`)
+   - This is the preferred approach for VS Code extensions
+   - Better performance and automatic theme integration
+
+2. **Inline Styles: ONLY for Dynamic Values**
+   - Use inline styles ONLY for values that change based on props/state
+   - Example: `style={{ width: \`${progress}%\` }}` ✅
+   - DO NOT use inline styles for static theme colors ❌
+
+3. **CSS Modules: Optional for Complex Components**
+   - Use `.module.css` files for complex component-specific layouts
+   - Only when utility classes don't fit the use case
+
+**Rationale:** This follows conventions used by official VS Code extensions (GitHub Copilot, GitLens) and provides better performance and maintainability.
 
 ## Visual Progression
 
@@ -29,14 +49,14 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 ### 1. Project Setup and Configuration
 
-- [x] 1.1 Initialize VS Code extension project structure
+- [] 1.1 Initialize VS Code extension project structure
   - Create directory structure: src/extension/, src/webview/, dist/, resources/
   - Initialize package.json with VS Code extension metadata
   - Configure TypeScript with tsconfig.json for both extension and webview
   - Set up .gitignore for node_modules, dist, and build artifacts
   - _Requirements: 1.1, 1.5_
 
-- [x] 1.2 Configure build tooling and bundlers
+- [] 1.2 Configure build tooling and bundlers
   - Set up esbuild or webpack for extension host bundling
   - Configure Vite for webview React application bundling
   - Add build scripts to package.json: build, watch, package
@@ -44,24 +64,23 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Set up hot module replacement for development
   - _Requirements: 7.3, 7.5, 53.3_
 
-- [x] 1.3 Install and configure dependencies
+- [] 1.3 Install and configure dependencies
   - Install VS Code types (@types/vscode ^1.115.0)
   - Install React 19 and React DOM
   - Install Zustand v5 with persist middleware
-  - Install Tailwind CSS v4.0
   - Install node-fetch or axios for HTTP client
   - Install development dependencies (ESLint, Prettier, Vitest)
   - _Requirements: 7.1, 8.1, 9.1_
 
-- [x] 1.4 Configure Tailwind CSS v4.0 with VS Code theme integration
-  - Create tailwind.config.js with @theme directive
-  - Set up globals.css with Tailwind imports
-  - Configure VS Code CSS variable syntax: bg-(--vscode-editor-background)
+- [] 1.4 Configure native CSS with VS Code theme integration
+  - Create globals.css with VS Code CSS variable utilities
+  - Set up utility classes: .bg-editor, .bg-input, .text-editor, etc.
+  - Configure VS Code CSS variable syntax: var(--vscode-editor-background)
   - Test theme variable access for editor, input, button, sidebar colors
-  - Verify incremental build completes within 500ms
+  - Verify build completes quickly without CSS processing overhead
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 41.1, 41.2, 41.3, 41.4_
 
-- [x] 1.5 Set up ESLint and Prettier
+- [] 1.5 Set up ESLint and Prettier
   - Configure ESLint 9+ with TypeScript rules
   - Configure Prettier 3+ for code formatting
   - Add lint and format scripts to package.json
@@ -70,7 +89,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 ### 2. Extension Host Core Infrastructure + Welcome Screen UI
 
-- [x] 2.1 Implement extension activation and registration
+- [] 2.1 Implement extension activation and registration
   - Create src/extension/extension.ts with activate() and deactivate() functions
   - Configure package.json with activation events: onStartupFinished, onCommand:forgeai.open
   - Register command "forgeai.open" with title "Open ForgeAI"
@@ -78,7 +97,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Set extension categories as "AI" and "Programming Languages"
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [x] 2.2 Implement Storage Manager
+- [] 2.2 Implement Storage Manager
   - Create src/extension/storage/StorageManager.ts
   - Implement getWorkspaceState() and setWorkspaceState() methods
   - Implement getGlobalState() and setGlobalState() methods
@@ -86,7 +105,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Add setKeysForSync() for cross-machine sync
   - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [x] 2.3 Create webview panel with lifecycle management
+- [] 2.3 Create webview panel with lifecycle management
   - Implement createWebviewPanel() function in extension.ts
   - Configure webview options: enableScripts, retainContextWhenHidden
   - Set localResourceRoots for dist and resources directories
@@ -94,7 +113,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Implement getNonce() for CSP nonce generation
   - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-- [x] 2.4 Implement bidirectional message passing
+- [] 2.4 Implement bidirectional message passing
   - Set up webview.onDidReceiveMessage handler
   - Handle "getState" messages: retrieve from workspaceState and respond
   - Handle "setState" messages: update workspaceState
@@ -102,7 +121,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Implement postMessage from extension to webview for state updates
   - _Requirements: 6.5, 10.2, 10.3_
 
-- [x] 2.5 Build Welcome Screen UI (First Launch Experience)
+- [] 2.5 Build Welcome Screen UI (First Launch Experience)
   - Create src/webview/components/WelcomeScreen.tsx
   - Display title: "Welcome to ForgeAI 🚀"
   - Display subtitle: "Your autonomous AI coding assistant"
@@ -118,10 +137,12 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Add Send button
   - Display tip: "💡 Tip: Use Cmd+K anywhere to open the command palette"
   - Add [View Documentation] and [Settings] links at bottom
-  - Use VS Code CSS variables for all colors: bg-(--vscode-editor-background), text-(--vscode-editor-foreground), etc.
+  - **STYLING:** Use CSS classes from globals.css (e.g., className="bg-editor text-editor bg-button")
+  - **STYLING:** Only use inline styles for truly dynamic values (e.g., style={{ width: `${progress}%` }})
+  - **STYLING:** Follow VS Code extension best practices - global CSS classes are preferred over inline styles
   - **VISUAL RESULT:** Complete welcome screen matching UI/UX architecture doc
   - **TEST:** Open Extension Development Host, see full welcome screen in sidebar
-  - _Requirements: 22.1, 22.2, 22.3, 22.4, 22.5, 21.1, 21.2, 8.3, 41.2, 41.3_
+  - _Requirements: 22.1, 22.2, 22.3, 22.4, 22.5, 21.1, 21.2, 8.3, 8.4, 8.5, 41.2, 41.3, 42.1, 42.4_
 
 - [x] 2.6 Make quick action buttons functional
   - Connect buttons to create new conversation with pre-filled prompts
@@ -137,7 +158,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Click each button, verify correct prompt appears
   - _Requirements: 22.4, 9.2, 9.4_
 
-- [x] 2.7 Implement progressive onboarding tooltips
+- [] 2.7 Implement progressive onboarding tooltips
   - Create src/webview/components/OnboardingTooltip.tsx component
   - Store onboarding state in globalState: { hasSeenThinkingTooltip, hasSeenToolTooltip, hasSeenCodeChangeTooltip }
   - **First message sent tooltip:**
@@ -163,7 +184,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 ### 3. Ollama Integration + Activity Stream with Live Chat
 
-- [ ] 3.1 Implement Ollama HTTP client
+- [x] 3.1 Implement Ollama HTTP client
   - Create src/extension/ollama/OllamaClient.ts
   - Implement chat() method with streaming support
   - Implement listModels() method to retrieve available models
@@ -171,7 +192,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Handle HTTP errors and connection failures gracefully
   - _Requirements: 4.1, 4.2, 4.5_
 
-- [ ] 3.2 Implement streaming response handler
+- [x] 3.2 Implement streaming response handler
   - Create src/extension/ollama/StreamHandler.ts
   - Implement processChunk() to parse streaming JSON chunks
   - Accumulate thinking, content, and tool_calls fields separately
@@ -179,7 +200,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Implement getAccumulated() to retrieve complete response
   - _Requirements: 4.4, 19.5, 46.2_
 
-- [ ] 3.3 Build Activity Stream UI structure
+- [x] 3.3 Build Activity Stream UI structure
   - Create src/webview/components/ActivityStream/ActivityStream.tsx
   - Create three-section layout: TabBar (top), MessageList (middle), MessageInput (bottom)
   - Create src/webview/components/ActivityStream/TabBar.tsx with single "New Conversation" tab
@@ -190,7 +211,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** See tab bar, empty message list, and input box
   - _Requirements: 12.1, 12.2, 12.5, 17.1, 21.1, 21.2_
 
-- [ ] 3.4 Connect MessageInput to Ollama (working chat)
+- [x] 3.4 Connect MessageInput to Ollama (working chat)
   - Implement Zustand conversation store (basic version)
   - Connect MessageInput submit to store.addMessage()
   - Update WebviewManager.handleSendMessage() to call OllamaClient.chat()
@@ -202,7 +223,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Send "Hello", see Ollama respond in real-time
   - _Requirements: 4.3, 19.1, 19.2, 19.3, 19.4, 38.1, 38.2_
 
-- [ ] 3.5 Implement thinking mode with ThinkingBlock UI
+- [x] 3.5 Implement thinking mode with ThinkingBlock UI
   - Enable think parameter in Ollama API calls
   - Separate thinking chunks from content chunks in stream handler
   - Forward thinking chunks to webview via postMessage
@@ -215,7 +236,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Send message, see thinking block with AI's reasoning
   - _Requirements: 4.3, 46.1, 46.3, 14.1, 14.2, 14.3, 14.4, 33.1, 33.5_
 
-- [ ] 3.6 Implement connection error handling UI
+- [x] 3.6 Implement connection error handling UI
   - Handle ECONNREFUSED: show error notification "Cannot connect to Ollama. Please ensure Ollama is running on http://localhost:11434"
   - Handle 404 errors: show "Model not found. Please pull the model using: ollama pull qwen3-coder:397b"
   - Handle timeout errors: show "Ollama request timed out. The model may be loading. Please try again."
@@ -226,7 +247,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Verify error messages are clear and actionable
   - _Requirements: 4.5, 20.1, 20.5, 47.1, 47.2, 47.3, 47.4, 47.5_
 
-- [ ] 3.7 Implement agent loop with tool execution (placeholder UI)
+- [x] 3.7 Implement agent loop with tool execution (placeholder UI)
   - Create src/extension/ollama/AgentLoop.ts
   - Implement execute() method with message history management
   - Execute tool calls sequentially and add results to message history
@@ -239,9 +260,22 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Tool cards show correct status updates
   - _Requirements: 18.1, 18.2, 18.3, 18.4, 18.5, 48.1, 48.2, 15.1, 15.2_
 
+- [ ] 3.8 **CRITICAL FIX: Implement autonomous system prompt**
+  - Create src/extension/ollama/SystemPrompt.ts with generateSystemPrompt() function
+  - System prompt MUST instruct AI to be proactive and autonomous
+  - Include explicit examples of WRONG behavior (describing tools) vs CORRECT behavior (using tools)
+  - List all available tools with when to use them
+  - Add workspace context injection (current path, recent files)
+  - Integrate system prompt into AgentLoop.execute() - prepend to messages array
+  - Implement getWorkspaceContext() helper to gather workspace info
+  - **CRITICAL:** This fixes the issue where AI describes tools instead of using them
+  - **VISUAL RESULT:** AI immediately uses tools when asked about workspace
+  - **TEST:** Ask "what can you see in my workspace?" - AI should call forgeai_listDirectory, not describe tools
+  - _Requirements: 18.1, 5.1, Design: System Prompt for Autonomous Behavior_
+
 ### 4. Tool Registry + File System Tools + Live Preview Panel
 
-- [ ] 4.1 Implement Tool Registry infrastructure
+- [x] 4.1 Implement Tool Registry infrastructure
   - Create src/extension/tools/ToolRegistry.ts with Tool interface
   - Implement registerTool() method with VS Code LM Tools API integration
   - Implement getToolDefinitions() to return OpenAI-compatible tool schemas
@@ -249,7 +283,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Add error handling for tool not found and execution failures
   - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-- [ ] 4.2 Implement core file system tools (read, write, list)
+- [x] 4.2 Implement core file system tools (read, write, list)
   - Create src/extension/tools/FileSystemTools.ts
   - Implement forgeai_readFile: read file using vscode.workspace.fs.readFile
   - Implement forgeai_writeFile: write file using vscode.workspace.fs.writeFile
@@ -257,7 +291,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - Implement forgeai_listDirectory: list directory using vscode.workspace.fs.readDirectory
   - _Requirements: 5.5, 5.6, 29.1, 29.2, 29.3, 29.4_
 
-- [ ] 4.3 Build LivePreview panel with empty state
+- [x] 4.3 Build LivePreview panel with empty state
   - Create src/webview/components/LivePreview/LivePreview.tsx
   - Show empty state with 📄 icon
   - Display text: "Code changes and previews will appear here"
@@ -266,7 +300,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** See empty preview panel in split-screen layout
   - _Requirements: 13.4, 21.1, 21.2_
 
-- [ ] 4.4 Implement SplitScreen layout with resizable divider
+- [x] 4.4 Implement SplitScreen layout with resizable divider
   - Create src/webview/components/SplitScreen/SplitScreen.tsx
   - Render ActivityStream (left 50%) and LivePreview (right 50%)
   - Implement draggable divider for resizing (30% to 70% range)
@@ -276,7 +310,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Drag divider, resize window, see layout adapt
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 36.1, 36.2, 36.3, 36.5_
 
-- [ ] 4.5 Enhance ToolCard with expandable details
+- [x] 4.5 Enhance ToolCard with expandable details
   - Update src/webview/components/ActivityStream/ToolCard.tsx
   - Display tool name with icon (🔧 for file ops, 🖥️ for terminal, etc.)
   - Show target (file path or command)
@@ -289,7 +323,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** See tool cards update in real-time during execution
   - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 35.1, 35.2, 35.3, 35.4, 35.5_
 
-- [ ] 4.6 Implement FilePreview component for readFile results
+- [x] 4.6 Implement FilePreview component for readFile results
   - Create src/webview/components/LivePreview/FilePreview.tsx
   - Display file path in header
   - Show file content with syntax highlighting (use VS Code theme)
@@ -301,7 +335,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** AI reads a file, see content with syntax highlighting in preview
   - _Requirements: 13.3, 24.5, 21.1, 21.2_
 
-- [ ] 4.7 Implement directory and file manipulation tools
+- [x] 4.7 Implement directory and file manipulation tools
   - Implement forgeai_createDirectory: create directory using vscode.workspace.fs.createDirectory
   - Implement forgeai_deleteFile: delete file/directory using vscode.workspace.fs.delete
   - Implement forgeai_copyFile: copy file using vscode.workspace.fs.copy
@@ -312,7 +346,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** AI creates/deletes/copies files, see operations in tool cards
   - _Requirements: 29.5, 29.6, 29.7, 29.8, 30.1, 30.2, 30.3, 30.4, 30.5, 30.6_
 
-- [ ] 4.8 Implement file watching and search tools
+- [x] 4.8 Implement file watching and search tools
   - Implement forgeai_watchFiles: create file watcher using vscode.workspace.createFileSystemWatcher
   - Handle onDidCreate, onDidChange, onDidDelete events
   - Implement forgeai_findFiles: search with include/exclude patterns
@@ -322,7 +356,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** AI searches files, see results with highlighted matches
   - _Requirements: 31.1, 31.2, 31.3, 31.4, 31.5, 31.6, 32.1, 32.2, 32.3, 32.4, 32.5_
 
-- [ ] 4.9 Implement terminal tools
+- [x] 4.9 Implement terminal tools
   - Create src/extension/tools/TerminalTools.ts
   - Implement forgeai_runCommand: execute shell command using child_process.exec
   - Return stdout, stderr, and exitCode
@@ -337,7 +371,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 **Goal:** Show code changes in preview panel with apply/reject actions
 
-- [ ] 5.1 Implement CodeDiff component
+- [x] 5.1 Implement CodeDiff component
   - Create src/webview/components/LivePreview/CodeDiff.tsx
   - Display file path in header with icon
   - Show removed lines with red background (bg-(--vscode-diffEditor-removedTextBackground)) and "-" prefix
@@ -423,7 +457,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 **Goal:** Handle long conversations efficiently with smooth scrolling
 
-- [ ] 7.1 Implement MessageList with virtualization
+- [x] 7.1 Implement MessageList with virtualization
   - Update src/webview/components/ActivityStream/MessageList.tsx
   - Install and use react-virtuoso for virtualization
   - Render only visible messages plus 10-message buffer above/below
@@ -434,7 +468,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Load conversation with many messages, scroll smoothly at 60fps
   - _Requirements: 12.2, 51.1, 51.2, 51.3, 51.4, 51.5, 25.2, 25.3_
 
-- [ ] 7.2 Implement auto-scroll with manual override
+- [x] 7.2 Implement auto-scroll with manual override
   - Auto-scroll to latest message when new content added
   - Detect manual scroll up (user scrolls away from bottom)
   - Pause auto-scrolling when user manually scrolls up
@@ -445,7 +479,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Scroll up, send message, see button appear, click it to jump to bottom
   - _Requirements: 12.6, 34.4, 34.5_
 
-- [ ] 7.3 Implement message filtering and search
+- [x] 7.3 Implement message filtering and search
   - Add filter dropdown above MessageList: All, User, Assistant, Tool, Thinking
   - Add search input box with 🔍 icon
   - Filter messages by type when dropdown changes
@@ -462,7 +496,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 **Goal:** Show AI reasoning with confidence indicators and detailed explanations
 
-- [ ] 8.1 Add confidence indicators to ThinkingBlock
+- [x] 8.1 Add confidence indicators to ThinkingBlock
   - Update src/webview/components/ActivityStream/ThinkingBlock.tsx
   - Analyze thinking text for confidence level:
     - High: "I found", "clearly", "definitely", "certain" → ✅ green badge
@@ -474,7 +508,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** See different confidence levels in different thinking blocks
   - _Requirements: 14.5, 33.2, 33.3_
 
-- [ ] 8.2 Add "Why?" button for detailed reasoning
+- [x] 8.2 Add "Why?" button for detailed reasoning
   - Add [Why this approach?] button to thinking blocks
   - On click, show modal/expanded view with detailed reasoning
   - Include sections:
@@ -488,7 +522,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Click button, see comprehensive reasoning breakdown
   - _Requirements: 33.4, UI/UX doc "Why?" button section_
 
-- [ ] 8.3 Display token usage in thinking blocks
+- [x] 8.3 Display token usage in thinking blocks
   - Show token count: "Thinking tokens: 245 | Total: 1,234"
   - Display in small text at bottom of expanded thinking block
   - Use muted color (--vscode-descriptionForeground)
@@ -522,7 +556,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 **Goal:** Configure extension settings and select AI models
 
-- [ ] 10.1 Implement Settings panel (lazy loaded)
+- [x] 10.1 Implement Settings panel (lazy loaded)
   - Create src/webview/components/Settings/Settings.tsx
   - Use React.lazy() for code splitting
   - Display in modal overlay or slide-in panel
@@ -532,21 +566,35 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Open settings, close settings, verify lazy loading
   - _Requirements: 50.1, 50.2, 40.2_
 
-- [ ] 10.2 Implement model selection UI
+- [x] 10.2 Implement model selection UI
   - Add "Model Configuration" section in Settings
-  - Display dropdown list of available Ollama models (fetch from /api/tags)
-  - Show model info for each: name, size, context window, capabilities
-  - Highlight currently selected model: "✓ Qwen3-Coder-397B (Cloud) - Auto-selected"
+  - Display dropdown list of 10 curated Ollama models (fetch from /api/tags and filter):
+    - **Cloud Models (5):**
+      1. gpt-oss:120b-cloud - Main coding (default) | Tools ✓ | Context: 128K
+      2. gemma4:31b-cloud - Vision + coding | Tools ✓ | Vision 📷 | Context: 128K
+      3. qwen3.5:397b-cloud - Complex reasoning | Tools ✓ | Context: 128K
+      4. deepseek-v3.1:671b-cloud - Deep research | Tools ✓ | Thinking 🧠 | Context: 64K
+      5. kimi-k2.5:cloud - Long context, multimodal | Tools ✓ | Vision 📷 | Context: 200K+
+    - **Local Models (5):**
+      6. qwen3-vl:8b - Local vision | Tools ✓ | Vision 📷 | ~6GB VRAM
+      7. qwen3-coder:30b - Heavy coding | Tools ✓ | ~20GB VRAM
+      8. deepseek-r1:8b - Local reasoning | Tools ✓ | Thinking 🧠 | ~6GB VRAM
+      9. gemma4:e4b - Fast/efficient | Tools ✓ | ~3GB VRAM
+      10. qwen3.5:9b - Balanced local | Tools ✓ | ~6GB VRAM
+  - Show model info for each: name, capabilities (Vision 📷, Thinking 🧠, Tools), context window, VRAM (local only)
+  - Group models by type: Cloud (☁️) and Local (↓) sections in dropdown
+  - Highlight currently selected model: "✓ gpt-oss:120b-cloud (Cloud) - Auto-selected"
+  - Show installation status for local models: "↓ Not installed" or "✓ Ready"
   - Update active conversation's model property on selection
   - Display currently selected model in ActivityStream header
   - Cache model list and refresh every 5 minutes
   - Show loading spinner while fetching models
   - Handle errors: "Cannot connect to Ollama to fetch models"
-  - **VISUAL RESULT:** See available models, select different model
+  - **VISUAL RESULT:** See 10 curated models grouped by cloud/local, select different model
   - **TEST:** Change model, send message, verify new model is used
   - _Requirements: 45.1, 45.2, 45.3, 45.4, 45.5_
 
-- [ ] 10.3 Implement thinking mode toggle
+- [x] 10.3 Implement thinking mode toggle
   - Add "Thinking Visibility" section in Settings
   - Add toggle switch: "● Show thinking process (recommended)" / "○ Hide thinking process"
   - Hide/show all ThinkingBlock components based on toggle state
@@ -557,7 +605,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Toggle off, see thinking blocks disappear; toggle on, see them reappear
   - _Requirements: 49.1, 49.2, 49.3, 49.4, 49.5_
 
-- [ ] 10.4 Add autonomy level setting
+- [x] 10.4 Add autonomy level setting
   - Add "Autonomy Level" section in Settings
   - Show three radio options:
     - ○ Supervised - Ask before every action
@@ -571,9 +619,11 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 
 ### 11. Language Model Chat Provider + Chat Participant (VS Code Native Integration)
 
-**Goal:** Integrate ForgeAI with VS Code's native chat and model picker
+**Goal:** Integrate ForgeAI with VS Code's native chat and model picker with FULL autonomous capabilities
 
-- [ ] 11.1 Implement Language Model Chat Provider
+**ARCHITECTURE:** Task 11 reuses existing infrastructure (AgentLoop, ToolRegistry, OllamaClient) to provide the same autonomous behavior as the main extension, just with a different UI (VS Code native chat instead of custom webview).
+
+- [x] 11.1 Implement Language Model Chat Provider
   - Create src/extension/providers/LanguageModelChatProvider.ts
   - Implement provideLanguageModelChatInformation() to return model info
   - Return qwen3-coder-397b with maxInputTokens 128000, maxOutputTokens 8192
@@ -585,23 +635,35 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Open VS Code chat, see ForgeAI model in dropdown
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 11.2 Implement Chat Participant
-  - Create src/extension/providers/ChatParticipant.ts
-  - Implement handler function for chat requests
+- [x] 11.2 Implement Chat Participant with AgentLoop Integration
+  - Create src/extension/providers/ChatParticipant.ts as thin adapter
+  - **REUSE AgentLoop.ts** for autonomous tool execution (no duplication!)
+  - **REUSE ToolRegistry.ts** for all 20+ tools (no duplication!)
+  - **REUSE OllamaClient.ts** for streaming and tool calling (no duplication!)
+  - **REUSE SystemPrompt.ts** for autonomous behavior (no duplication!)
+  - Implement convertChatHistory() to convert VS Code chat format to Ollama format
+  - Implement streamUpdateToChat() to convert AgentLoop updates to VS Code chat stream
+  - Implement handler function that delegates to AgentLoop.execute()
   - Declare slash commands: /fix, /build, /explain, /test
-  - Stream progress updates via ChatResponseStream
-  - Use request.model for model selection
+  - Stream progress updates via ChatResponseStream (🔧 tool execution, ✅ completion, ⚠️ errors)
+  - Show tool execution progress: "🔧 Executing forgeai_listDirectory..."
+  - Show tool completion: "✅ forgeai_listDirectory completed (45ms)"
+  - Show terminal output in code blocks when tools execute commands
   - Provide follow-up suggestions with buttons
   - Register participant with vscode.chat.createChatParticipant
-  - **VISUAL RESULT:** Type @forgeai in VS Code chat, see ForgeAI respond
-  - **TEST:** Use @forgeai /fix in VS Code chat, see it work
-  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
+  - **IMPLEMENTATION:** ~150 lines of format conversion code, reuses ~1,550 lines from existing infrastructure
+  - **VISUAL RESULT:** Type @forgeai in VS Code chat, see ForgeAI respond with FULL tool calling
+  - **TEST:** Use @forgeai what files are in my workspace? - should execute forgeai_listDirectory tool
+  - **TEST:** Use @forgeai /fix - should analyze code and use tools autonomously
+  - **TEST:** See tool execution progress and results in chat
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 18.1 (agent loop), 5.1-5.8 (tools)_
+  - _Implementation Notes: docs/implementation-notes/task-11-agent-loop-integration.md_
 
 ### 12. Git Tools + Diagnostics Tools
 
 **Goal:** Add Git operations and error diagnostics to tool registry
 
-- [ ] 12.1 Implement Git tools
+- [x] 12.1 Implement Git tools
   - Create src/extension/tools/GitTools.ts
   - Get Git API from vscode.git extension
   - Implement forgeai_gitStatus: get branch, changes, staged files
@@ -612,7 +674,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
   - **TEST:** Ask AI to commit changes, see Git commit tool card
   - _Requirements: Git integration_
 
-- [ ] 12.2 Implement diagnostics tools
+- [x] 12.2 Implement diagnostics tools
   - Create src/extension/tools/DiagnosticsTools.ts
   - Implement forgeai_getErrors: get all workspace errors/warnings
   - Implement forgeai_getDiagnostics: get diagnostics for specific file
@@ -1051,7 +1113,7 @@ The implementation uses TypeScript throughout, with React 19 for the webview UI,
 - All tasks reference specific requirements for traceability
 - The implementation uses TypeScript throughout for type safety
 - React 19 features (useActionState, useOptimistic, use) are leveraged for modern UI patterns
-- Tailwind CSS v4.0 syntax is used for VS Code theme integration
+- Native CSS with VS Code CSS variables is used for theme integration
 - Zustand v5 with persist middleware handles state management
 - Performance optimization is integrated throughout, not just at the end
 - Each major component has dedicated tasks for implementation and testing

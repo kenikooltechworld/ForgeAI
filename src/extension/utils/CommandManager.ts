@@ -1,45 +1,36 @@
-import * as vscode from "vscode";
-import { Logger } from "./Logger";
+import * as vscode from 'vscode';
+import { Logger } from './Logger';
 
 /**
- * CommandManager - Manages VS Code command registration and execution
- *
- * Provides centralized command registration with error handling and logging.
+ * Production-ready Command Manager for ForgeAI extension
+ * Handles command registration with error handling and logging
  */
 export class CommandManager implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
-    private readonly _context: vscode.ExtensionContext,
-    private readonly _logger: Logger
+    private readonly context: vscode.ExtensionContext,
+    private readonly logger: Logger
   ) {}
 
-  /**
-   * Register a command with error handling and logging
-   * @param command The command identifier (e.g., "forgeai.open")
-   * @param callback The command handler function
-   */
-  public registerCommand(command: string, callback: (...args: unknown[]) => unknown): void {
-    const disposable = vscode.commands.registerCommand(command, async (..._args: unknown[]) => {
+  public registerCommand(command: string, callback: (...args: any[]) => any): void {
+    const disposable = vscode.commands.registerCommand(command, async (...args) => {
       try {
-        this._logger.info(`Executing command: ${command}`);
-        return await callback(..._args);
+        this.logger.info(`Executing command: ${command}`);
+        return await callback(...args);
       } catch (error) {
-        this._logger.error(`Command ${command} failed`, error);
+        this.logger.error(`Command ${command} failed`, error);
         vscode.window.showErrorMessage(
-          `Command failed: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Command failed: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
         throw error;
       }
     });
 
     this.disposables.push(disposable);
-    this._context.subscriptions.push(disposable);
+    this.context.subscriptions.push(disposable);
   }
 
-  /**
-   * Dispose all registered commands
-   */
   public dispose(): void {
     this.disposables.forEach((d) => d.dispose());
     this.disposables.length = 0;

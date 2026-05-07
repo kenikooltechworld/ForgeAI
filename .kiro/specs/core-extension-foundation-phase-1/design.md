@@ -9,7 +9,7 @@ This document provides the technical design for **ForgeAI Phase 1: Core Extensio
 2. **Performance First** - Optimize for fast load times, smooth interactions, and minimal resource usage
 3. **Extensibility** - Design for future phases (multi-agent, RAG, browser automation)
 4. **Type Safety** - Use TypeScript throughout for compile-time safety
-5. **Modern Stack** - React 19, Tailwind CSS v4.0, Zustand v5 for best-in-class developer experience
+5. **Modern Stack** - React 19, Native CSS with VS Code theme integration, Zustand v5 for best-in-class developer experience
 
 ---
 
@@ -52,7 +52,7 @@ This document provides the technical design for **ForgeAI Phase 1: Core Extensio
 │  │  │  - Activity Stream (Left Panel)                                 │ │ │
 │  │  │  - Live Preview (Right Panel)                                   │ │ │
 │  │  │  - Zustand State Management                                     │ │ │
-│  │  │  - Tailwind CSS v4.0 Styling                                    │ │ │
+│  │  │  - Native CSS with VS Code Theme Integration                  │ │ │
 │  │  └─────────────────────────────────────────────────────────────────┘ │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -147,7 +147,7 @@ User Action → Extension Host → Ollama → Extension Host → Webview → Use
 
 ### Webview (React + TypeScript)
 - **UI Framework:** React 19.0+
-- **Styling:** Tailwind CSS v4.0
+- **Styling:** Native CSS with VS Code CSS variables
 - **State Management:** Zustand v5.0+
 - **Build Tool:** Vite 5.0+ or esbuild
 - **Bundler Target:** ES2022, <500KB gzipped
@@ -218,13 +218,12 @@ forgeai/
 │       │   ├── useVSCodeMessage.ts
 │       │   └── useStreamingResponse.ts
 │       ├── styles/
-│       │   └── globals.css           # Tailwind imports
+│       │   └── globals.css           # Native CSS with VS Code variables
 │       └── types/
 │           └── index.ts
 │
 ├── package.json
 ├── tsconfig.json
-├── tailwind.config.js
 ├── vite.config.ts
 └── README.md
 ```
@@ -682,13 +681,108 @@ export class StreamHandler {
 }
 ```
 
-#### Agent Loop
+#### System Prompt for Autonomous Behavior
+
+**CRITICAL**: The AI must receive a comprehensive system prompt that instructs it to be autonomous and proactive. This is the root cause of the issue where the AI describes tools instead of using them.
+
+```typescript
+// ollama/SystemPrompt.ts
+
+/**
+ * Generate the system prompt for ForgeAI autonomous agent
+ * This prompt instructs the AI to be proactive and use tools autonomously
+ */
+export function generateSystemPrompt(workspaceContext?: {
+  workspacePath?: string;
+  currentFiles?: string[];
+}): string {
+  return `You are ForgeAI, an autonomous AI coding assistant integrated into VS Code.
+
+# Core Behavior
+
+You are PROACTIVE and AUTONOMOUS. When a user asks a question:
+1. **DO NOT** just describe what you can do
+2. **DO** immediately use tools to explore and investigate
+3. **DO** provide concrete answers based on actual workspace data
+
+# Example of WRONG behavior:
+User: "What can you see in my workspace?"
+❌ WRONG: "I can explore files using forgeai_readFile, forgeai_listDirectory..."
+
+# Example of CORRECT behavior:
+User: "What can you see in my workspace?"
+✅ CORRECT: *Immediately calls forgeai_listDirectory* "I can see your workspace has the following structure: src/, tests/, package.json..."
+
+# Available Tools
+
+You have access to these tools - USE THEM PROACTIVELY:
+
+## File System Tools
+- **forgeai_readFile** - Read file contents. Use this to understand code before making changes.
+- **forgeai_writeFile** - Write or update files. Use this to implement changes.
+- **forgeai_listFiles** - List files by glob pattern (e.g., "**/*.ts"). Use this to discover project structure.
+- **forgeai_listDirectory** - List directory contents. Use this to explore folders.
+- **forgeai_createDirectory** - Create new directories.
+- **forgeai_deleteFile** - Delete files or directories.
+- **forgeai_copyFile** - Copy files.
+- **forgeai_renameFile** - Rename or move files.
+- **forgeai_getFileStats** - Get file metadata (size, timestamps).
+- **forgeai_findFiles** - Search with include/exclude patterns.
+- **forgeai_searchInFiles** - Search text content across files.
+
+## When to Use Tools
+
+**ALWAYS use tools when:**
+- User asks about workspace structure → Use forgeai_listDirectory
+- User asks about specific files → Use forgeai_readFile
+- User asks to find something → Use forgeai_searchInFiles or forgeai_findFiles
+- User asks to implement something → Use forgeai_writeFile
+- User asks about project contents → Use forgeai_listFiles
+
+**NEVER:**
+- Just describe what tools you have
+- Ask permission before exploring (you're autonomous!)
+- Wait for explicit instructions to use tools
+
+# Workspace Context
+${workspaceContext?.workspacePath ? `
+Current workspace: ${workspaceContext.workspacePath}
+${workspaceContext.currentFiles ? `
+Recent files: ${workspaceContext.currentFiles.join(', ')}
+` : ''}
+` : 'No workspace currently open.'}
+
+# Thinking Process
+
+Use the <think> tags to show your reasoning:
+<think>
+1. What is the user asking for?
+2. What tools do I need to use?
+3. What's my plan of action?
+</think>
+
+Then immediately execute your plan using tools.
+
+# Response Style
+
+- Be direct and action-oriented
+- Show, don't tell
+- Use tools first, explain later
+- Provide concrete results, not abstract descriptions
+
+Remember: You are AUTONOMOUS. Act, don't just describe!`;
+}
+```
+
+#### Agent Loop with System Prompt
 
 ```typescript
 // ollama/AgentLoop.ts
 import { OllamaClient, OllamaMessage } from './OllamaClient';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { StreamHandler } from './StreamHandler';
+import { generateSystemPrompt } from './SystemPrompt';
+import * as vscode from 'vscode';
 
 export class AgentLoop {
   private maxIterations = 20;
@@ -702,7 +796,18 @@ export class AgentLoop {
     initialMessages: OllamaMessage[],
     onUpdate: (update: any) => void
   ): Promise<void> {
+    // Get workspace context for system prompt
+    const workspaceContext = this.getWorkspaceContext();
+    
+    // Prepend system prompt if not already present
     const messages = [...initialMessages];
+    if (messages.length === 0 || messages[0].role !== 'system') {
+      messages.unshift({
+        role: 'system',
+        content: generateSystemPrompt(workspaceContext)
+      });
+    }
+    
     let iteration = 0;
 
     while (iteration < this.maxIterations) {
@@ -780,6 +885,32 @@ export class AgentLoop {
         message: 'Agent reached maximum iterations (20). Task may be incomplete.'
       });
     }
+  }
+
+  private getWorkspaceContext(): { workspacePath?: string; currentFiles?: string[] } {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      return {};
+    }
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+    
+    // Get recently opened files
+    const currentFiles = vscode.window.tabGroups.all
+      .flatMap(group => group.tabs)
+      .map(tab => {
+        if (tab.input instanceof vscode.TabInputText) {
+          return tab.input.uri.fsPath.replace(workspacePath, '').replace(/^[\/\\]/, '');
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .slice(0, 5); // Limit to 5 most recent files
+
+    return {
+      workspacePath,
+      currentFiles: currentFiles as string[]
+    };
   }
 
   stop() {
@@ -3236,65 +3367,102 @@ export default WelcomeScreen;
 
 ---
 
-### 7. Tailwind CSS v4.0 Configuration (Requirements 8, 41-42)
+### 7. Native CSS Configuration with VS Code Theme Integration (Requirements 8, 41-42)
 
 #### globals.css
 
 ```css
 /* webview/styles/globals.css */
-@import "tailwindcss";
+/* VS Code Native CSS Styling */
 
-@theme {
-  /* Custom theme variables */
-  --font-display: "Segoe UI", "sans-serif";
-  --spacing: 0.25rem;
+/* Global Styles */
+:root {
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* VS Code CSS variables are automatically available */
-/* Use them with the new syntax: bg-(--vscode-editor-background) */
-
-/* Global styles */
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+html,
 body {
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  font-weight: var(--vscode-font-weight);
-  color: var(--vscode-foreground);
+  margin: 0;
+  padding: 0;
   background-color: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--vscode-scrollbarSlider-background);
+  background: var(--vscode-editor-background);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--vscode-scrollbarSlider-background);
-  border-radius: 5px;
+  background: var(--vscode-editorGroupHeader-tabsBorder);
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--vscode-scrollbarSlider-hoverBackground);
+  background: var(--vscode-editor-lineHighlightBorder);
 }
 
-::-webkit-scrollbar-thumb:active {
-  background: var(--vscode-scrollbarSlider-activeBackground);
+/* Utility classes for VS Code theming */
+.bg-editor {
+  background-color: var(--vscode-editor-background);
 }
 
-/* Code blocks */
-pre, code {
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size);
+.bg-input {
+  background-color: var(--vscode-input-background);
+}
+
+.bg-button {
+  background-color: var(--vscode-button-background);
+}
+
+.text-editor {
+  color: var(--vscode-editor-foreground);
+}
+
+.text-muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Button styling */
+button {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+button:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+/* Diff coloring */
+.diff-removed {
+  background-color: var(--vscode-diffEditor-removedTextBackground);
+}
+
+.diff-inserted {
+  background-color: var(--vscode-diffEditor-insertedTextBackground);
 }
 
 /* Animations */
@@ -3312,24 +3480,57 @@ pre, code {
 }
 ```
 
-#### tailwind.config.js
+#### Component Styling Approach (VS Code Best Practices)
 
-```javascript
-// tailwind.config.js
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    './webview/**/*.{ts,tsx,js,jsx}',
-  ],
-  theme: {
-    extend: {
-      // Tailwind v4.0 automatically supports dynamic utility values
-      // No need to configure arbitrary values
-    },
-  },
-  plugins: [],
-};
-```
+**Primary Method: Global CSS Classes (90%+ of styling)**
+
+Components should primarily use CSS classes from globals.css. This is the preferred approach for VS Code extensions because:
+- Better performance (CSS loaded once, not recalculated on every render)
+- Automatic theme integration when users change VS Code themes
+- Follows conventions used by official VS Code extensions (GitHub Copilot, GitLens)
+- Easier to maintain and update styles in one place
+
+**When to Use Each Approach:**
+
+1. **Global CSS Classes (PREFERRED - Use for most styling)**
+   ```tsx
+   // ✅ GOOD - Use CSS classes for static styling
+   <div className="bg-editor text-editor">
+     <button className="bg-button">Click me</button>
+     <span className="text-muted">Subtitle</span>
+   </div>
+   ```
+
+2. **Inline Styles (ONLY for truly dynamic values)**
+   ```tsx
+   // ✅ GOOD - Inline for dynamic values based on props/state
+   <div style={{ width: `${progress}%` }}>
+     <div style={{ transform: `translateX(${offset}px)` }}>
+   
+   // ❌ BAD - Don't use inline for static theme colors
+   <div style={{ 
+     backgroundColor: 'var(--vscode-editor-background)',
+     color: 'var(--vscode-editor-foreground)'
+   }}>
+   
+   // ✅ GOOD - Use CSS class instead
+   <div className="bg-editor text-editor">
+   ```
+
+3. **CSS Modules (OPTIONAL - For complex component-specific styles)**
+   ```tsx
+   // Use .module.css for component-specific styles that don't fit utility classes
+   import styles from './MyComponent.module.css';
+   
+   <div className={styles.complexLayout}>
+     <div className={styles.customGrid}>
+   ```
+
+**Styling Priority:**
+1. First, check if a utility class exists in globals.css
+2. If not, consider adding a new utility class to globals.css
+3. For complex component-specific layouts, use CSS modules
+4. Only use inline styles for truly dynamic values
 
 
 ---
@@ -3833,7 +4034,6 @@ export class ErrorHandler {
     "@tanstack/react-virtual": "^3.0.0",
     "typescript": "^5.3.0",
     "vite": "^5.0.0",
-    "tailwindcss": "^4.0.0",
     "eslint": "^9.0.0",
     "vitest": "^1.0.0",
     "concurrently": "^8.0.0"
@@ -3997,7 +4197,7 @@ vsce publish
 This design document provides a complete technical specification for ForgeAI Phase 1, covering:
 
 ✅ **Extension Host Architecture** - VS Code extension registration, Language Model Chat Provider, Chat Participant, Ollama integration, 20+ tools
-✅ **Webview Architecture** - React 19 application with modern hooks, Tailwind CSS v4.0, Zustand v5 state management
+✅ **Webview Architecture** - React 19 application with modern hooks, Native CSS with VS Code theme integration, Zustand v5 state management
 ✅ **UI Components** - Split-screen layout, Activity Stream, Live Preview, Thinking Block, Tool Card, Tab Bar, Message Input, Welcome Screen
 ✅ **Data Models** - Complete TypeScript interfaces for all entities
 ✅ **API Specifications** - Message protocol between Extension Host and Webview
