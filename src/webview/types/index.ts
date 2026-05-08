@@ -17,6 +17,7 @@ export interface Message {
   content: string;
   timestamp: number;
   thinking?: string; // AI reasoning process
+  images?: Array<{ name: string; dataUrl: string }>; // Attached images
   tokenUsage?: {
     thinkingTokens?: number;
     totalTokens?: number;

@@ -5,7 +5,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--vscode-editor-background);
+  opacity: 0.95;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -32,7 +33,7 @@
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px var(--vscode-widget-shadow);
   animation: slideIn 0.3s ease-out;
 }
 
@@ -213,7 +214,7 @@
   background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border);
   border-radius: 3px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 2px var(--vscode-widget-shadow);
 }
 
 /* Footer */

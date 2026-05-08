@@ -5,7 +5,8 @@ import MessageFilter, { MessageFilterType } from './MessageFilter';
 import { MaxIterationsWarning } from './MaxIterationsWarning';
 import { useStreamingResponse } from '../../hooks/useStreamingResponse';
 import { useConversationStore } from '../../store/conversationStore';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { Square } from 'lucide-react';
 
 function ActivityStream() {
   const { isStreaming } = useStreamingResponse();
@@ -18,6 +19,54 @@ function ActivityStream() {
   const [filterType, setFilterType] = useState<MessageFilterType>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [resultCount, setResultCount] = useState<number | undefined>(undefined);
+  const [isAgentLoopRunning, setIsAgentLoopRunning] = useState(false);
+
+  // Listen for agent loop start/stop messages and conversation history requests
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const message = event.data;
+
+      if (message.type === 'agentLoopStarted') {
+        if (message.conversationId === activeConversationId) {
+          setIsAgentLoopRunning(true);
+        }
+      } else if (message.type === 'agentLoopStopped') {
+        if (message.conversationId === activeConversationId) {
+          setIsAgentLoopRunning(false);
+        }
+      } else if (message.type === 'requestConversationHistory') {
+        // Handle conversation history request for retry
+        if (message.conversationId === activeConversationId && message.purpose === 'retry') {
+          const conversation = conversations.find((c) => c.id === message.conversationId);
+          if (conversation) {
+            // Send conversation history back to extension
+            window.vscode?.postMessage({
+              type: 'conversationHistoryForRetry',
+              conversationId: message.conversationId,
+              conversationHistory: conversation.messages,
+              model: conversation.model || 'gpt-oss:120b-cloud',
+            });
+          }
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [activeConversationId, conversations]);
+
+  const handleStopAgentLoop = useCallback(() => {
+    if (!activeConversationId) return;
+
+    // Send stop message to extension
+    window.vscode?.postMessage({
+      type: 'stopAgentLoop',
+      conversationId: activeConversationId,
+    });
+
+    // Immediately update UI
+    setIsAgentLoopRunning(false);
+  }, [activeConversationId]);
 
   const handleFilterChange = useCallback((filter: MessageFilterType) => {
     setFilterType(filter);
@@ -67,6 +116,26 @@ function ActivityStream() {
       {/* Tab Bar (top section) */}
       <TabBar />
 
+      {/* Stop Button (shown when agent loop is running) */}
+      {isAgentLoopRunning && (
+        <div className="flex items-center justify-center gap-2 border-b border-(--vscode-panel-border) bg-(--vscode-editor-background) px-4 py-2">
+          <button
+            onClick={handleStopAgentLoop}
+            className="flex items-center gap-2 rounded bg-(--vscode-button-background) px-3 py-1.5 text-sm font-medium text-(--vscode-button-foreground) transition-colors hover:bg-(--vscode-button-hoverBackground)"
+            style={{
+              backgroundColor: 'var(--vscode-errorForeground)',
+              color: 'var(--vscode-button-foreground)',
+            }}
+          >
+            <Square size={14} />
+            Stop
+          </button>
+          <span className="text-xs text-(--vscode-descriptionForeground)">
+            Agent loop is running...
+          </span>
+        </div>
+      )}
+
       {/* Message Filter (filter and search) */}
       <MessageFilter
         onFilterChange={handleFilterChange}
@@ -83,6 +152,17 @@ function ActivityStream() {
         />
 
         {/* Max Iterations Warning */}
+        {(() => {
+          console.log('[ActivityStream] Checking max iterations warning:', {
+            conversationId: maxIterationsWarning.conversationId,
+            activeConversationId,
+            message: maxIterationsWarning.message,
+            shouldShow:
+              maxIterationsWarning.conversationId === activeConversationId &&
+              maxIterationsWarning.message,
+          });
+          return null;
+        })()}
         {maxIterationsWarning.conversationId === activeConversationId &&
           maxIterationsWarning.message && (
             <div className="px-4">

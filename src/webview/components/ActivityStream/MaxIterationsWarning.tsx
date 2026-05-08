@@ -122,22 +122,22 @@ export function MaxIterationsWarning({
               onClick={onContinue}
               className="rounded bg-[var(--vscode-button-background)] px-4 py-2 text-sm font-medium text-[var(--vscode-button-foreground)] hover:bg-[var(--vscode-button-hoverBackground)] focus:outline-none focus:ring-2 focus:ring-[var(--vscode-focusBorder)]"
             >
-              Continue (20 more iterations)
+              Retry
             </button>
             <button
               type="button"
               onClick={onCancel}
               className="rounded border border-[var(--vscode-button-border)] bg-[var(--vscode-button-secondaryBackground)] px-4 py-2 text-sm font-medium text-[var(--vscode-button-secondaryForeground)] hover:bg-[var(--vscode-button-secondaryHoverBackground)] focus:outline-none focus:ring-2 focus:ring-[var(--vscode-focusBorder)]"
             >
-              Cancel
+              Continue Manually
             </button>
           </div>
 
           {/* Help text */}
           <p className="mt-3 text-xs text-[var(--vscode-descriptionForeground)]">
-            <strong>Continue:</strong> The agent will get 20 more iterations to complete the task.
+            <strong>Retry:</strong> The agent will get 20 more iterations to complete the task.
             <br />
-            <strong>Cancel:</strong> Stop here and review what was completed.
+            <strong>Continue Manually:</strong> Stop here and provide guidance to the agent.
           </p>
         </div>
       </div>

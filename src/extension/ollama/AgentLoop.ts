@@ -4,6 +4,7 @@ import { StreamHandler } from './StreamHandler';
 import { Logger } from '../utils/Logger';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { generateSystemPrompt, getWorkspaceContext } from './SystemPrompt';
+import { MessageRouter, RoutingContext, RoutingResult } from '../classification/MessageRouter';
 
 /**
  * Agent Loop Update Types
@@ -17,7 +18,8 @@ export interface AgentLoopUpdate {
     | 'toolError'
     | 'complete'
     | 'maxIterations'
-    | 'terminalOutput';
+    | 'terminalOutput'
+    | 'classification';
   iteration?: number;
   thinking?: string;
   content?: string;
@@ -48,6 +50,7 @@ export interface AgentLoopUpdate {
     recentTools?: string[];
     totalIterations?: number;
   };
+  classification?: RoutingResult; // Message classification result
 }
 
 /**
@@ -56,9 +59,10 @@ export interface AgentLoopUpdate {
  * Follows Requirements 18.1-18.5 and design.md Agent Loop specification
  */
 export class AgentLoop {
-  private readonly maxIterations = 100; // Increased to allow AI to work until task is complete
+  private readonly maxIterations = 20; // Max iterations before stopping (Requirement 48.1, 48.2)
   private isRunning = false;
   private shouldStop = false;
+  private messageRouter = new MessageRouter(); // Message classification system
 
   constructor(
     private readonly ollamaClient: OllamaClient,
@@ -84,8 +88,8 @@ export class AgentLoop {
     this.isRunning = true;
     this.shouldStop = false;
 
-    // Get workspace context for system prompt
-    const workspaceContext = getWorkspaceContext();
+    // Get workspace context for system prompt and classification
+    const workspaceContext = this.gatherWorkspaceContext();
     this.logger.info(
       `Workspace context: ${workspaceContext.workspacePath || 'none'}, ` +
         `${workspaceContext.currentFiles?.length || 0} recent files`
@@ -96,17 +100,74 @@ export class AgentLoop {
     const language = config.get<string>('language', 'English');
     this.logger.info(`Language preference: ${language}`);
 
-    // Prepend system prompt if not already present
+    // Classify the user's message if this is the first user message
+    let routing: RoutingResult | undefined;
+    const userMessage = initialMessages.find((m) => m.role === 'user')?.content;
+
+    if (userMessage) {
+      const routingContext: RoutingContext = {
+        userMessage,
+        workspaceContext: {
+          hasErrors: false, // TODO: Detect actual errors
+          isEmpty: !workspaceContext.currentFiles?.length,
+        },
+        sessionHistory: [], // TODO: Add session history
+      };
+
+      // Generate base system prompt
+      const baseSystemPrompt = generateSystemPrompt(workspaceContext, language);
+
+      // Route the message and get category-specific system prompt
+      routing = this.messageRouter.route(routingContext, baseSystemPrompt);
+
+      this.logger.info(
+        `Message classified as: ${routing.classification.category} ` +
+          `(confidence: ${routing.classification.confidence.toFixed(2)}) - ` +
+          `${routing.classification.reasoning}`
+      );
+
+      // Send classification update to webview
+      onUpdate({
+        type: 'classification',
+        classification: routing,
+      });
+    }
+
+    // Prepare messages with appropriate system prompt
     const messages = [...initialMessages];
+    const systemPrompt = routing?.systemPrompt || generateSystemPrompt(workspaceContext, language);
+
     if (messages.length === 0 || messages[0].role !== 'system') {
-      const systemPrompt = generateSystemPrompt(workspaceContext, language);
       messages.unshift({
         role: 'system',
         content: systemPrompt,
       });
-      this.logger.info('System prompt prepended to messages');
+      this.logger.info('Category-specific system prompt prepended to messages');
     } else {
-      this.logger.info('System prompt already present, skipping');
+      // Replace existing system prompt with category-specific one
+      messages[0] = {
+        role: 'system',
+        content: systemPrompt,
+      };
+      this.logger.info('System prompt replaced with category-specific version');
+    }
+
+    // Adjust tool usage based on classification
+    let effectiveTools = tools;
+    let effectiveMaxIterations = this.maxIterations;
+
+    if (routing) {
+      if (!routing.shouldUseTool) {
+        effectiveTools = []; // Disable tools for conversation/planning categories
+        this.logger.info('Tools disabled based on message classification');
+      }
+
+      if (routing.maxToolCalls > 0 && routing.maxToolCalls < this.maxIterations) {
+        effectiveMaxIterations = Math.min(routing.maxToolCalls + 2, this.maxIterations); // +2 for conversation turns
+        this.logger.info(
+          `Max iterations adjusted to ${effectiveMaxIterations} based on classification`
+        );
+      }
     }
 
     let iteration = 0;
@@ -114,9 +175,9 @@ export class AgentLoop {
     const MIN_REQUEST_INTERVAL = 500; // Minimum 500ms between requests
 
     try {
-      while (iteration < this.maxIterations && !this.shouldStop) {
+      while (iteration < effectiveMaxIterations && !this.shouldStop) {
         iteration++;
-        this.logger.info(`Agent loop iteration ${iteration}/${this.maxIterations}`);
+        this.logger.info(`Agent loop iteration ${iteration}/${effectiveMaxIterations}`);
         onUpdate({ type: 'iteration', iteration });
 
         // Rate limiting: Wait if we're making requests too quickly
@@ -130,15 +191,15 @@ export class AgentLoop {
         lastRequestTime = Date.now();
 
         this.logger.info(
-          `Sending to Ollama: model=gpt-oss:120b-cloud, messages=${messages.length}, tools=${tools.length}, think=true`
+          `Sending to Ollama: model=gpt-oss:120b-cloud, messages=${messages.length}, tools=${effectiveTools.length}, think=true`
         );
-        if (tools.length > 0) {
+        if (effectiveTools.length > 0) {
           this.logger.info(
-            `Tool names being sent: ${tools.map((t: any) => t.function.name).join(', ')}`
+            `Tool names being sent: ${effectiveTools.map((t: any) => t.function.name).join(', ')}`
           );
         } else {
-          this.logger.error(
-            'CRITICAL: No tools being sent to Ollama! AI will not be able to use tools!'
+          this.logger.info(
+            'No tools being sent to Ollama (disabled by classification or not available)'
           );
         }
 
@@ -151,7 +212,7 @@ export class AgentLoop {
             messages,
             stream: true,
             think: true,
-            tools,
+            tools: effectiveTools,
           });
 
           // Type guard: result should be AsyncGenerator when stream=true
@@ -311,8 +372,8 @@ export class AgentLoop {
       }
 
       // Check if we hit max iterations (Requirement 18.5)
-      if (iteration >= this.maxIterations) {
-        this.logger.warn('Agent loop reached max iterations');
+      if (iteration >= effectiveMaxIterations) {
+        this.logger.warn(`Agent loop reached max iterations (${effectiveMaxIterations})`);
 
         // Gather context about what the agent was trying to do
         const lastAssistantMessage = messages
@@ -324,11 +385,11 @@ export class AgentLoop {
           .slice(-10) // Last 10 messages
           .filter((m) => m.role === 'tool')
           .map((m) => m.tool_name)
-          .filter(Boolean);
+          .filter((name): name is string => Boolean(name));
 
         onUpdate({
           type: 'maxIterations',
-          message: 'Agent reached maximum iterations (20). Task may be incomplete.',
+          message: `Agent reached maximum iterations (${effectiveMaxIterations}). Task may be incomplete.`,
           context: {
             lastThinking: lastAssistantMessage?.thinking,
             lastContent: lastAssistantMessage?.content,
@@ -356,5 +417,50 @@ export class AgentLoop {
    */
   public isExecuting(): boolean {
     return this.isRunning;
+  }
+
+  /**
+   * Get message classification metrics
+   */
+  public getClassificationMetrics() {
+    return this.messageRouter.getMetrics();
+  }
+
+  /**
+   * Clear message routing history
+   */
+  public clearRoutingHistory(): void {
+    this.messageRouter.clearHistory();
+  }
+
+  /**
+   * Get message routing history
+   */
+  public getRoutingHistory() {
+    return this.messageRouter.getHistory();
+  }
+
+  /**
+   * Gather workspace context for system prompt generation
+   */
+  private gatherWorkspaceContext(): import('./SystemPrompt').WorkspaceContext {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+
+    if (!workspaceFolders || workspaceFolders.length === 0) {
+      return {};
+    }
+
+    const workspacePath = workspaceFolders[0].uri.fsPath;
+
+    // Get currently open files
+    const openFiles = vscode.window.visibleTextEditors
+      .map((editor) => vscode.workspace.asRelativePath(editor.document.uri))
+      .filter((path) => !path.startsWith('..'));
+
+    return {
+      workspacePath,
+      openFiles,
+      currentFiles: openFiles, // For now, use the same as openFiles
+    };
   }
 }

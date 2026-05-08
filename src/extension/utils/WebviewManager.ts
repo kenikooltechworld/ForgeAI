@@ -5,6 +5,7 @@ import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { AgentLoopUpdate } from '../ollama/AgentLoop';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { TestResultsParser } from './TestResultsParser';
+import { MultiAgentOrchestrator } from '../orchestrator/MultiAgentOrchestrator';
 
 /**
  * Production-ready Webview Manager for ForgeAI extension
@@ -13,6 +14,7 @@ import { TestResultsParser } from './TestResultsParser';
 export class WebviewManager implements vscode.WebviewViewProvider, vscode.Disposable {
   private view?: vscode.WebviewView;
   private readonly disposables: vscode.Disposable[] = [];
+  private currentAgentLoop?: any;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -20,7 +22,12 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     private readonly logger: Logger,
     private readonly ollamaClient: OllamaClient,
     private readonly toolRegistry?: ToolRegistry
-  ) {}
+  ) {
+    this.logger.info(
+      'WebviewManager initialized' +
+        (toolRegistry ? ' with ToolRegistry and MultiAgentOrchestrator support' : '')
+    );
+  }
 
   public async reveal(): Promise<void> {
     if (!this.view) {
@@ -29,6 +36,25 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     }
 
     this.view.show?.(true);
+  }
+
+  /**
+   * Notify webview of theme change (Task 14.1)
+   */
+  public notifyThemeChange(theme: vscode.ColorTheme): void {
+    if (!this.view) {
+      return;
+    }
+
+    this.logger.info(`Notifying webview of theme change: ${theme.kind}`);
+
+    // Send theme change message to webview
+    this.view.webview.postMessage({
+      type: 'themeChanged',
+      theme: {
+        kind: theme.kind, // 1 = Light, 2 = Dark, 3 = High Contrast Light, 4 = High Contrast Dark
+      },
+    });
   }
 
   public resolveWebviewView(
@@ -78,7 +104,8 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
             message.conversationId,
             message.content,
             message.conversationHistory || [],
-            message.model || 'gpt-oss:120b-cloud' // Use provided model or default
+            message.model || 'gpt-oss:120b-cloud', // Use provided model or default
+            message.images || [] // Extract images from message
           );
           break;
         }
@@ -111,7 +138,35 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           this.logger.info(
             `Handling setWorkspaceState: ${message.key} = ${JSON.stringify(message.value)}`
           );
-          await this.storageManager.setWorkspaceValue(message.key, message.value);
+          try {
+            await this.storageManager.setWorkspaceValue(message.key, message.value);
+            // Send success response
+            this.view?.webview.postMessage({
+              type: 'workspaceStateSet',
+              key: message.key,
+              success: true,
+            });
+          } catch (error) {
+            this.logger.error(`Failed to set workspace state for ${message.key}`, error);
+
+            // Check if this is a storage quota error (Task 15.2)
+            if (error instanceof Error && error.message === 'STORAGE_QUOTA_EXCEEDED') {
+              this.logger.warn('Storage quota exceeded - notifying webview');
+              this.view?.webview.postMessage({
+                type: 'storageQuotaExceeded',
+                key: message.key,
+                error: 'Storage quota exceeded. Please delete old conversations to free up space.',
+              });
+            } else {
+              // Send generic error response
+              this.view?.webview.postMessage({
+                type: 'workspaceStateSet',
+                key: message.key,
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              });
+            }
+          }
           break;
         }
         case 'getOnboardingState': {
@@ -247,6 +302,55 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           await this.handleFetchOllamaModels();
           break;
         }
+        case 'stopAgentLoop': {
+          this.logger.info('Handling stopAgentLoop');
+          this.handleStopAgentLoop(message.conversationId);
+          break;
+        }
+        case 'retryAfterError': {
+          this.logger.info('Handling retryAfterError');
+          await this.handleRetryAfterError(message.conversationId, message.errorMessage);
+          break;
+        }
+        case 'conversationHistoryForRetry': {
+          this.logger.info('Handling conversationHistoryForRetry');
+          // Extract the last user message and resend it
+          const history = message.conversationHistory || [];
+          const model = message.model || 'gpt-oss:120b-cloud';
+
+          // Find the last user message
+          const lastUserMessage = [...history].reverse().find((msg: any) => msg.role === 'user');
+
+          if (lastUserMessage) {
+            this.logger.info(`Retrying last user message: ${lastUserMessage.content}`);
+            // Remove the error message from history before retrying
+            const cleanHistory = history.filter((msg: any) => msg.role !== 'error');
+            await this.handleSendMessage(
+              message.conversationId,
+              lastUserMessage.content,
+              cleanHistory,
+              model,
+              lastUserMessage.images || []
+            );
+          } else {
+            this.logger.warn('No user message found to retry');
+          }
+          break;
+        }
+        case 'skipAfterError': {
+          this.logger.info('Handling skipAfterError');
+          // Just log the skip action - no further action needed
+          this.logger.info(`User skipped error in conversation ${message.conversationId}`);
+          break;
+        }
+        case 'openSettings': {
+          this.logger.info('Handling openSettings');
+          // Send message to webview to open settings panel
+          this.view?.webview.postMessage({
+            type: 'openSettings',
+          });
+          break;
+        }
         default:
           this.logger.warn(`Unknown message type: ${message.type}`);
           break;
@@ -260,11 +364,13 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     conversationId: string,
     message: string,
     conversationHistory: any[] = [],
-    model: string = 'gpt-oss:120b-cloud'
+    model: string = 'gpt-oss:120b-cloud',
+    images: Array<{ name: string; dataUrl: string }> = []
   ): Promise<void> {
     this.logger.info(`Sending message to Ollama: ${message}`);
     this.logger.info(`Using model: ${model}`);
     this.logger.info(`Conversation history length: ${conversationHistory.length}`);
+    this.logger.info(`Attached images: ${images.length}`);
 
     try {
       // Get tool definitions from ToolRegistry
@@ -276,6 +382,13 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         this.logger.info(`Tool definitions: ${JSON.stringify(tools, null, 2)}`);
       } else {
         this.logger.warn('NO TOOLS AVAILABLE - ToolRegistry might not be initialized!');
+      }
+
+      // Route complex requests through the MultiAgentOrchestrator
+      if (this.toolRegistry && this.isComplexRequest(message) && images.length === 0) {
+        this.logger.info('Routing complex request through MultiAgentOrchestrator');
+        await this.handleOrchestratorRequest(conversationId, message, model);
+        return;
       }
 
       // Use AgentLoop for autonomous tool execution
@@ -293,15 +406,53 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         if (msg.thinking) ollamaMsg.thinking = msg.thinking;
         if (msg.tool_calls) ollamaMsg.tool_calls = msg.tool_calls;
         if (msg.tool_name) ollamaMsg.tool_name = msg.tool_name;
+        if (msg.images) ollamaMsg.images = msg.images;
 
         return ollamaMsg;
       });
 
-      // Add current user message (only required fields)
-      messages.push({
+      // Extract base64 image data from data URLs
+      const imageData = images.map((img) => {
+        // Remove data URL prefix (e.g., "data:image/png;base64,")
+        const base64Data = img.dataUrl.split(',')[1];
+        return base64Data;
+      });
+
+      // Check if model supports vision (only send images to vision models)
+      const isVisionModel =
+        model.includes('llava') ||
+        model.includes('vision') ||
+        model.includes('bakllava') ||
+        model.includes('moondream') ||
+        model.includes('gemma4');
+
+      // Warn user if they're trying to send images to a non-vision model
+      if (imageData.length > 0 && !isVisionModel) {
+        this.logger.warn(
+          `User tried to send ${imageData.length} images to non-vision model: ${model}`
+        );
+        this.view?.webview.postMessage({
+          type: 'streamError',
+          conversationId,
+          errorType: 'VISION_MODEL_REQUIRED',
+          errorMessage: `The model "${model}" does not support images. Please select a vision model like "llava" or "llava:13b" from the model dropdown to use image attachments.`,
+        });
+        return;
+      }
+
+      // Add current user message with images (only required fields)
+      const userMessage: OllamaMessage = {
         role: 'user',
         content: message,
-      });
+      };
+
+      // Only add images if there are any and model supports vision
+      if (imageData.length > 0 && isVisionModel) {
+        userMessage.images = imageData;
+        this.logger.info(`Added ${imageData.length} images to user message`);
+      }
+
+      messages.push(userMessage);
 
       this.logger.info(`Total messages to send: ${messages.length}`);
 
@@ -321,6 +472,157 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         errorMessage: errorInfo.message,
         actionButton: errorInfo.actionButton,
       });
+    }
+  }
+
+  /**
+   * Detect if a request is complex enough to warrant multi-agent orchestration.
+   * Routes to orchestrator when the request involves multiple steps, file changes,
+   * testing, or error fixing — per design.md Section 5.2 (Complexity Analysis).
+   */
+  private isComplexRequest(message: string): boolean {
+    const complexPatterns = [
+      /fix.*bug|bug.*fix/i,
+      /add.*test|write.*test|create.*test/i,
+      /refactor/i,
+      /implement.*feature|add.*feature/i,
+      /fix.*error|error.*fix/i,
+      /and.*then|first.*then/i,
+      /multiple.*file/i,
+      /analyze.*and|and.*fix/i,
+    ];
+    return complexPatterns.some((p) => p.test(message));
+  }
+
+  /**
+   * Handle a request through the MultiAgentOrchestrator.
+   * Streams progress updates back to the webview using the existing streamChunk format.
+   * Per design.md Section 5.1 — extends AgentLoop without replacing it.
+   */
+  private async handleOrchestratorRequest(
+    conversationId: string,
+    message: string,
+    model: string
+  ): Promise<void> {
+    if (!this.toolRegistry) {
+      return;
+    }
+
+    this.view?.webview.postMessage({ type: 'agentLoopStarted', conversationId });
+
+    // Stream planning start
+    this.view?.webview.postMessage({
+      type: 'streamChunk',
+      conversationId,
+      data: {
+        content: '🤖 **Multi-Agent Mode** — Planning your request...\n\n',
+        thinking: '',
+        toolCalls: [],
+      },
+      done: false,
+    });
+
+    // Create a fresh orchestrator per request to avoid callback accumulation
+    const { AgentLoop } = await import('../ollama/AgentLoop');
+    const agentLoop = new AgentLoop(this.ollamaClient, this.logger, this.toolRegistry);
+    const orchestrator = new MultiAgentOrchestrator(
+      agentLoop,
+      this.toolRegistry,
+      this.ollamaClient,
+      this.logger
+    );
+
+    // Register progress callback to stream updates to the webview
+    orchestrator.onProgress((update) => {
+      const taskName = update.currentTask?.description ?? 'Working...';
+      const pct = Math.round(update.progress);
+      this.view?.webview.postMessage({
+        type: 'streamChunk',
+        conversationId,
+        data: { content: `⚙️ [${pct}%] ${taskName}\n`, thinking: '', toolCalls: [] },
+        done: false,
+      });
+    });
+
+    orchestrator.onTaskComplete((taskId, result) => {
+      const icon = result.status === 'success' ? '✅' : result.status === 'partial' ? '⚠️' : '❌';
+      this.view?.webview.postMessage({
+        type: 'streamChunk',
+        conversationId,
+        data: {
+          content: `${icon} Task ${taskId} — ${result.status} (confidence: ${(result.selfEvaluation.confidence * 100).toFixed(0)}%)\n`,
+          thinking: '',
+          toolCalls: [],
+        },
+        done: false,
+      });
+    });
+
+    orchestrator.onError((error) => {
+      this.view?.webview.postMessage({
+        type: 'streamChunk',
+        conversationId,
+        data: { content: `❌ Error: ${error.message}\n`, thinking: '', toolCalls: [] },
+        done: false,
+      });
+    });
+
+    try {
+      const result = await orchestrator.run(message, { model, maxIterations: 5 });
+
+      // Build summary response
+      const statusIcon = result.success ? '✅' : '❌';
+      const summary = [
+        `\n${statusIcon} **Orchestration complete** — ${result.success ? 'Success' : 'Failed'}`,
+        `📋 Tasks: ${result.metrics.completedTasks}/${result.metrics.totalTasks} completed`,
+        `🔄 Iterations: ${result.metrics.iterations}`,
+        `⏱️ Duration: ${(result.duration / 1000).toFixed(1)}s`,
+      ];
+
+      if (result.error) {
+        summary.push(`\n⚠️ ${result.error.message}`);
+      }
+
+      if (result.results.size > 0) {
+        summary.push('\n**Task Results:**');
+        for (const [taskId, taskResult] of result.results) {
+          const icon =
+            taskResult.status === 'success' ? '✅' : taskResult.status === 'partial' ? '⚠️' : '❌';
+          summary.push(`${icon} ${taskId}: ${taskResult.status}`);
+          if (taskResult.result?.analysis) {
+            summary.push(`   ${String(taskResult.result.analysis).slice(0, 200)}...`);
+          }
+          if (taskResult.result?.generatedCode) {
+            summary.push(
+              `   Generated ${String(taskResult.result.generatedCode).length} chars of code`
+            );
+          }
+        }
+      }
+
+      this.view?.webview.postMessage({
+        type: 'streamChunk',
+        conversationId,
+        data: { content: summary.join('\n'), thinking: '', toolCalls: [] },
+        done: true,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error('Orchestrator request failed', error);
+
+      this.view?.webview.postMessage({
+        type: 'streamChunk',
+        conversationId,
+        data: {
+          content: `\n❌ Orchestration failed: ${errorMessage}`,
+          thinking: '',
+          toolCalls: [],
+        },
+        done: true,
+      });
+    } finally {
+      // Always notify the webview that the agent loop has stopped
+      this.view?.webview.postMessage({ type: 'agentLoopStopped', conversationId });
     }
   }
 
@@ -394,222 +696,243 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     tools: any[],
     model: string = 'gpt-oss:120b-cloud'
   ): Promise<void> {
-    await agentLoop.execute(
-      messages,
-      (update: AgentLoopUpdate) => {
-        // Handle different update types
-        switch (update.type) {
-          case 'chunk':
-            // Send streaming chunk to webview
-            this.view?.webview.postMessage({
-              type: 'streamChunk',
-              conversationId,
-              data: {
-                content: update.content || '',
-                thinking: update.thinking || '',
-                toolCalls: update.toolCalls || [],
-                tokenUsage: update.tokenUsage,
-              },
-              done: update.done || false,
-            });
+    // Store the current agent loop instance so we can stop it
+    this.currentAgentLoop = agentLoop;
 
-            // Log when token usage is being sent
-            if (update.tokenUsage) {
-              this.logger.info(
-                `🌐🌐🌐 POSTING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(update.tokenUsage)}`
-              );
-            }
-            break;
+    // Notify webview that agent loop started
+    this.view?.webview.postMessage({
+      type: 'agentLoopStarted',
+      conversationId,
+    });
 
-          case 'terminalOutput':
-            this.logger.info('Sending terminal output to webview');
+    try {
+      await agentLoop.execute(
+        messages,
+        (update: AgentLoopUpdate) => {
+          // Handle different update types
+          switch (update.type) {
+            case 'chunk':
+              // Send streaming chunk to webview
+              this.view?.webview.postMessage({
+                type: 'streamChunk',
+                conversationId,
+                data: {
+                  content: update.content || '',
+                  thinking: update.thinking || '',
+                  toolCalls: update.toolCalls || [],
+                  tokenUsage: update.tokenUsage,
+                },
+                done: update.done || false,
+              });
 
-            // Check if this is test output and parse it (Task 9.1)
-            if (update.terminalData) {
-              const { command, stdout, stderr, exitCode } = update.terminalData;
-              const output = stdout + stderr;
+              // Log when token usage is being sent
+              if (update.tokenUsage) {
+                this.logger.info(
+                  `🌐🌐🌐 POSTING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(update.tokenUsage)}`
+                );
+              }
+              break;
 
-              // Check if this looks like a test command
-              const isTestCommand =
-                command.includes('test') ||
-                command.includes('jest') ||
-                command.includes('vitest') ||
-                command.includes('mocha') ||
-                command.includes('pytest');
+            case 'terminalOutput':
+              this.logger.info('Sending terminal output to webview');
 
-              if (isTestCommand) {
-                this.logger.info('Detected test command, attempting to parse results');
+              // Check if this is test output and parse it (Task 9.1)
+              if (update.terminalData) {
+                const { command, stdout, stderr, exitCode } = update.terminalData;
+                const output = stdout + stderr;
 
-                // Try to parse test results
-                const testResults = TestResultsParser.parse(output, exitCode);
+                // Check if this looks like a test command
+                const isTestCommand =
+                  command.includes('test') ||
+                  command.includes('jest') ||
+                  command.includes('vitest') ||
+                  command.includes('mocha') ||
+                  command.includes('pytest');
 
-                if (testResults) {
-                  this.logger.info(
-                    `Parsed test results: ${testResults.totalPassed} passed, ${testResults.totalFailed} failed`
-                  );
+                if (isTestCommand) {
+                  this.logger.info('Detected test command, attempting to parse results');
 
-                  // Send test results to webview
-                  this.view?.webview.postMessage({
-                    type: 'showTestResults',
-                    conversationId,
-                    data: {
-                      ...testResults,
-                      onRunAgain: () => {
-                        // Will be handled by webview message
+                  // Try to parse test results
+                  const testResults = TestResultsParser.parse(output, exitCode);
+
+                  if (testResults) {
+                    this.logger.info(
+                      `Parsed test results: ${testResults.totalPassed} passed, ${testResults.totalFailed} failed`
+                    );
+
+                    // Send test results to webview
+                    this.view?.webview.postMessage({
+                      type: 'showTestResults',
+                      conversationId,
+                      data: {
+                        ...testResults,
+                        onRunAgain: () => {
+                          // Will be handled by webview message
+                        },
                       },
-                    },
-                  });
+                    });
+                  } else {
+                    this.logger.info('Could not parse test results, showing as terminal output');
+                    // Fall back to showing as terminal output
+                    this.view?.webview.postMessage({
+                      type: 'showTerminalOutput',
+                      conversationId,
+                      data: update.terminalData,
+                    });
+                  }
                 } else {
-                  this.logger.info('Could not parse test results, showing as terminal output');
-                  // Fall back to showing as terminal output
+                  // Not a test command, show as terminal output
                   this.view?.webview.postMessage({
                     type: 'showTerminalOutput',
                     conversationId,
                     data: update.terminalData,
                   });
                 }
-              } else {
-                // Not a test command, show as terminal output
+              }
+              break;
+
+            case 'toolStart':
+              this.logger.info(`Tool started: ${update.toolCall?.function.name}`);
+              // Send tool start notification to webview for live feedback
+              if (update.toolCall && update.toolExecutionId) {
                 this.view?.webview.postMessage({
-                  type: 'showTerminalOutput',
+                  type: 'toolExecutionStart',
                   conversationId,
-                  data: update.terminalData,
+                  data: {
+                    messageId: update.toolExecutionId, // Use consistent ID from AgentLoop
+                    toolName: this.getToolDisplayName(update.toolCall.function.name),
+                    target: this.getToolTarget(update.toolCall),
+                    arguments: update.toolCall.function.arguments,
+                  },
                 });
               }
-            }
-            break;
+              break;
 
-          case 'toolStart':
-            this.logger.info(`Tool started: ${update.toolCall?.function.name}`);
-            // Send tool start notification to webview for live feedback
-            if (update.toolCall && update.toolExecutionId) {
+            case 'toolComplete':
+              this.logger.info(`Tool completed: ${update.toolCall?.function.name}`);
+
+              // Send tool completion notification to webview for live feedback
+              if (update.toolCall && update.toolExecutionId) {
+                this.view?.webview.postMessage({
+                  type: 'toolExecutionComplete',
+                  conversationId,
+                  data: {
+                    messageId: update.toolExecutionId, // Use consistent ID from AgentLoop
+                    toolName: this.getToolDisplayName(update.toolCall.function.name),
+                    target: this.getToolTarget(update.toolCall),
+                    duration: update.duration,
+                    result: update.result,
+                    arguments: update.toolCall.function.arguments,
+                  },
+                });
+              }
+
+              // Check if this is a readFile tool - send file data to preview panel (Task 4.6)
+              if (update.toolCall?.function.name === 'forgeai_readFile' && update.result) {
+                this.logger.info('File read completed, sending to preview panel');
+                const args =
+                  typeof update.toolCall.function.arguments === 'string'
+                    ? JSON.parse(update.toolCall.function.arguments)
+                    : update.toolCall.function.arguments;
+
+                this.view?.webview.postMessage({
+                  type: 'showFile',
+                  data: {
+                    filePath: update.result.path || args.path,
+                    content: update.result.content || '',
+                    size: update.result.content?.length,
+                    lastModified: Date.now(),
+                  },
+                });
+              }
+
+              // Check if this is a generateDiff tool - send diff to webview (Task 5.2)
+              if (update.toolCall?.function.name === 'forgeai_generateDiff' && update.result) {
+                this.logger.info('Sending diff data to webview');
+                this.view?.webview.postMessage({
+                  type: 'showDiff',
+                  data: {
+                    file: update.result.file,
+                    lines: update.result.lines,
+                    language: update.result.language,
+                    originalContent: update.result.originalContent,
+                    onApply: () => {
+                      // Will be handled by webview message
+                    },
+                    onReject: () => {
+                      // Will be handled by webview message
+                    },
+                    onOpenInEditor: () => {
+                      // Will be handled by webview message
+                    },
+                  },
+                });
+              }
+
+              break;
+
+            case 'toolError':
+              this.logger.error(`Tool error: ${update.toolCall?.function.name} - ${update.error}`);
+              // Send tool error notification to webview for live feedback
+              if (update.toolCall && update.toolExecutionId) {
+                this.view?.webview.postMessage({
+                  type: 'toolExecutionError',
+                  conversationId,
+                  data: {
+                    messageId: update.toolExecutionId, // Use consistent ID from AgentLoop
+                    toolName: this.getToolDisplayName(update.toolCall.function.name),
+                    target: this.getToolTarget(update.toolCall),
+                    duration: update.duration,
+                    error: update.error,
+                    arguments: update.toolCall.function.arguments,
+                  },
+                });
+              }
+              break;
+
+            case 'complete':
+              this.logger.info('Agent loop complete');
+              // Send final completion message
               this.view?.webview.postMessage({
-                type: 'toolExecutionStart',
+                type: 'streamChunk',
                 conversationId,
                 data: {
-                  messageId: update.toolExecutionId, // Use consistent ID from AgentLoop
-                  toolName: update.toolCall.function.name,
-                  target: this.getToolTarget(update.toolCall),
-                  arguments: update.toolCall.function.arguments,
+                  content: '',
+                  thinking: '',
+                  toolCalls: [],
                 },
+                done: true,
               });
-            }
-            break;
 
-          case 'toolComplete':
-            this.logger.info(`Tool completed: ${update.toolCall?.function.name}`);
-
-            // Send tool completion notification to webview for live feedback
-            if (update.toolCall && update.toolExecutionId) {
+              // Notify webview that agent loop stopped
               this.view?.webview.postMessage({
-                type: 'toolExecutionComplete',
+                type: 'agentLoopStopped',
+                conversationId,
+              });
+              break;
+
+            case 'maxIterations':
+              this.logger.warn('Agent loop reached max iterations');
+              // Send detailed max iterations warning to webview with context
+              this.view?.webview.postMessage({
+                type: 'maxIterationsWarning',
                 conversationId,
                 data: {
-                  messageId: update.toolExecutionId, // Use consistent ID from AgentLoop
-                  toolName: update.toolCall.function.name,
-                  target: this.getToolTarget(update.toolCall),
-                  duration: update.duration,
-                  result: update.result,
-                  arguments: update.toolCall.function.arguments,
+                  message: update.message,
+                  context: update.context,
                 },
               });
-            }
-
-            // Check if this is a readFile tool - send file data to preview panel (Task 4.6)
-            if (update.toolCall?.function.name === 'forgeai_readFile' && update.result) {
-              this.logger.info('File read completed, sending to preview panel');
-              const args =
-                typeof update.toolCall.function.arguments === 'string'
-                  ? JSON.parse(update.toolCall.function.arguments)
-                  : update.toolCall.function.arguments;
-
-              this.view?.webview.postMessage({
-                type: 'showFile',
-                data: {
-                  filePath: update.result.path || args.path,
-                  content: update.result.content || '',
-                  size: update.result.content?.length,
-                  lastModified: Date.now(),
-                },
-              });
-            }
-
-            // Check if this is a generateDiff tool - send diff to webview (Task 5.2)
-            if (update.toolCall?.function.name === 'forgeai_generateDiff' && update.result) {
-              this.logger.info('Sending diff data to webview');
-              this.view?.webview.postMessage({
-                type: 'showDiff',
-                data: {
-                  file: update.result.file,
-                  lines: update.result.lines,
-                  language: update.result.language,
-                  originalContent: update.result.originalContent,
-                  onApply: () => {
-                    // Will be handled by webview message
-                  },
-                  onReject: () => {
-                    // Will be handled by webview message
-                  },
-                  onOpenInEditor: () => {
-                    // Will be handled by webview message
-                  },
-                },
-              });
-            }
-
-            break;
-
-          case 'toolError':
-            this.logger.error(`Tool error: ${update.toolCall?.function.name} - ${update.error}`);
-            // Send tool error notification to webview for live feedback
-            if (update.toolCall && update.toolExecutionId) {
-              this.view?.webview.postMessage({
-                type: 'toolExecutionError',
-                conversationId,
-                data: {
-                  messageId: update.toolExecutionId, // Use consistent ID from AgentLoop
-                  toolName: update.toolCall.function.name,
-                  target: this.getToolTarget(update.toolCall),
-                  duration: update.duration,
-                  error: update.error,
-                  arguments: update.toolCall.function.arguments,
-                },
-              });
-            }
-            break;
-
-          case 'complete':
-            this.logger.info('Agent loop complete');
-            // Send final completion message
-            this.view?.webview.postMessage({
-              type: 'streamChunk',
-              conversationId,
-              data: {
-                content: '',
-                thinking: '',
-                toolCalls: [],
-              },
-              done: true,
-            });
-            break;
-
-          case 'maxIterations':
-            this.logger.warn('Agent loop reached max iterations');
-            // Send detailed max iterations warning to webview with context
-            this.view?.webview.postMessage({
-              type: 'maxIterationsWarning',
-              conversationId,
-              data: {
-                message: update.message,
-                context: update.context,
-              },
-            });
-            break;
-        }
-      },
-      tools,
-      model // Pass the model parameter
-    );
+              break;
+          }
+        },
+        tools,
+        model // Pass the model parameter
+      );
+    } finally {
+      // Clear the current agent loop instance
+      this.currentAgentLoop = undefined;
+      this.logger.info('Agent loop instance cleared');
+    }
   }
 
   /**
@@ -780,6 +1103,45 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   /**
+   * Convert technical tool names to user-friendly display names
+   */
+  private getToolDisplayName(toolName: string): string {
+    const toolNameMap: Record<string, string> = {
+      // File System Tools
+      forgeai_readFile: 'Read file',
+      forgeai_writeFile: 'Write file',
+      forgeai_listFiles: 'List files',
+      forgeai_listDirectory: 'List directory',
+      forgeai_createDirectory: 'Create directory',
+      forgeai_deleteFile: 'Delete file',
+      forgeai_copyFile: 'Copy file',
+      forgeai_renameFile: 'Rename file',
+      forgeai_getFileStats: 'Get file info',
+      forgeai_watchFiles: 'Watch files',
+      forgeai_findFiles: 'Find files',
+      forgeai_generateDiff: 'Generate diff',
+      forgeai_searchInFiles: 'Search in files',
+
+      // Terminal Tools
+      forgeai_runCommand: 'Run command',
+      forgeai_createTerminal: 'Create terminal',
+
+      // Git Tools
+      forgeai_gitStatus: 'Git status',
+      forgeai_gitCommit: 'Git commit',
+      forgeai_gitPush: 'Git push',
+      forgeai_gitPull: 'Git pull',
+      forgeai_gitCreateBranch: 'Create branch',
+
+      // Diagnostics Tools
+      forgeai_getErrors: 'Get errors',
+      forgeai_getDiagnostics: 'Get diagnostics',
+    };
+
+    return toolNameMap[toolName] || toolName.replace('forgeai_', '');
+  }
+
+  /**
    * Extract target information from tool call arguments
    */
   private getToolTarget(toolCall: any): string | undefined {
@@ -802,6 +1164,55 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       this.logger.error('Failed to extract tool target', error);
       return undefined;
     }
+  }
+
+  /**
+   * Handle stopping the agent loop
+   */
+  private handleStopAgentLoop(conversationId: string): void {
+    this.logger.info(`Stopping agent loop for conversation: ${conversationId}`);
+
+    if (this.currentAgentLoop) {
+      // Call stop() on the agent loop
+      this.currentAgentLoop.stop();
+      this.logger.info('Agent loop stop requested');
+
+      // Send stopped message to webview
+      this.view?.webview.postMessage({
+        type: 'agentLoopStopped',
+        conversationId,
+      });
+
+      // Send a message to the conversation
+      this.view?.webview.postMessage({
+        type: 'streamChunk',
+        conversationId,
+        data: {
+          content: '\n\n⏹ Stopped by user',
+          thinking: '',
+          toolCalls: [],
+        },
+        done: true,
+      });
+    } else {
+      this.logger.warn('No active agent loop to stop');
+    }
+  }
+
+  /**
+   * Handle retry after error (Task 16.2)
+   * Re-execute the failed operation by resending the last user message
+   */
+  private async handleRetryAfterError(conversationId: string, errorMessage: any): Promise<void> {
+    this.logger.info(`Retrying after error in conversation: ${conversationId}`);
+    this.logger.info(`Error message: ${JSON.stringify(errorMessage)}`);
+
+    // Request conversation history from webview to get the last user message
+    this.view?.webview.postMessage({
+      type: 'requestConversationHistory',
+      conversationId,
+      purpose: 'retry',
+    });
   }
 
   /**
@@ -959,12 +1370,16 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
   /**
    * Categorize error and return appropriate error information
+   * Task 16.2 - Log all errors to extension output channel for debugging
    */
   private categorizeError(error: unknown): {
     type: string;
     message: string;
     actionButton?: { label: string; url: string };
   } {
+    // Log error to output channel for debugging (Task 16.2)
+    this.logger.error('Error occurred during agent execution', error);
+
     if (error instanceof Error) {
       // ECONNREFUSED - Ollama not running
       if (
@@ -972,6 +1387,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         error.message.includes('fetch failed') ||
         error.message.includes('Cannot connect to Ollama')
       ) {
+        this.logger.error('OLLAMA_CONNECTION error: Cannot connect to Ollama service');
         return {
           type: 'OLLAMA_CONNECTION',
           message:
@@ -985,6 +1401,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
       // 404 - Model not found
       if (error.message.includes('404') || error.message.includes('Model not found')) {
+        this.logger.error('OLLAMA_MODEL_NOT_FOUND error: Model not available');
         return {
           type: 'OLLAMA_MODEL_NOT_FOUND',
           message: 'Model not found. Please pull the model using: ollama pull gpt-oss:120b-cloud',
@@ -1001,6 +1418,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         error.message.includes('timed out') ||
         error.name === 'AbortError'
       ) {
+        this.logger.error('OLLAMA_TIMEOUT error: Request timed out');
         return {
           type: 'OLLAMA_TIMEOUT',
           message: 'Ollama request timed out. The model may be loading. Please try again.',
@@ -1012,6 +1430,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       }
 
       // Generic error
+      this.logger.error(`UNKNOWN error: ${error.message}`);
       return {
         type: 'UNKNOWN',
         message: error.message || 'An unknown error occurred',
@@ -1019,6 +1438,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     }
 
     // Unknown error type
+    this.logger.error('UNKNOWN error: Non-Error object thrown');
     return {
       type: 'UNKNOWN',
       message: 'An unknown error occurred',

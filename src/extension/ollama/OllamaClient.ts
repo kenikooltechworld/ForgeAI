@@ -10,6 +10,7 @@ export interface OllamaMessage {
   thinking?: string;
   tool_calls?: OllamaToolCall[];
   tool_name?: string;
+  images?: string[]; // Base64 encoded images for vision models
 }
 
 /**
@@ -200,7 +201,14 @@ export class OllamaClient {
         },
         body: JSON.stringify({
           model: request.model,
-          messages: request.messages,
+          messages: request.messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            thinking: msg.thinking,
+            tool_calls: msg.tool_calls,
+            tool_name: msg.tool_name,
+            images: msg.images, // Include images for vision models
+          })),
           stream: false,
           think: request.think ?? false,
           tools: request.tools,
@@ -242,7 +250,14 @@ export class OllamaClient {
         },
         body: JSON.stringify({
           model: request.model,
-          messages: request.messages,
+          messages: request.messages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+            thinking: msg.thinking,
+            tool_calls: msg.tool_calls,
+            tool_name: msg.tool_name,
+            images: msg.images, // Include images for vision models
+          })),
           stream: true,
           think: request.think ?? false,
           tools: request.tools,

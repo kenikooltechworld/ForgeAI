@@ -42,6 +42,7 @@ interface ConversationState {
   addConversation: (conversation: Conversation) => void;
   addMessage: (conversationId: string, message: Message) => void;
   updateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
+  removeMessage: (conversationId: string, messageId: string) => void;
   setActiveConversationId: (id: string) => void;
   removeConversation: (id: string) => void;
   clearConversation: (id: string) => void;
@@ -97,9 +98,12 @@ const vscodeStorage = createJSONStorage(() => ({
   getItem: async (name: string): Promise<string | null> => {
     return new Promise((resolve) => {
       if (!window.vscode) {
+        console.warn('[ConversationStore] VS Code API not available');
         resolve(null);
         return;
       }
+
+      console.log(`[ConversationStore] Requesting state for key: ${name}`);
 
       // Request state from extension
       window.vscode.postMessage({ type: 'getWorkspaceState', key: name });
@@ -108,6 +112,7 @@ const vscodeStorage = createJSONStorage(() => ({
       const handler = (event: MessageEvent) => {
         const message = event.data;
         if (message.type === 'workspaceState' && message.key === name) {
+          console.log(`[ConversationStore] Received state for key: ${name}`, message.value);
           window.removeEventListener('message', handler);
           resolve(message.value ? JSON.stringify(message.value) : null);
         }
@@ -115,30 +120,54 @@ const vscodeStorage = createJSONStorage(() => ({
 
       window.addEventListener('message', handler);
 
-      // Timeout after 2 seconds
+      // Timeout after 5 seconds (increased from 2 seconds)
       setTimeout(() => {
+        console.warn(`[ConversationStore] Timeout waiting for state: ${name}`);
         window.removeEventListener('message', handler);
         resolve(null);
-      }, 2000);
+      }, 5000);
     });
   },
   setItem: async (name: string, value: string): Promise<void> => {
-    if (!window.vscode) return;
+    if (!window.vscode) {
+      console.warn('[ConversationStore] VS Code API not available for setItem');
+      return;
+    }
 
     try {
       const parsed = JSON.parse(value);
+      console.log(`[ConversationStore] Saving state for key: ${name}`);
       window.vscode.postMessage({
         type: 'setWorkspaceState',
         key: name,
         value: parsed,
       });
     } catch (error) {
-      console.error('Failed to parse state for storage:', error);
+      console.error('[ConversationStore] Failed to parse state for storage:', error);
+
+      // Check if this is a quota exceeded error (Task 15.2)
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        // Notify the app about storage quota error
+        window.dispatchEvent(
+          new CustomEvent('storageQuotaExceeded', {
+            detail: {
+              key: name,
+              error: error.message,
+            },
+          })
+        );
+      }
+
+      throw error;
     }
   },
   removeItem: async (name: string): Promise<void> => {
-    if (!window.vscode) return;
+    if (!window.vscode) {
+      console.warn('[ConversationStore] VS Code API not available for removeItem');
+      return;
+    }
 
+    console.log(`[ConversationStore] Removing state for key: ${name}`);
     window.vscode.postMessage({
       type: 'setWorkspaceState',
       key: name,
@@ -197,6 +226,18 @@ export const useConversationStore = create<ConversationState>()(
                   messages: conversation.messages.map((msg) =>
                     msg.id === messageId ? { ...msg, ...updates } : msg
                   ),
+                }
+              : conversation
+          ),
+        })),
+
+      removeMessage: (conversationId, messageId) =>
+        set((state) => ({
+          conversations: state.conversations.map((conversation) =>
+            conversation.id === conversationId
+              ? {
+                  ...conversation,
+                  messages: conversation.messages.filter((msg) => msg.id !== messageId),
                 }
               : conversation
           ),

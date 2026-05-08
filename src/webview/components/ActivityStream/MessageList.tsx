@@ -1,12 +1,14 @@
-import { MessageSquare, Search, AlertTriangle, ChevronDown } from 'lucide-react';
+import { MessageSquare, Search, ChevronDown } from 'lucide-react';
 import { useConversationStore } from '../../store/conversationStore';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { ErrorNotification } from '../ErrorNotification';
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { Message } from '../../types';
 import type { MessageFilterType } from './MessageFilter';
+import type { ErrorType } from '../ErrorNotification';
 
 interface MessageListProps {
   filterType?: MessageFilterType;
@@ -154,12 +156,33 @@ function MessageList({
     );
   };
 
-  // Handle action button click
-  const handleActionButtonClick = (url: string) => {
+  // Handle error retry
+  const handleErrorRetry = (message: Message) => {
+    // Send retry message to extension
     window.vscode.postMessage({
-      type: 'openExternal',
-      url,
+      type: 'retryAfterError',
+      conversationId: activeConversationId,
+      errorMessage: message,
     });
+  };
+
+  // Handle error skip
+  const handleErrorSkip = (message: Message) => {
+    // Send skip message to extension
+    window.vscode.postMessage({
+      type: 'skipAfterError',
+      conversationId: activeConversationId,
+      errorMessage: message,
+    });
+  };
+
+  // Handle error dismiss
+  const handleErrorDismiss = (messageId: string) => {
+    // Remove error message from conversation
+    if (activeConversationId) {
+      const removeMessage = useConversationStore.getState().removeMessage;
+      removeMessage(activeConversationId, messageId);
+    }
   };
 
   // Render a single message item
@@ -194,27 +217,16 @@ function MessageList({
 
         {/* Error Message */}
         {message.role === 'error' && message.error && (
-          <div className="rounded border border-error bg-error-bg p-3 text-sm">
-            {/* Error icon and message */}
-            <div className="flex items-start gap-2">
-              <AlertTriangle size={16} style={{ color: 'var(--vscode-errorForeground)' }} />
-              <div className="flex-1">
-                <div className="text-error">
-                  {highlightText(message.error.message, searchQuery)}
-                </div>
-
-                {/* Action button */}
-                {message.error.actionButton && (
-                  <button
-                    onClick={() => handleActionButtonClick(message.error!.actionButton!.url)}
-                    className="mt-2 rounded border border-button bg-button px-3 py-1 text-xs text-button hover:bg-button-hover"
-                  >
-                    {message.error.actionButton.label}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          <ErrorNotification
+            errorType={(message.error.type as ErrorType) || 'UNKNOWN'}
+            title={message.error.type || 'Error'}
+            message={message.error.message}
+            onRetry={() => handleErrorRetry(message)}
+            onSkip={() => handleErrorSkip(message)}
+            onDismiss={() => handleErrorDismiss(message.id)}
+            autoDismiss={true}
+            dismissTimeout={10000}
+          />
         )}
 
         {/* Message content (for non-error messages) */}
@@ -226,6 +238,25 @@ function MessageList({
                 : 'border-(--vscode-input-border) bg-(--vscode-sideBar-background) text-(--vscode-editor-foreground)'
             }`}
           >
+            {/* Display attached images for user messages */}
+            {message.role === 'user' && message.images && message.images.length > 0 && (
+              <div className="flex gap-2 mb-2 flex-wrap">
+                {message.images.map((image, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded border border-(--vscode-input-border) overflow-hidden"
+                  >
+                    <img
+                      src={image.dataUrl}
+                      alt={image.name}
+                      className="h-16 w-16 object-cover"
+                      title={image.name}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
             {message.role === 'assistant' ? (
               <MarkdownRenderer content={message.content} />
             ) : (
@@ -282,9 +313,6 @@ function MessageList({
           <button
             onClick={handleJumpToLatest}
             className="flex items-center gap-2 rounded px-4 py-2 text-sm shadow-lg transition-colors bg-button text-button hover:bg-button-hover"
-            style={{
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            }}
           >
             Jump to latest{' '}
             <ChevronDown size={14} style={{ color: 'var(--vscode-button-foreground)' }} />

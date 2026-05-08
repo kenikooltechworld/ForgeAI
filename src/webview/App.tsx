@@ -1,12 +1,70 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
+import {
+  useEffect,
+  useState,
+  useCallback,
+  lazy,
+  Suspense,
+  Component,
+  ErrorInfo,
+  ReactNode,
+} from 'react';
 import { MessageSquare } from 'lucide-react';
 import WelcomeScreen from './components/WelcomeScreen/WelcomeScreen';
 import SplitScreen from './components/SplitScreen/SplitScreen';
 import { useVSCodeMessage } from './hooks/useVSCodeMessage';
 import { useConversationStore } from './store/conversationStore';
+import { StorageQuotaError } from './components/StorageQuotaError';
 
 // Lazy load Settings panel for code splitting
 const Settings = lazy(() => import('./components/Settings/Settings'));
+
+// Error Boundary for Settings component
+class SettingsErrorBoundary extends Component<
+  { children: ReactNode; onError: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode; onError: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(_: Error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[ForgeAI] Settings component error:', error, errorInfo);
+    this.props.onError();
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-(--vscode-editor-background) p-6 rounded border border-(--vscode-input-border) max-w-md">
+            <h2 className="text-lg font-semibold mb-2 text-(--vscode-editor-foreground)">
+              Settings Error
+            </h2>
+            <p className="text-sm text-(--vscode-descriptionForeground) mb-4">
+              Failed to load settings. Please try again.
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false });
+                this.props.onError();
+              }}
+              className="px-4 py-2 rounded bg-(--vscode-button-background) text-(--vscode-button-foreground) hover:bg-(--vscode-button-hoverBackground)"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 type SettingsPayload = { showThinking: boolean };
 type OnboardingStatePayload = {
@@ -21,6 +79,7 @@ function App() {
   const [showThinking, setShowThinking] = useState(true);
   const [isReady, setIsReady] = useState(false);
   const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
+  const [showStorageQuotaError, setShowStorageQuotaError] = useState(false);
 
   // Get conversations from store to determine which view to show
   const conversations = useConversationStore((state) => state.conversations);
@@ -56,6 +115,17 @@ function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleThinking]);
+
+  // Storage quota error handler (Task 15.2)
+  useEffect(() => {
+    const handleStorageQuotaExceeded = () => {
+      console.log('[ForgeAI] Storage quota exceeded - showing error dialog');
+      setShowStorageQuotaError(true);
+    };
+
+    window.addEventListener('storageQuotaExceeded', handleStorageQuotaExceeded);
+    return () => window.removeEventListener('storageQuotaExceeded', handleStorageQuotaExceeded);
+  }, []);
 
   useEffect(() => {
     console.log('[ForgeAI] App useEffect - requesting settings and onboarding state');
@@ -100,6 +170,17 @@ function App() {
         if (message.level) {
           setAutonomyLevel(message.level);
         }
+      } else if (message.type === 'storageQuotaExceeded') {
+        // Handle storage quota exceeded error from extension (Task 15.2)
+        console.log('[ForgeAI] Storage quota exceeded error received from extension');
+        setShowStorageQuotaError(true);
+      } else if (message.type === 'themeChanged') {
+        // Handle theme change (Task 14.1)
+        console.log('[ForgeAI] Theme changed:', message.theme);
+        // Force re-render to pick up new CSS variables
+        // CSS variables are automatically updated by VS Code, we just need to trigger a re-render
+        setIsReady(false);
+        setTimeout(() => setIsReady(true), 0);
       } else if (message.type === 'showDiff') {
         console.log('[ForgeAI] Show diff message received:', message.data);
         showDiff(message.data);
@@ -158,12 +239,16 @@ function App() {
           });
         }
       } else if (message.type === 'maxIterationsWarning') {
-        console.log('[ForgeAI] Max iterations warning:', message.data);
+        console.log('[ForgeAI] ⚠️⚠️⚠️ MAX ITERATIONS WARNING RECEIVED');
+        console.log('[ForgeAI] Message data:', message.data);
+        console.log('[ForgeAI] Conversation ID:', message.conversationId);
+        console.log('[ForgeAI] Active conversation ID:', activeConversationId);
         showMaxIterationsWarning(
           message.conversationId,
           message.data.message,
           message.data.context
         );
+        console.log('[ForgeAI] showMaxIterationsWarning called');
       }
     },
     [
@@ -265,11 +350,24 @@ function App() {
     <div className="h-full bg-(--vscode-editor-background) text-(--vscode-editor-foreground)">
       <SplitScreen />
 
-      {/* Settings Panel - Lazy loaded */}
+      {/* Settings Panel - Lazy loaded with error boundary */}
       {showSettings && (
-        <Suspense fallback={<div className="settings-loading">Loading settings...</div>}>
-          <Settings onClose={closeSettings} />
-        </Suspense>
+        <SettingsErrorBoundary onError={closeSettings}>
+          <Suspense
+            fallback={
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="text-(--vscode-editor-foreground)">Loading settings...</div>
+              </div>
+            }
+          >
+            <Settings onClose={closeSettings} />
+          </Suspense>
+        </SettingsErrorBoundary>
+      )}
+
+      {/* Storage Quota Error Dialog (Task 15.2) */}
+      {showStorageQuotaError && (
+        <StorageQuotaError onClose={() => setShowStorageQuotaError(false)} />
       )}
     </div>
   );

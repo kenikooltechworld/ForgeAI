@@ -224,8 +224,8 @@ function DetailedReasoningModal({ thinking, confidence, onClose }: DetailedReaso
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-(--vscode-editor-background)"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: 'var(--vscode-editor-background)', opacity: 0.95 }}
       onClick={onClose}
     >
       <div

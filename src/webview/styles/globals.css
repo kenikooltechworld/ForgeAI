@@ -643,9 +643,7 @@ button:disabled {
 
 /* Shadow utilities */
 .shadow-lg {
-  box-shadow:
-    0 10px 15px -3px rgba(0, 0, 0, 0.1),
-    0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 15px -3px var(--vscode-widget-shadow);
 }
 
 /* Grid utilities */
@@ -853,30 +851,33 @@ button:disabled {
 }
 
 .confidence-badge-high {
-  background-color: rgba(34, 197, 94, 0.2);
-  color: rgb(134, 239, 172);
+  background-color: var(--vscode-testing-iconPassed);
+  opacity: 0.2;
+  color: var(--vscode-testing-iconPassed);
 }
 
 .confidence-badge-medium {
-  background-color: rgba(234, 179, 8, 0.2);
-  color: rgb(253, 224, 71);
+  background-color: var(--vscode-editorWarning-foreground);
+  opacity: 0.2;
+  color: var(--vscode-editorWarning-foreground);
 }
 
 .confidence-badge-low {
-  background-color: rgba(239, 68, 68, 0.2);
-  color: rgb(252, 165, 165);
+  background-color: var(--vscode-errorForeground);
+  opacity: 0.2;
+  color: var(--vscode-errorForeground);
 }
 
 .thinking-block-high {
-  border-color: rgb(34, 197, 94);
+  border-color: var(--vscode-testing-iconPassed);
 }
 
 .thinking-block-medium {
-  border-color: rgb(234, 179, 8);
+  border-color: var(--vscode-editorWarning-foreground);
 }
 
 .thinking-block-low {
-  border-color: rgb(239, 68, 68);
+  border-color: var(--vscode-errorForeground);
 }
 
 /* Streaming cursor animation for markdown renderer */

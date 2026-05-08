@@ -90,6 +90,9 @@ export class ForgeAIExtension {
       this.context.subscriptions.push(webviewDisposable);
       logger.info('Webview provider registered successfully for view ID: forgeai.chatView');
 
+      // Register theme change listener (Task 14.1)
+      this.registerThemeChangeListener(logger);
+
       // Register Language Model Chat Provider (Task 11.1)
       this.registerLanguageModelChatProvider(logger, ollama, toolRegistry);
 
@@ -99,6 +102,21 @@ export class ForgeAIExtension {
       logger.error('Failed to register providers', error);
       throw error;
     }
+  }
+
+  private registerThemeChangeListener(logger: Logger): void {
+    // Listen for theme changes (Task 14.1)
+    const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme((theme) => {
+      logger.info(`Theme changed to: ${theme.kind}`);
+
+      // Forward theme change to webview
+      if (this.webviewManager) {
+        this.webviewManager.notifyThemeChange(theme);
+      }
+    });
+
+    this.context.subscriptions.push(themeChangeDisposable);
+    logger.info('Theme change listener registered');
   }
 
   private async registerLanguageModelChatProvider(

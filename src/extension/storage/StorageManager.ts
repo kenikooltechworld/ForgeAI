@@ -9,7 +9,15 @@ export class StorageManager {
   }
 
   public async setWorkspaceValue<T>(key: string, value: T): Promise<void> {
-    await this.context.workspaceState.update(key, value);
+    try {
+      await this.context.workspaceState.update(key, value);
+    } catch (error) {
+      // Check if this is a quota exceeded error (Task 15.2)
+      if (error instanceof Error && error.message.includes('quota')) {
+        throw new Error('STORAGE_QUOTA_EXCEEDED');
+      }
+      throw error;
+    }
   }
 
   public getGlobalValue<T>(key: string, defaultValue: T): T {

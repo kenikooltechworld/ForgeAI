@@ -42,7 +42,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelFetchError, setModelFetchError] = useState<string | null>(null);
 
-  // Curated list of 10 models (5 cloud + 5 local)
+  // Curated list of 12 models (5 cloud + 7 local)
   const curatedModels: OllamaModel[] = [
     // Cloud Models
     {
@@ -120,6 +120,22 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       capabilities: ['Tools ✓'],
       contextWindow: '32K',
       vram: '~6GB VRAM',
+    },
+    {
+      name: 'llava:7b',
+      displayName: 'LLaVA-7B',
+      type: 'local',
+      capabilities: ['Vision', 'Tools ✓'],
+      contextWindow: '4K',
+      vram: '~5GB VRAM',
+    },
+    {
+      name: 'llava:13b',
+      displayName: 'LLaVA-13B',
+      type: 'local',
+      capabilities: ['Vision', 'Tools ✓'],
+      contextWindow: '4K',
+      vram: '~9GB VRAM',
     },
   ];
 
@@ -344,7 +360,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       size={16}
                       style={{ color: 'var(--vscode-editorWarning-foreground)' }}
                     />
-                    This model is not installed. Run: ollama pull {selectedModel}
+                    This model is not installed. Install it first to use this model.
                   </p>
                 )}
             </div>
@@ -426,21 +442,6 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 </span>
               </label>
               <p className="settings-description">Show only results</p>
-            </div>
-          </section>
-
-          {/* Keyboard Shortcut Hint */}
-          <section className="settings-section">
-            <div className="settings-hint">
-              <Lightbulb
-                size={16}
-                style={{ color: 'var(--vscode-descriptionForeground)' }}
-                className="settings-hint-icon"
-              />
-              <span className="settings-hint-text">
-                Tip: Use <kbd>Cmd+/</kbd> (Mac) or <kbd>Ctrl+/</kbd> (Windows/Linux) to quickly
-                toggle thinking visibility
-              </span>
             </div>
           </section>
         </div>
