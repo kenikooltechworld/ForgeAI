@@ -5,6 +5,7 @@ import { Logger } from '../utils/Logger';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { generateSystemPrompt, getWorkspaceContext } from './SystemPrompt';
 import { MessageRouter, RoutingContext, RoutingResult } from '../classification/MessageRouter';
+import type { RagService } from '../rag/RagService';
 
 /**
  * Agent Loop Update Types
@@ -59,7 +60,8 @@ export interface AgentLoopUpdate {
  * Follows Requirements 18.1-18.5 and design.md Agent Loop specification
  */
 export class AgentLoop {
-  private readonly maxIterations = 20; // Max iterations before stopping (Requirement 48.1, 48.2)
+  // Backward-compatible default cap (older UI/webview assumes a warning when capped)
+  private readonly defaultMaxIterations = 20; // Max iterations before stopping (Requirement 48.1, 48.2)
   private isRunning = false;
   private shouldStop = false;
   private messageRouter = new MessageRouter(); // Message classification system
@@ -67,7 +69,8 @@ export class AgentLoop {
   constructor(
     private readonly ollamaClient: OllamaClient,
     private readonly logger: Logger,
-    private readonly toolRegistry?: ToolRegistry
+    private readonly toolRegistry?: ToolRegistry,
+    private readonly ragService?: RagService
   ) {}
 
   /**
@@ -81,7 +84,8 @@ export class AgentLoop {
     initialMessages: OllamaMessage[],
     onUpdate: (update: AgentLoopUpdate) => void,
     tools: any[] = [],
-    model: string = 'gpt-oss:120b-cloud'
+    model: string = 'gpt-oss:120b-cloud',
+    options?: { maxIterations?: number } // undefined => unbounded (autonomous)
   ): Promise<void> {
     this.logger.info('Starting agent loop execution');
     this.logger.info(`Using model: ${model}`);
@@ -104,7 +108,18 @@ export class AgentLoop {
     let routing: RoutingResult | undefined;
     const userMessage = initialMessages.find((m) => m.role === 'user')?.content;
 
+    // Always keep ragChunks available for the final systemPrompt as well.
+    const ragChunks: Array<{ text: string; score?: number; url?: string; sourceId?: string }> = [];
+
     if (userMessage) {
+      // Retrieve RAG context once per user message (MVP)
+      const fetched =
+        this.ragService && userMessage
+          ? await this.ragService.retrieve({ query: userMessage, topK: 6 })
+          : [];
+
+      ragChunks.push(...fetched);
+
       const routingContext: RoutingContext = {
         userMessage,
         workspaceContext: {
@@ -114,8 +129,8 @@ export class AgentLoop {
         sessionHistory: [], // TODO: Add session history
       };
 
-      // Generate base system prompt
-      const baseSystemPrompt = generateSystemPrompt(workspaceContext, language);
+      // Generate base system prompt (optionally grounded with RAG)
+      const baseSystemPrompt = generateSystemPrompt(workspaceContext, language, ragChunks);
 
       // Route the message and get category-specific system prompt
       routing = this.messageRouter.route(routingContext, baseSystemPrompt);
@@ -133,9 +148,12 @@ export class AgentLoop {
       });
     }
 
-    // Prepare messages with appropriate system prompt
+    // Prepare messages with appropriate system prompt.
+    // IMPORTANT: Always pass ragChunks into the fallback generateSystemPrompt so
+    // that the final system prompt is consistently grounded.
     const messages = [...initialMessages];
-    const systemPrompt = routing?.systemPrompt || generateSystemPrompt(workspaceContext, language);
+    const systemPrompt =
+      routing?.systemPrompt || generateSystemPrompt(workspaceContext, language, ragChunks);
 
     if (messages.length === 0 || messages[0].role !== 'system') {
       messages.unshift({
@@ -154,19 +172,11 @@ export class AgentLoop {
 
     // Adjust tool usage based on classification
     let effectiveTools = tools;
-    let effectiveMaxIterations = this.maxIterations;
 
     if (routing) {
       if (!routing.shouldUseTool) {
         effectiveTools = []; // Disable tools for conversation/planning categories
         this.logger.info('Tools disabled based on message classification');
-      }
-
-      if (routing.maxToolCalls > 0 && routing.maxToolCalls < this.maxIterations) {
-        effectiveMaxIterations = Math.min(routing.maxToolCalls + 2, this.maxIterations); // +2 for conversation turns
-        this.logger.info(
-          `Max iterations adjusted to ${effectiveMaxIterations} based on classification`
-        );
       }
     }
 
@@ -175,9 +185,9 @@ export class AgentLoop {
     const MIN_REQUEST_INTERVAL = 500; // Minimum 500ms between requests
 
     try {
-      while (iteration < effectiveMaxIterations && !this.shouldStop) {
+      while (!this.shouldStop) {
         iteration++;
-        this.logger.info(`Agent loop iteration ${iteration}/${effectiveMaxIterations}`);
+        this.logger.info(`Agent loop iteration ${iteration}`);
         onUpdate({ type: 'iteration', iteration });
 
         // Rate limiting: Wait if we're making requests too quickly
@@ -198,9 +208,7 @@ export class AgentLoop {
             `Tool names being sent: ${effectiveTools.map((t: any) => t.function.name).join(', ')}`
           );
         } else {
-          this.logger.info(
-            'No tools being sent to Ollama (disabled by classification or not available)'
-          );
+          this.logger.info('No tools being sent to Ollama (disabled by classification or not available)');
         }
 
         // Get response from Ollama with streaming
@@ -241,9 +249,7 @@ export class AgentLoop {
 
               // Log token usage when available
               if (tokenUsage) {
-                this.logger.info(
-                  `📊📊📊 SENDING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(tokenUsage)}`
-                );
+                this.logger.info(`📊📊📊 SENDING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(tokenUsage)}`);
               }
 
               if (streamHandler.isDone()) {
@@ -336,9 +342,7 @@ export class AgentLoop {
               content: JSON.stringify(result),
             });
 
-            this.logger.info(
-              `Tool ${toolCall.function.name} completed successfully in ${toolDuration}ms`
-            );
+            this.logger.info(`Tool ${toolCall.function.name} completed successfully in ${toolDuration}ms`);
             onUpdate({
               type: 'toolComplete',
               toolCall,
@@ -371,33 +375,9 @@ export class AgentLoop {
         // Continue loop with updated message history (Requirement 18.3)
       }
 
-      // Check if we hit max iterations (Requirement 18.5)
-      if (iteration >= effectiveMaxIterations) {
-        this.logger.warn(`Agent loop reached max iterations (${effectiveMaxIterations})`);
-
-        // Gather context about what the agent was trying to do
-        const lastAssistantMessage = messages
-          .slice()
-          .reverse()
-          .find((m) => m.role === 'assistant');
-
-        const recentToolCalls = messages
-          .slice(-10) // Last 10 messages
-          .filter((m) => m.role === 'tool')
-          .map((m) => m.tool_name)
-          .filter((name): name is string => Boolean(name));
-
-        onUpdate({
-          type: 'maxIterations',
-          message: `Agent reached maximum iterations (${effectiveMaxIterations}). Task may be incomplete.`,
-          context: {
-            lastThinking: lastAssistantMessage?.thinking,
-            lastContent: lastAssistantMessage?.content,
-            recentTools: recentToolCalls,
-            totalIterations: iteration,
-          },
-        });
-      }
+      // Intentionally no max-iteration enforcement.
+      // Loop terminates naturally when the model emits no tool calls,
+      // or when the user calls stop().
     } finally {
       this.isRunning = false;
       this.shouldStop = false;

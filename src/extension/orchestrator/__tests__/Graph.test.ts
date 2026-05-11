@@ -251,6 +251,70 @@ describe('LangGraph State Machine', () => {
       expect(result.error).toBeDefined();
       expect(result.error?.recoverable).toBe(true);
     });
+
+    test('should refine when critic feedback exists', async () => {
+      const refiningExecutor = new ExecutorAgent(mockToolRegistry, mockOllamaClient);
+
+      const previousOutput: ExecutorOutput = {
+        taskId: 'task-1',
+        status: 'partial',
+        result: { x: 1 },
+        selfEvaluation: { confidence: 0.4, concerns: ['old'], suggestions: [] },
+        toolsUsed: [],
+        duration: 100,
+        timestamp: Date.now(),
+      };
+
+      const refinedOutput: ExecutorOutput = {
+        taskId: 'task-1',
+        status: 'success',
+        result: { x: 2 },
+        selfEvaluation: { confidence: 0.8, concerns: [], suggestions: [] },
+        toolsUsed: ['forgeai_writeFile'],
+        duration: 120,
+        timestamp: Date.now(),
+      };
+
+      jest.spyOn(refiningExecutor, 'execute').mockResolvedValue(previousOutput);
+      jest.spyOn(refiningExecutor, 'refine').mockResolvedValue(refinedOutput);
+
+      const task: Task = {
+        id: 'task-1',
+        type: 'generate_fix',
+        description: 'Generate fix',
+        dependencies: [],
+        criteria: { functional: ['Fix applied'], quality: ['No TODO'] },
+        priority: 'P0',
+        estimatedDuration: 5000,
+      };
+
+      const state: typeof StateAnnotation.State = {
+        userRequest: 'Test request',
+        plan: null,
+        currentTask: task,
+        results: new Map([['task-1', previousOutput]]),
+        iteration: 1,
+        maxIterations: 5,
+        status: 'executing' as WorkflowStatus,
+        error: undefined,
+        parallelTasks: undefined,
+        parallelResults: undefined,
+        lastFeedback: {
+          status: 'fail',
+          issues: ['issue'],
+          requiredChanges: ['change'],
+          suggestions: ['suggestion'],
+        },
+      };
+
+      const refiningBuilder = new GraphBuilder(plannerAgent, refiningExecutor, criticAgent);
+
+      const result = await refiningBuilder['executorNode'](state);
+
+      expect(result).toBeDefined();
+      expect(result.results?.get('task-1')).toEqual(refinedOutput);
+      expect(refiningExecutor.refine).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Critic Node', () => {

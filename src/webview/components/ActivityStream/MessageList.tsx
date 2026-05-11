@@ -2,9 +2,10 @@ import { MessageSquare, Search, ChevronDown } from 'lucide-react';
 import { useConversationStore } from '../../store/conversationStore';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
-import { MarkdownRenderer } from '../MarkdownRenderer';
+import { MarkdownRenderer, StreamingMarkdownRenderer } from '../MarkdownRenderer';
 import { ErrorNotification } from '../ErrorNotification';
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { useStreamingResponse } from '../../hooks/useStreamingResponse';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { Message } from '../../types';
 import type { MessageFilterType } from './MessageFilter';
@@ -22,6 +23,7 @@ function MessageList({
   onResultCountChange,
 }: MessageListProps) {
   const conversations = useConversationStore((state) => state.conversations);
+  const { isStreaming, currentAssistantMessageId } = useStreamingResponse();
   const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
@@ -258,7 +260,14 @@ function MessageList({
             )}
 
             {message.role === 'assistant' ? (
-              <MarkdownRenderer content={message.content} />
+              isStreaming && currentAssistantMessageId === message.id ? (
+                <StreamingMarkdownRenderer
+                  content={message.content}
+                  isStreaming={true}
+                />
+              ) : (
+                <MarkdownRenderer content={message.content} />
+              )
             ) : (
               <div>{highlightText(message.content, searchQuery)}</div>
             )}

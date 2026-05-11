@@ -17,6 +17,8 @@ import {
   CriticFeedback,
 } from '../orchestrator/types';
 
+import { RecoveryExecutor } from '../orchestrator/RecoveryExecutor';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Pattern Database (design.md Section 3.1)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -384,6 +386,13 @@ function parseTestOutput(output: string): TestRunResult {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class CriticAgent extends BaseAgent {
+  private readonly recoveryExecutor: RecoveryExecutor;
+
+  constructor(toolRegistry: ToolRegistry, ollamaClient: OllamaClient, logger?: any) {
+    super(toolRegistry, ollamaClient, logger);
+    this.recoveryExecutor = new RecoveryExecutor(toolRegistry);
+  }
+
   getName(): string {
     return 'Critic';
   }
@@ -474,7 +483,7 @@ ${qualityIssues.length > 0 ? `Quality Issues Found:\n${qualityIssues.join('\n')}
       }
 
       // 6. Build final CriticOutput — merge Ollama + heuristic results
-      return this.buildCriticOutput(
+      const criticOutput = this.buildCriticOutput(
         input.task.id,
         ollamaEvaluation,
         testResult,
@@ -482,6 +491,52 @@ ${qualityIssues.length > 0 ? `Quality Issues Found:\n${qualityIssues.join('\n')}
         qualityIssues,
         errorPattern
       );
+
+      // Phase 3: execute recovery when critic fails
+      if (criticOutput.status === 'fail') {
+        const errorMessage =
+          errorText ||
+          (input.executorOutput?.result?.error
+            ? String(input.executorOutput.result.error)
+            : null) ||
+          'Critic evaluation failed';
+
+        const recoveryResult = await this.recoveryExecutor.executeRecovery(
+          errorMessage
+        );
+
+        if (recoveryResult.succeeded) {
+          return {
+            ...criticOutput,
+            status: 'pass',
+            confidence: Math.max(criticOutput.confidence, recoveryResult.confidence),
+            feedback: {
+              ...criticOutput.feedback,
+              suggestions: [
+                ...criticOutput.feedback.suggestions,
+                `Recovery executed successfully for category "${recoveryResult.category ?? 'unknown'}".`,
+                ...recoveryResult.steps
+                  .filter((s) => s.succeeded)
+                  .map((s) => `- ${s.action} (${s.tool})`),
+              ],
+            },
+          };
+        }
+
+        // If recovery failed, keep criticOutput as fail (graph will retry/refine)
+        return {
+          ...criticOutput,
+          feedback: {
+            ...criticOutput.feedback,
+            suggestions: [
+              ...criticOutput.feedback.suggestions,
+              `Recovery attempt failed: ${recoveryResult.errorMessage ?? 'unknown error'}`,
+            ],
+          },
+        };
+      }
+
+      return criticOutput;
     }, 'evaluate');
   }
 

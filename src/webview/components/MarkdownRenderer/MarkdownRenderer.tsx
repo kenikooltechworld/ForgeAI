@@ -20,72 +20,22 @@ interface MarkdownRendererProps {
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const components: Components = {
     // Paragraphs
-    p: ({ node, ...props }) => (
-      <p
-        style={{
-          margin: '8px 0',
-          lineHeight: '1.6',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
+    p: ({ node, ...props }) => <p className="markdown-p" {...props} />,
 
     // Headings
-    h1: ({ node, ...props }) => (
-      <h1
-        style={{
-          fontSize: '1.5em',
-          fontWeight: 'bold',
-          margin: '16px 0 8px 0',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
-    h2: ({ node, ...props }) => (
-      <h2
-        style={{
-          fontSize: '1.3em',
-          fontWeight: 'bold',
-          margin: '14px 0 7px 0',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
-    h3: ({ node, ...props }) => (
-      <h3
-        style={{
-          fontSize: '1.1em',
-          fontWeight: 'bold',
-          margin: '12px 0 6px 0',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
+    h1: ({ node, ...props }) => <h1 className="markdown-h1" {...props} />,
+    h2: ({ node, ...props }) => <h2 className="markdown-h2" {...props} />,
+    h3: ({ node, ...props }) => <h3 className="markdown-h3" {...props} />,
 
     // Links
     a: ({ node, href, children, ...props }) => {
       const isExternal = href?.startsWith('http');
       return (
         <a
+          className="markdown-a"
           href={href}
           target={isExternal ? '_blank' : undefined}
           rel={isExternal ? 'noopener noreferrer' : undefined}
-          style={{
-            color: 'var(--vscode-textLink-foreground)',
-            textDecoration: 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.textDecoration = 'underline';
-            e.currentTarget.style.color = 'var(--vscode-textLink-activeForeground)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.textDecoration = 'none';
-            e.currentTarget.style.color = 'var(--vscode-textLink-foreground)';
-          }}
           {...props}
         >
           {children}
@@ -98,187 +48,48 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: Mark
     code: CodeBlock,
 
     // Lists
-    ul: ({ node, ...props }) => (
-      <ul
-        style={{
-          margin: '8px 0',
-          paddingLeft: '24px',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
-    ol: ({ node, ...props }) => (
-      <ol
-        style={{
-          margin: '8px 0',
-          paddingLeft: '24px',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
-    li: ({ node, ...props }) => (
-      <li
-        style={{
-          margin: '4px 0',
-          lineHeight: '1.6',
-        }}
-        {...props}
-      />
-    ),
+    ul: ({ node, ...props }) => <ul className="markdown-ul" {...props} />,
+    ol: ({ node, ...props }) => <ol className="markdown-ol" {...props} />,
+    li: ({ node, ...props }) => <li className="markdown-li" {...props} />,
 
     // Blockquotes
-    blockquote: ({ node, ...props }) => (
-      <blockquote
-        style={{
-          borderLeft: '4px solid var(--vscode-textBlockQuote-border)',
-          backgroundColor: 'var(--vscode-textBlockQuote-background)',
-          margin: '8px 0',
-          padding: '8px 12px',
-          color: 'var(--vscode-editor-foreground)',
-          fontStyle: 'italic',
-        }}
-        {...props}
-      />
-    ),
+    blockquote: ({ node, ...props }) => <blockquote className="markdown-blockquote" {...props} />,
 
     // Horizontal rule
-    hr: ({ node, ...props }) => (
-      <hr
-        style={{
-          border: 'none',
-          borderTop: '1px solid var(--vscode-panel-border)',
-          margin: '16px 0',
-        }}
-        {...props}
-      />
-    ),
+    hr: ({ node, ...props }) => <hr className="markdown-hr" {...props} />,
 
     // Strong (bold)
-    strong: ({ node, ...props }) => (
-      <strong
-        style={{
-          fontWeight: 'bold',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
+    strong: ({ node, ...props }) => <strong className="markdown-strong" {...props} />,
 
     // Emphasis (italic)
-    em: ({ node, ...props }) => (
-      <em
-        style={{
-          fontStyle: 'italic',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
+    em: ({ node, ...props }) => <em className="markdown-em" {...props} />,
 
     // Images
     img: ({ node, src, alt, ...props }) => (
-      <img
-        src={src}
-        alt={alt}
-        loading="lazy"
-        style={{
-          maxWidth: '100%',
-          height: 'auto',
-          borderRadius: '4px',
-          margin: '8px 0',
-        }}
-        {...props}
-      />
+      <img src={src} alt={alt} loading="lazy" className="markdown-img" {...props} />
     ),
 
     // Tables (GitHub Flavored Markdown)
     table: ({ node, ...props }) => (
-      <div style={{ overflowX: 'auto', margin: '16px 0' }}>
-        <table
-          style={{
-            borderCollapse: 'collapse',
-            width: '100%',
-            border: '1px solid var(--vscode-panel-border)',
-          }}
-          {...props}
-        />
+      <div className="markdown-table-wrap">
+        <table className="markdown-table" {...props} />
       </div>
     ),
-    thead: ({ node, ...props }) => (
-      <thead
-        style={{
-          backgroundColor: 'var(--vscode-editor-background)',
-        }}
-        {...props}
-      />
-    ),
+    thead: ({ node, ...props }) => <thead className="markdown-thead" {...props} />,
     tbody: ({ node, ...props }) => <tbody {...props} />,
-    tr: ({ node, ...props }) => (
-      <tr
-        style={{
-          borderBottom: '1px solid var(--vscode-panel-border)',
-        }}
-        {...props}
-      />
-    ),
-    th: ({ node, ...props }) => (
-      <th
-        style={{
-          border: '1px solid var(--vscode-panel-border)',
-          padding: '8px 12px',
-          textAlign: 'left',
-          fontWeight: 'bold',
-          color: 'var(--vscode-editor-foreground)',
-          backgroundColor: 'var(--vscode-sideBar-background)',
-        }}
-        {...props}
-      />
-    ),
-    td: ({ node, ...props }) => (
-      <td
-        style={{
-          border: '1px solid var(--vscode-panel-border)',
-          padding: '8px 12px',
-          color: 'var(--vscode-editor-foreground)',
-        }}
-        {...props}
-      />
-    ),
+    tr: ({ node, ...props }) => <tr className="markdown-tr" {...props} />,
+    th: ({ node, ...props }) => <th className="markdown-th" {...props} />,
+    td: ({ node, ...props }) => <td className="markdown-td" {...props} />,
 
     // Task lists (GitHub Flavored Markdown)
-    input: ({ node, ...props }) => (
-      <input
-        disabled
-        style={{
-          marginRight: '8px',
-          cursor: 'not-allowed',
-        }}
-        {...props}
-      />
-    ),
+    input: ({ node, ...props }) => <input disabled className="markdown-input" {...props} />,
 
     // Strikethrough (GitHub Flavored Markdown)
-    del: ({ node, ...props }) => (
-      <del
-        style={{
-          color: 'var(--vscode-descriptionForeground)',
-          textDecoration: 'line-through',
-        }}
-        {...props}
-      />
-    ),
+    del: ({ node, ...props }) => <del className="markdown-del" {...props} />,
   };
 
   return (
-    <div
-      style={{
-        color: 'var(--vscode-editor-foreground)',
-        fontSize: 'var(--vscode-editor-font-size)',
-        fontFamily: 'var(--vscode-font-family)',
-      }}
-    >
+    <div className="markdown-root">
       <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
         {content}
       </ReactMarkdown>

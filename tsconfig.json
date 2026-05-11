@@ -13,11 +13,10 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "baseUrl": ".",
     "paths": {
-      "@extension/*": ["src/extension/*"],
-      "@webview/*": ["src/webview/*"],
-      "@types": ["src/webview/types"]
+      "@extension/*": ["./src/extension/*"],
+      "@webview/*": ["./src/webview/*"],
+      "@types/*": ["./src/webview/types/*"]
     }
   },
   "include": ["src/**/*"],

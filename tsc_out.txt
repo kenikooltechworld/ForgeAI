@@ -1,0 +1,40 @@
+src/extension/extension.ts(89,11): error TS2322: Type '<T>(key: string, defaultValue: T) => T' is not assignable to type '<T>(key: string, defaultValue: T) => Promise<T>'.
+  Type 'T' is not assignable to type 'Promise<T>'.
+src/extension/extension.ts(174,91): error TS2554: Expected 2 arguments, but got 3.
+src/extension/providers/ChatParticipant.ts(67,48): error TS2345: Argument of type 'readonly (ChatRequestTurn | ChatResponseTurn)[]' is not assignable to parameter of type 'readonly ChatRequestTurn[]'.
+  Type 'ChatRequestTurn | ChatResponseTurn' is not assignable to type 'ChatRequestTurn'.
+    Type 'ChatResponseTurn' is missing the following properties from type 'ChatRequestTurn': prompt, references, toolReferences
+src/extension/providers/ChatParticipant.ts(108,11): error TS2322: Type 'LanguageModelChat' is not assignable to type 'string'.
+src/extension/providers/ChatParticipant.ts(216,9): error TS2345: Argument of type 'LanguageModelChat' is not assignable to parameter of type 'string'.
+src/extension/providers/ChatParticipant.ts(264,16): error TS2339: Property 'response' does not exist on type 'ChatRequestTurn'.
+src/extension/providers/ChatParticipant.ts(265,35): error TS2339: Property 'response' does not exist on type 'ChatRequestTurn'.
+src/extension/providers/ChatParticipant.ts(266,17): error TS7006: Parameter 'part' implicitly has an 'any' type.
+src/extension/providers/LanguageModelChatProvider.ts(88,33): error TS2504: Type 'OllamaChatResponse | AsyncGenerator<OllamaStreamChunk, any, any>' must have a '[Symbol.asyncIterator]()' method that returns an async iterator.
+src/extension/rag/cleaner/ReaderModeDocCleaner.ts(1,26): error TS2307: Cannot find module 'cheerio' or its corresponding type declarations.
+src/extension/rag/cleaner/ReaderModeDocCleaner.ts(71,26): error TS7006: Parameter '_' implicitly has an 'any' type.
+src/extension/rag/cleaner/ReaderModeDocCleaner.ts(71,29): error TS7006: Parameter 'el' implicitly has an 'any' type.
+src/extension/rag/cleaner/ReaderModeDocCleaner.ts(80,56): error TS7006: Parameter '_' implicitly has an 'any' type.
+src/extension/rag/cleaner/ReaderModeDocCleaner.ts(80,59): error TS7006: Parameter 'el' implicitly has an 'any' type.
+src/extension/rag/scraper/ScraperRunner.ts(6,36): error TS2307: Cannot find module './ContentHasher' or its corresponding type declarations.
+src/extension/rag/scraper/Sha256ContentHasher.ts(2,36): error TS2307: Cannot find module './ContentHasher' or its corresponding type declarations.
+src/extension/rag/store/LanceDbRagStore.ts(44,34): error TS2307: Cannot find module 'lancedb' or its corresponding type declarations.
+src/extension/rag/store/LanceDbRagStore.ts(96,34): error TS2307: Cannot find module 'lancedb' or its corresponding type declarations.
+src/webview/components/ActivityStream/MessageList.tsx(42,35): error TS7006: Parameter 'msg' implicitly has an 'any' type.
+src/webview/components/ActivityStream/MessageList.tsx(59,35): error TS7006: Parameter 'msg' implicitly has an 'any' type.
+src/webview/components/ActivityStream/MessageList.tsx(246,38): error TS7006: Parameter 'image' implicitly has an 'any' type.
+src/webview/components/ActivityStream/MessageList.tsx(246,45): error TS7006: Parameter 'idx' implicitly has an 'any' type.
+src/webview/components/MarkdownRenderer/MarkdownRenderer.tsx(48,5): error TS2322: Type 'NamedExoticComponent<CodeBlockProps>' is not assignable to type 'keyof IntrinsicElements | ComponentType<ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps> | undefined'.
+  Type 'NamedExoticComponent<CodeBlockProps>' is not assignable to type 'FunctionComponent<ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps>'.
+    Types of parameters 'props' and 'props' are incompatible.
+      Type 'ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps' is not assignable to type 'CodeBlockProps'.
+        Index signature for type 'string' is missing in type 'ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps'.
+src/webview/components/MarkdownRenderer/MarkdownRendererWithMath.tsx(98,5): error TS2322: Type 'NamedExoticComponent<CodeBlockProps>' is not assignable to type 'keyof IntrinsicElements | ComponentType<ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps> | undefined'.
+  Type 'NamedExoticComponent<CodeBlockProps>' is not assignable to type 'FunctionComponent<ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps>'.
+    Types of parameters 'props' and 'props' are incompatible.
+      Type 'ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps' is not assignable to type 'CodeBlockProps'.
+        Index signature for type 'string' is missing in type 'ClassAttributes<HTMLElement> & HTMLAttributes<HTMLElement> & ExtraProps'.
+src/webview/hooks/useStreamingResponse.ts(89,46): error TS7006: Parameter 'msg' implicitly has an 'any' type.
+src/webview/hooks/useVSCodeMessage.ts(2,37): error TS2307: Cannot find module '@types' or its corresponding type declarations.
+src/webview/store/conversationStore.ts(3,44): error TS2307: Cannot find module '@types' or its corresponding type declarations.
+src/webview/store/conversationStore.ts(226,56): error TS7006: Parameter 'msg' implicitly has an 'any' type.
+src/webview/store/conversationStore.ts(240,59): error TS7006: Parameter 'msg' implicitly has an 'any' type.

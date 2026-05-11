@@ -163,12 +163,17 @@ class GraphBuilder {
         }
       }
 
-      const output = await this.executorAgent.execute({
-        task: currentTask,
-        dependencyResults,
-        iteration: state.iteration + 1,
-        feedback: state.lastFeedback, // Pass critic feedback on retry
-      });
+      const previousOutput = state.results.get(currentTask.id);
+
+      const output =
+        state.lastFeedback && previousOutput
+          ? await this.executorAgent.refine(previousOutput, state.lastFeedback)
+          : await this.executorAgent.execute({
+              task: currentTask,
+              dependencyResults,
+              iteration: state.iteration + 1,
+              feedback: state.lastFeedback, // Pass critic feedback on retry
+            });
 
       const updatedResults = new Map(state.results);
       updatedResults.set(currentTask.id, output);

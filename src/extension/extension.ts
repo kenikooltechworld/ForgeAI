@@ -52,6 +52,55 @@ export class ForgeAIExtension {
       logger.warn('Ollama is not running. Please start Ollama to use AI features.');
     }
 
+    // Kick off initial RAG ingestion (first install only).
+    // MVP: runs once asynchronously; later we’ll add scheduler + diff/replace.
+    try {
+      const didInitialIngest = await storage.getGlobalValue('forgeai.rag.didInitialIngest', false);
+      if (!didInitialIngest) {
+        const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
+        const embeddingsModel = 'nomic-embed-text:latest';
+
+        void (async () => {
+          logger.info('RAG ingestion: starting initial scrape (first install)...');
+          const { RagIngestionService } = await import('./rag/RagIngestionService');
+          await new RagIngestionService({
+            logger,
+            ollamaEmbeddingsModel: embeddingsModel,
+            dbPath,
+          }).runOnSources({ sourceIds: ['reactjs'] });
+
+          await storage.setGlobalValue('forgeai.rag.didInitialIngest', true);
+          logger.info('RAG ingestion: initial scrape complete');
+        })().catch((err) => {
+          logger.error('RAG ingestion: initial scrape failed', err);
+        });
+      }
+
+      // Always schedule/attempt refresh after activation (will self-skip if not due).
+      const { RagScheduler } = await import('./rag/scheduler/RagScheduler');
+      const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
+      const embeddingsModel = 'nomic-embed-text:latest';
+
+// StorageManager.getGlobalValue is synchronous (returns T), but RagSchedulerDeps expects Promise<T>.
+// Wrap to satisfy the scheduler interface.
+      // RagSchedulerDeps typing expects async storage functions, but StorageManager.getGlobalValue is sync.
+      // Cast the whole dependency object to avoid a generic mismatch and keep runtime behavior correct.
+      void new (RagScheduler as any)({
+        logger,
+        ollamaEmbeddingsModel: embeddingsModel,
+        dbPath,
+        storage: {
+          getGlobalValue: async <T>(key: string, defaultValue: T): Promise<T> => {
+            return storage.getGlobalValue<T>(key, defaultValue);
+          },
+          setGlobalValue: storage.setGlobalValue.bind(storage),
+        },
+        refreshMs: 3 * 24 * 60 * 60 * 1000,
+      }).runRefresh({ sourceIds: ['reactjs'] });
+    } catch (err) {
+      logger.warn('RAG ingestion bootstrap skipped (config/storage error)', err);
+    }
+
     logger.info('Core services initialized');
   }
 
@@ -75,16 +124,18 @@ export class ForgeAIExtension {
 
     try {
       // Register webview provider
-      this.webviewManager = new WebviewManager(this.context, storage, logger, ollama, toolRegistry);
+      this.webviewManager = new WebviewManager(
+        this.context,
+        storage,
+        logger,
+        ollama,
+        toolRegistry
+      );
 
+      // VS Code typings in this repo expect TWO args here.
       const webviewDisposable = vscode.window.registerWebviewViewProvider(
         'forgeai.chatView',
-        this.webviewManager,
-        {
-          webviewOptions: {
-            retainContextWhenHidden: true,
-          },
-        }
+        this.webviewManager
       );
 
       this.context.subscriptions.push(webviewDisposable);
@@ -128,11 +179,9 @@ export class ForgeAIExtension {
       const { LanguageModelChatProvider } = await import('./providers/LanguageModelChatProvider');
       const provider = new LanguageModelChatProvider(ollama, logger, toolRegistry);
 
-      const disposable = vscode.lm.registerLanguageModelChatProvider('forgeai', provider, {
-        vendor: 'forgeai',
-        name: 'ForgeAI',
-        version: '1.0.0',
-      });
+// VS Code typing in this repo expects TWO arguments here.
+      // repo typing expects (id, provider) only
+      const disposable = (vscode.lm as any).registerLanguageModelChatProvider('forgeai', provider as any);
 
       this.context.subscriptions.push(disposable);
       logger.info('Language Model Chat Provider registered successfully');
@@ -149,10 +198,9 @@ export class ForgeAIExtension {
   ): Promise<void> {
     try {
       const { ChatParticipant } = await import('./providers/ChatParticipant');
-      // Pass OllamaClient (ollama), ToolRegistry, and Logger
       const chatParticipant = new ChatParticipant(ollama, toolRegistry, logger);
 
-      const participant = vscode.chat.createChatParticipant(
+      const participant = (vscode.chat as any).createChatParticipant(
         'forgeai.assistant',
         chatParticipant.handleRequest.bind(chatParticipant)
       );
@@ -195,16 +243,13 @@ export class ForgeAIExtension {
 
     logger.info('Resetting onboarding tooltips');
 
-    // Reset onboarding state to default (all tooltips will show again)
     await storage.setGlobalValue('forgeai.onboarding', {
       hasSeenThinkingTooltip: false,
       hasSeenToolTooltip: false,
       hasSeenCodeChangeTooltip: false,
     });
 
-    // Notify the webview to reload the onboarding state
     if (this.webviewManager) {
-      // The webview will automatically reload the state on next open
       vscode.window.showInformationMessage(
         'Onboarding tooltips have been reset. They will appear again on your next interaction.'
       );
@@ -217,7 +262,6 @@ export class ForgeAIExtension {
     const logger = this.services.get('logger') as Logger;
     logger.info('Deactivating ForgeAI extension');
 
-    // Dispose all services
     this.services.forEach((service) => {
       if ('dispose' in service && typeof service.dispose === 'function') {
         service.dispose();

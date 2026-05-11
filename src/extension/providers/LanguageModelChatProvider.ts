@@ -12,6 +12,11 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
   private logger: Logger;
   private toolRegistry: any; // ToolRegistry instance
 
+  // Cache to avoid hammering Ollama /api/tags (prevents HITP 429)
+  private modelsCache: vscode.LanguageModelChatInformation[] | null = null;
+  private modelsCacheExpiryMs = 0;
+  private modelsCacheTtlMs = 30_000; // 30s
+
   constructor(ollamaClient: OllamaClient, logger: Logger, toolRegistry?: any) {
     this.ollamaClient = ollamaClient;
     this.logger = logger;

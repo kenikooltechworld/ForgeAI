@@ -30,6 +30,7 @@ interface StreamErrorMessage {
 
 export function useStreamingResponse() {
   const [isStreaming, setIsStreaming] = useState(false);
+  const [currentAssistantMessageId, setCurrentAssistantMessageId] = useState<string | null>(null);
   const currentAssistantMessageIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export function useStreamingResponse() {
         if (!currentAssistantMessageIdRef.current) {
           const messageId = crypto.randomUUID();
           currentAssistantMessageIdRef.current = messageId;
+          setCurrentAssistantMessageId(messageId);
 
           store.addMessage(chunk.conversationId, {
             id: messageId,
@@ -108,11 +110,13 @@ export function useStreamingResponse() {
         if (chunk.done) {
           setIsStreaming(false);
           currentAssistantMessageIdRef.current = null;
+          setCurrentAssistantMessageId(null);
         }
       } else if (message.type === 'streamError') {
         const errorMsg = message as StreamErrorMessage;
         setIsStreaming(false);
         currentAssistantMessageIdRef.current = null;
+        setCurrentAssistantMessageId(null);
 
         const store = useConversationStore.getState();
 
@@ -135,5 +139,5 @@ export function useStreamingResponse() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  return { isStreaming };
+  return { isStreaming, currentAssistantMessageId };
 }

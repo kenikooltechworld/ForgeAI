@@ -41,8 +41,8 @@ function useVSCodeTheme() {
 interface CodeBlockProps {
   inline?: boolean;
   className?: string;
-  children: React.ReactNode;
-  [key: string]: any;
+  children?: React.ReactNode;
+  [key: string]: unknown;
 }
 
 /**
@@ -68,20 +68,10 @@ export const CodeBlock = memo(function CodeBlock({
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : '';
 
-  // Inline code - simple styling with VS Code variables
+  // Inline code - styling handled by globals.css classes
   if (inline) {
     return (
-      <code
-        style={{
-          backgroundColor: 'var(--vscode-textCodeBlock-background)',
-          color: 'var(--vscode-textPreformat-foreground)',
-          padding: '2px 4px',
-          borderRadius: '3px',
-          fontFamily: 'var(--vscode-editor-font-family)',
-          fontSize: '0.9em',
-        }}
-        {...props}
-      >
+      <code className="markdown-code-inline" {...props}>
         {children}
       </code>
     );
@@ -95,19 +85,6 @@ export const CodeBlock = memo(function CodeBlock({
         style={syntaxTheme}
         showLineNumbers
         wrapLongLines
-        customStyle={{
-          margin: 0,
-          borderRadius: '4px',
-          fontFamily: 'var(--vscode-editor-font-family)',
-          fontSize: 'var(--vscode-editor-font-size)',
-          // Override background to better match VS Code
-          backgroundColor: 'var(--vscode-textCodeBlock-background)',
-        }}
-        codeTagProps={{
-          style: {
-            fontFamily: 'var(--vscode-editor-font-family)',
-          },
-        }}
         {...props}
       >
         {String(children).replace(/\n$/, '')}
@@ -116,21 +93,9 @@ export const CodeBlock = memo(function CodeBlock({
   }
 
   // Fallback for code blocks without language specification
+  // Fallback for code blocks without language specification
   return (
-    <code
-      style={{
-        display: 'block',
-        backgroundColor: 'var(--vscode-textCodeBlock-background)',
-        color: 'var(--vscode-editor-foreground)',
-        padding: '12px',
-        borderRadius: '4px',
-        overflow: 'auto',
-        fontFamily: 'var(--vscode-editor-font-family)',
-        fontSize: 'var(--vscode-editor-font-size)',
-        whiteSpace: 'pre',
-      }}
-      {...props}
-    >
+    <code {...props}>
       {children}
     </code>
   );

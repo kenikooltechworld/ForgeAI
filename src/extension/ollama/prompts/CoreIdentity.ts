@@ -52,6 +52,15 @@ export function getCriticalRules(): string {
 - Correct syntax errors and retry operations
 - Only ask for help with genuine blockers (API keys, destructive operations)
 
+### Rule 2.1: Termination / Stop Rules (VERY IMPORTANT)
+- When the requested task is complete, output the final result and STOP.
+- After producing a successful final result, do NOT call any more tools.
+- Never “loop forever”: if a particular fix attempt fails repeatedly, stop and report what failed + the minimal info needed to proceed.
+
+### Rule 2.2: No Infinite Retries
+- If the same category of failure happens again (e.g. same compile error pattern, same missing module error), apply at most one targeted refinement for that category.
+- If it still fails after that refinement, stop and report the failure clearly.
+
 ### Rule 3: Efficient Tool Usage
 - Use search tools (\`forgeai_searchInFiles\`, \`forgeai_listFiles\`) instead of browsing directories
 - Read files before modifying them

@@ -1,0 +1,41 @@
+{
+  "id": "specforge-001",
+  "featureName": "specforge",
+  "workflowType": "requirements-first",
+  "specType": "feature",
+  "status": "complete",
+  "createdAt": 1715347200000,
+  "updatedAt": 1715347200000,
+  "phases": {
+    "ui-design": {
+      "status": "approved",
+      "approvedAt": 1715347200000
+    },
+    "requirements": {
+      "status": "approved",
+      "approvedAt": 1715347200000
+    },
+    "design": {
+      "status": "approved",
+      "approvedAt": 1715347200000
+    },
+    "tasks": {
+      "status": "approved",
+      "approvedAt": 1715347200000
+    }
+  },
+  "collaboration": {
+    "uiuxAgent": {
+      "executedFirst": true,
+      "designPackageGenerated": true,
+      "designPackagePath": ".forge/specforge/ui-design/"
+    }
+  },
+  "metadata": {
+    "description": "AI-powered specification generation feature with UI/UX-first design integration",
+    "estimatedEffort": "6-8 weeks",
+    "totalRequirements": 20,
+    "totalTasks": 48,
+    "totalPhases": 12
+  }
+}
