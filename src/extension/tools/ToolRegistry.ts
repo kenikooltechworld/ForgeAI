@@ -77,6 +77,32 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(diagnosticsTools.getErrors());
     this.registerTool(diagnosticsTools.getDiagnostics());
 
+    // Register web search tools (cloud-based, no local browser required)
+    const { WebSearchTools } = require('./WebSearchTools');
+    const webSearchTools = new WebSearchTools();
+    this.registerTool(webSearchTools.webSearch());
+    this.registerTool(webSearchTools.webResearch());
+    this.registerTool(webSearchTools.searchDocs());
+
+    // Register browser tools (local Playwright — optional fallback)
+    const { BrowserTools } = require('./BrowserTools');
+    const browserTools = new BrowserTools();
+    this.registerTool(browserTools.browserNavigate());
+    this.registerTool(browserTools.browserExtract());
+    this.registerTool(browserTools.browserClick());
+    this.registerTool(browserTools.browserFill());
+    this.registerTool(browserTools.browserScreenshot());
+    this.registerTool(browserTools.browserScroll());
+    this.registerTool(browserTools.browserClose());
+
+    // Register UI/UX Architect Agent tools (Phase 2.4)
+    const { UIUXTools } = require('../agents/ui-ux-architect/tools/UIUXTools');
+    const uiuxTools = new UIUXTools(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '');
+    this.registerTool(uiuxTools.createDesignSystem());
+    this.registerTool(uiuxTools.generateDesignTokens());
+    this.registerTool(uiuxTools.exportTokens());
+    this.registerTool(uiuxTools.checkContrast());
+
     this.logger.info(`✅ Tool registry initialized with ${this.tools.size} tools`);
     this.logger.info(`✅ Registered tools: ${this.getToolNames().join(', ')}`);
   }

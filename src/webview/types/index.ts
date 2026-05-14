@@ -47,5 +47,6 @@ declare global {
       postMessage: (message: any) => void;
       getState?: () => unknown;
     };
+    __FORGEAI_PANEL__?: 'rag';
   }
 }

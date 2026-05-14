@@ -121,6 +121,10 @@ export class OllamaClient {
     this.logger.info(`OllamaClient initialized with baseUrl: ${this.baseUrl}`);
   }
 
+  public getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
   /**
    * Send a chat request to Ollama with streaming support and retry logic
    * @param request Chat request options

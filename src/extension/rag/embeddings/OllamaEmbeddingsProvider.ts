@@ -3,82 +3,109 @@ import type { Logger } from '../../utils/Logger';
 import type { OllamaClient } from '../../ollama/OllamaClient';
 
 /**
- * Ollama embeddings MVP adapter.
+ * Ollama embeddings adapter.
  *
- * Assumes an Ollama embeddings endpoint similar to:
- *   POST {baseUrl}/api/embeddings
- * with:
- *   { model, prompt } or { model, input }
+ * Tries the batched POST /api/embed endpoint first (Ollama >= 0.1.x):
+ *   { model, input: string[] }  → { embeddings: number[][] }
  *
- * If your Ollama build differs, we’ll adjust the request shape in one place.
+ * Falls back to sequential POST /api/embeddings calls for older builds:
+ *   { model, prompt: string }   → { embedding: number[] }
  */
 export class OllamaEmbeddingsProvider implements EmbeddingsProvider {
   private readonly logger: Logger;
   private readonly ollama: OllamaClient;
   private readonly embeddingsModel: string;
 
-  constructor(params: {
-    ollama: OllamaClient;
-    logger: Logger;
-    embeddingsModel: string;
-  }) {
+  constructor(params: { ollama: OllamaClient; logger: Logger; embeddingsModel: string }) {
     this.ollama = params.ollama;
     this.logger = params.logger;
     this.embeddingsModel = params.embeddingsModel;
   }
 
+  private get baseUrl(): string {
+    return this.ollama.getBaseUrl();
+  }
+
+  // ─── EmbeddingsProvider interface ─────────────────────────────────────────
+
   public async embedDocuments(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
 
-    const result: number[][] = [];
-    for (const text of texts) {
-      result.push(await this.embedQuery(text));
+    // Try batch endpoint first — much faster for large text sets.
+    try {
+      return await this.batchEmbed(texts);
+    } catch (err) {
+      this.logger.warn(`Batch embed failed, falling back to sequential: ${String(err)}`);
+      return this.sequentialEmbed(texts);
     }
-    return result;
   }
 
   public async embedQuery(text: string): Promise<number[]> {
-    // MVP: call Ollama directly via embeddings endpoint using fetch through global fetch.
-    // We intentionally keep this implementation self-contained.
-    //
-    // NOTE: OllamaClient doesn’t expose embeddings() yet, so we’ll use base URL from ollama client indirectly later.
-    // For now, we rely on global fetch with the same base URL pattern used elsewhere.
-    //
-    // If we want to avoid guessing base URL, we should extend OllamaClient with embeddings() next.
-    const baseUrl = (this.ollama as any).baseUrl as string | undefined;
-    const resolvedBaseUrl = baseUrl ?? 'http://localhost:11434';
+    const vectors = await this.embedDocuments([text]);
+    return vectors[0];
+  }
 
-    const url = `${resolvedBaseUrl.replace(/\/$/, '')}/api/embeddings`;
+  // ─── private helpers ───────────────────────────────────────────────────────
+
+  /** POST /api/embed  (Ollama >= 0.1, supports array input) */
+  private async batchEmbed(texts: string[]): Promise<number[][]> {
+    const url = `${this.baseUrl}/api/embed`;
 
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.embeddingsModel,
-        prompt: text,
-      }),
+      body: JSON.stringify({ model: this.embeddingsModel, input: texts }),
     });
 
     if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      this.logger.error(`Ollama embeddings HTTP ${response.status}: ${body}`);
-      throw new Error(`Ollama embeddings failed (HTTP ${response.status})`);
+      throw new Error(`/api/embed HTTP ${response.status}`);
     }
 
     const data: any = await response.json();
 
-    // Try common shapes.
-    const embedding: number[] | undefined =
-      data?.embedding ??
-      data?.embeddings?.[0] ??
-      data?.data?.[0]?.embedding ??
-      data?.data?.[0]?.vector;
-
-    if (!embedding || !Array.isArray(embedding)) {
-      this.logger.error(`Unexpected Ollama embeddings response shape: ${JSON.stringify(data).slice(0, 1000)}`);
-      throw new Error('Ollama embeddings response did not contain an embedding vector');
+    // Response shape: { embeddings: number[][] }
+    const embeddings: number[][] | undefined = data?.embeddings;
+    if (!embeddings || !Array.isArray(embeddings) || embeddings.length !== texts.length) {
+      throw new Error(
+        `/api/embed unexpected response shape: ${JSON.stringify(data).slice(0, 400)}`
+      );
     }
 
-    return embedding;
+    return embeddings;
+  }
+
+  /** Sequential POST /api/embeddings  (Ollama legacy, one text at a time) */
+  private async sequentialEmbed(texts: string[]): Promise<number[][]> {
+    const url = `${this.baseUrl}/api/embeddings`;
+    const results: number[][] = [];
+
+    for (const text of texts) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: this.embeddingsModel, prompt: text }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        this.logger.error(`Ollama /api/embeddings HTTP ${response.status}: ${body}`);
+        throw new Error(`Ollama embeddings failed (HTTP ${response.status})`);
+      }
+
+      const data: any = await response.json();
+
+      const embedding: number[] | undefined =
+        data?.embedding ?? data?.embeddings?.[0] ?? data?.data?.[0]?.embedding;
+
+      if (!embedding || !Array.isArray(embedding)) {
+        throw new Error(
+          `Unexpected /api/embeddings response: ${JSON.stringify(data).slice(0, 400)}`
+        );
+      }
+
+      results.push(embedding);
+    }
+
+    return results;
   }
 }

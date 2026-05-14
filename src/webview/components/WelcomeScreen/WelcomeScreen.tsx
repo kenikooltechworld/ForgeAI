@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Bug, Sparkles, BookOpen, TestTube, Search, FileText } from 'lucide-react';
+import { Bug, Sparkles, BookOpen, TestTube, Search, FileText, ClipboardList } from 'lucide-react';
 import { useConversationStore } from '../../store/conversationStore';
 import MessageInput from '../ActivityStream/MessageInput';
 
@@ -16,6 +16,13 @@ const quickActions = [
     title: 'Build a feature',
     description: 'Create a new feature from requirements',
     prompt: "I'll help you build a feature. What would you like to create?",
+  },
+  {
+    Icon: ClipboardList,
+    title: 'Generate spec',
+    description: 'Create formal requirements and task plan',
+    prompt:
+      "I'll create a formal spec with requirements, architecture, and tasks. What feature or system should we spec out?",
   },
   {
     Icon: BookOpen,

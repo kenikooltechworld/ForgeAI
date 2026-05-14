@@ -8,22 +8,19 @@ import type { RagStore } from './RagStore';
 import type { EmbeddingsProvider } from '../embeddings/EmbeddingsProvider';
 import { Logger } from '../../utils/Logger';
 
-type LanceDbClient = unknown;
-type LanceCollection = unknown;
-
-function stableStringify(input: unknown): string {
-  return JSON.stringify(input);
-}
-
 /**
- * MVP LanceDB-backed store.
+ * LanceDB-backed vector store.
  *
- * Notes:
- * - We use dynamic imports and `unknown`/`any` for LanceDB types because the package’s TS surface
- *   can vary across versions.
- * - We persist chunks in a single collection with text+metadata+embedding vector.
- * - For diff-based replace: we upsert-by (chunkId). If chunkId exists, we compare contentHash
- *   and either skip or replace.
+ * Uses the correct @lancedb/lancedb API:
+ *   - lancedb.connect(path)  to open the database
+ *   - db.openTable / db.createTable  to manage collections
+ *   - table.vectorSearch(vector).limit(k).toArray()  for ANN search
+ *   - table.query().where(filter).toArray()  for metadata filtering
+ *   - table.delete(filter)  for removing rows
+ *   - table.add(records)  for inserting new rows
+ *
+ * Embedding dimension is auto-detected from the first batch to avoid
+ * hardcoding a value that mismatches the configured model.
  */
 export class LanceDbRagStore implements RagStore {
   private readonly logger: Logger;
@@ -43,34 +40,34 @@ export class LanceDbRagStore implements RagStore {
     this.collectionName = params.collectionName ?? 'forgeai_docs';
   }
 
+  // ─── helpers ──────────────────────────────────────────────────────────────
+
+  private async connect(): Promise<any> {
+    const lancedb = await import('@lancedb/lancedb');
+    return (lancedb as any).connect(this.dbPath);
+  }
+
+  private async openOrCreateTable(db: any, firstRecords: any[]): Promise<any> {
+    try {
+      return await db.openTable(this.collectionName);
+    } catch {
+      // Table does not exist yet — create it from the first batch of records
+      // so LanceDB can infer the schema (including vector dimension) automatically.
+      return await db.createTable(this.collectionName, firstRecords);
+    }
+  }
+
+  private buildIdFilter(chunkIds: string[]): string {
+    const quoted = chunkIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(', ');
+    return `chunkId IN (${quoted})`;
+  }
+
+  // ─── RagStore interface ────────────────────────────────────────────────────
+
   public async upsertChunks(chunks: CleanedChunk[]): Promise<RagStoreUpsertResult> {
     if (chunks.length === 0) return { upserted: 0, skippedSame: 0 };
 
-    const lancedb = await import('@lancedb/lancedb');
-    const client: LanceDbClient = new (lancedb as any).LanceDbClient(this.dbPath);
-
-    const collection: LanceCollection = await (client as any)
-      .createTable?.(this.collectionName, [], {
-        schema: {
-          chunkId: 'string',
-          sourceId: 'string',
-          url: 'string',
-          title: 'string?',
-          contentHash: 'string',
-          text: 'string',
-          chunkIndex: 'int32',
-          embedding: { type: 'vector', dimension: 1024 },
-        },
-      })
-      .catch(async () => {
-        // if table exists, ignore create error
-        return (client as any).openTable(this.collectionName);
-      });
-
-    // Ensure collection exists (fallback).
-    const col: any = (collection as any) ?? (await (client as any).openTable(this.collectionName));
-
-    // Build payloads and embeddings.
+    // Embed all texts in one batched call.
     const texts = chunks.map((c) => c.text);
     const vectors = await this.embeddings.embedDocuments(texts);
 
@@ -78,126 +75,129 @@ export class LanceDbRagStore implements RagStore {
       chunkId: chunk.chunkId,
       sourceId: chunk.sourceId,
       url: chunk.url,
-      title: chunk.title ?? null,
+      title: chunk.title ?? '',
       contentHash: chunk.contentHash,
       text: chunk.text,
       chunkIndex: chunk.chunkIndex,
-      embedding: vectors[idx],
-      // extra stable data to help debug
-      _ingestFingerprint: stableStringify({
-        chunkId: chunk.chunkId,
-        contentHash: chunk.contentHash,
-      }),
+      vector: vectors[idx],
     }));
 
-    // MVP upsert strategy:
-    // - If LanceDB supports upsert by primary key, we’ll use it.
-    // - Otherwise, we delete existing chunkIds then insert fresh.
-    const upsertedAndSkipped = await this.upsertOrReplaceByChunkId(col, records);
+    const db = await this.connect();
 
-    return upsertedAndSkipped;
+    let table: any;
+    let isNewTable = false;
+
+    try {
+      table = await db.openTable(this.collectionName);
+    } catch {
+      // First time — create directly from records (schema inferred automatically).
+      table = await db.createTable(this.collectionName, records);
+      isNewTable = true;
+    }
+
+    if (isNewTable) {
+      this.logger.info(
+        `LanceDB: created table "${this.collectionName}" with ${records.length} records`
+      );
+      return { upserted: records.length, skippedSame: 0 };
+    }
+
+    // Table already exists — diff by chunkId + contentHash.
+    return this.diffUpsert(table, records);
   }
 
   public async search(params: RAGSearchParams): Promise<RagRetrievedContext[]> {
     const { query, topK, sourceIds } = params;
 
-    const lancedb = await import('@lancedb/lancedb');
-    const client: LanceDbClient = new (lancedb as any).LanceDbClient(this.dbPath);
-    const col: any = await (client as any).openTable(this.collectionName);
+    const db = await this.connect();
+
+    let table: any;
+    try {
+      table = await db.openTable(this.collectionName);
+    } catch {
+      // Nothing indexed yet.
+      this.logger.warn('LanceDB: table not found during search — nothing indexed yet');
+      return [];
+    }
 
     const queryVector = await this.embeddings.embedQuery(query);
 
-    // Vector search MVP. We also support metadata filtering.
-    // where filter shape can vary by LanceDB version; we try common patterns.
-    const where =
-      sourceIds && sourceIds.length > 0
-        ? {
-            sourceId: { $in: sourceIds },
-          }
-        : undefined;
+    // Build the search query.
+    let searchQuery = table.vectorSearch(queryVector).limit(topK);
 
-    const results = await col
-      .vectorSearch(queryVector, {
-        k: topK,
-        // Some versions accept `where` / `filter`.
-        where,
-      })
-      .catch(async () => {
-        // fallback if `where` isn’t supported
-        return col.vectorSearch(queryVector, { k: topK });
-      });
+    // Optionally filter by source (SQL-style WHERE clause).
+    if (sourceIds && sourceIds.length > 0) {
+      const quoted = sourceIds.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(', ');
+      searchQuery = searchQuery.where(`sourceId IN (${quoted})`);
+    }
 
-    // Normalize results to RagRetrievedContext[]
-    // results can be an array or a cursor-like object.
-    const rows: any[] = Array.isArray(results) ? results : await (results as any).toArray?.();
+    let rows: any[];
+    try {
+      rows = await searchQuery.toArray();
+    } catch (err) {
+      // Some LanceDB versions use .select() or different chaining — fall back to no-filter search.
+      this.logger.warn(
+        `LanceDB search with filter failed, retrying without filter: ${String(err)}`
+      );
+      rows = await table.vectorSearch(queryVector).limit(topK).toArray();
+    }
 
     if (!rows || rows.length === 0) return [];
 
-    return rows.map((row) => ({
-      chunkId: row.chunkId,
-      sourceId: row.sourceId,
-      url: row.url,
-      title: row.title ?? undefined,
-      contentHash: row.contentHash,
-      text: row.text,
-      score: Number(row.score ?? row.distance ?? 0),
+    return rows.map((row: any) => ({
+      chunkId: row.chunkId ?? '',
+      sourceId: row.sourceId ?? '',
+      url: row.url ?? '',
+      title: row.title || undefined,
+      contentHash: row.contentHash ?? '',
+      text: row.text ?? '',
+      score: Number(row._distance ?? row.score ?? row.distance ?? 0),
     }));
   }
 
-  private async upsertOrReplaceByChunkId(
-    col: any,
-    records: Array<any>
-  ): Promise<RagStoreUpsertResult> {
-    // Best-effort: try to check existing chunkIds and compare contentHash.
-    // If LanceDB doesn’t support selective query easily, we’ll just replace everything.
-    const chunkIds = records.map((r) => r.chunkId);
-    const contentById = new Map(records.map((r) => [r.chunkId as string, r.contentHash as string]));
+  // ─── private helpers ───────────────────────────────────────────────────────
+
+  private async diffUpsert(table: any, records: any[]): Promise<RagStoreUpsertResult> {
+    const chunkIds = records.map((r) => r.chunkId as string);
+    const filter = this.buildIdFilter(chunkIds);
 
     let skippedSame = 0;
     let upserted = 0;
 
     try {
-      const existing = await col
-        .filter?.(`chunkId in (${chunkIds.map((id: string) => `'${id}'`).join(',')})`)
-        .select?.(['chunkId', 'contentHash'])
-        .toArray?.();
+      // Query existing rows for these chunkIds.
+      const existing: any[] = await table
+        .query()
+        .where(filter)
+        .select(['chunkId', 'contentHash'])
+        .toArray();
 
-      if (Array.isArray(existing)) {
-        const existingMap = new Map(
-          existing.map((r: any) => [r.chunkId as string, r.contentHash as string])
-        );
-        for (const record of records) {
-          const prev = existingMap.get(record.chunkId as string);
-          if (prev && prev === record.contentHash) skippedSame += 1;
-          else upserted += 1;
-        }
+      const existingMap = new Map<string, string>(
+        existing.map((r: any) => [r.chunkId as string, r.contentHash as string])
+      );
 
-        const toInsert = records.filter(
-          (r) => (existingMap.get(r.chunkId) ?? null) !== r.contentHash
-        );
-        if (toInsert.length > 0) {
-          // delete then add to emulate upsert
-          await col
-            .delete?.(`chunkId in (${chunkIds.map((id: string) => `'${id}'`).join(',')})`)
-            .catch(() => undefined);
-          await col.add?.(toInsert);
+      const toInsert = records.filter((r) => {
+        const prev = existingMap.get(r.chunkId as string);
+        if (prev && prev === r.contentHash) {
+          skippedSame += 1;
+          return false;
         }
-      } else {
-        // Replace-all fallback
-        upserted = records.length;
-        await col
-          .delete?.(`chunkId in (${chunkIds.map((id: string) => `'${id}'`).join(',')})`)
-          .catch(() => undefined);
-        await col.add?.(records);
+        upserted += 1;
+        return true;
+      });
+
+      if (toInsert.length > 0) {
+        // Delete stale rows then insert fresh ones (LanceDB upsert pattern).
+        const insertIds = toInsert.map((r) => r.chunkId as string);
+        await table.delete(this.buildIdFilter(insertIds)).catch(() => undefined);
+        await table.add(toInsert);
       }
     } catch (err) {
-      // Replace-all fallback
-      this.logger.warn(`LanceDB upsert fallback: ${String(err)}`);
+      // Fallback: replace all matching rows unconditionally.
+      this.logger.warn(`LanceDB diff-upsert failed, using replace-all fallback: ${String(err)}`);
       upserted = records.length;
-      await col
-        .delete?.(`chunkId in (${chunkIds.map((id: string) => `'${id}'`).join(',')})`)
-        .catch(() => undefined);
-      await col.add?.(records);
+      await table.delete(filter).catch(() => undefined);
+      await table.add(records);
     }
 
     return { upserted, skippedSame };

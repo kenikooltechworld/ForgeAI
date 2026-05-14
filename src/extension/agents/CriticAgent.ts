@@ -15,9 +15,9 @@ import {
   ValidationResult,
   ErrorPattern,
   CriticFeedback,
-} from '../orchestrator/types';
+} from './types';
 
-import { RecoveryExecutor } from '../orchestrator/RecoveryExecutor';
+import { RecoveryExecutor } from './recovery/RecoveryExecutor';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Pattern Database (design.md Section 3.1)
@@ -409,7 +409,7 @@ export class CriticAgent extends BaseAgent {
 
   // ── 8.1 Validate executor's work ──────────────────────────────────────────
 
-  async evaluate(input: CriticInput): Promise<CriticOutput> {
+  async evaluate(input: CriticInput, model?: string): Promise<CriticOutput> {
     return this.executeWithErrorHandling(async () => {
       this.logInfo(`Evaluating task: ${input.task.id} (type: ${input.task.type})`);
 
@@ -418,7 +418,9 @@ export class CriticAgent extends BaseAgent {
       // 1. Run actual tests if this is a test-related task (8.2)
       let testResult: TestRunResult | null = null;
       if (input.task.type === 'run_tests' || input.task.type === 'verify') {
-        testResult = await this.runActualTests(input.task.metadata?.testCommand);
+        testResult = await this.runActualTests(
+          input.task.metadata?.testCommand as string | undefined
+        );
       }
 
       // 2. Get diagnostics for code quality check
@@ -463,7 +465,7 @@ ${diagnosticIssues.length > 0 ? `Diagnostic Errors:\n${diagnosticIssues.slice(0,
 ${qualityIssues.length > 0 ? `Quality Issues Found:\n${qualityIssues.join('\n')}` : ''}`;
 
         const response = await this.ollamaClient.chat({
-          model: 'gemma4:31b-cloud',
+          model: model || 'gemma4:31b-cloud',
           messages: [
             { role: 'system', content: CRITIC_SYSTEM_PROMPT },
             { role: 'user', content: evalContext },
@@ -494,16 +496,13 @@ ${qualityIssues.length > 0 ? `Quality Issues Found:\n${qualityIssues.join('\n')}
 
       // Phase 3: execute recovery when critic fails
       if (criticOutput.status === 'fail') {
+        const resultRecord = input.executorOutput?.result as Record<string, unknown> | undefined;
         const errorMessage =
           errorText ||
-          (input.executorOutput?.result?.error
-            ? String(input.executorOutput.result.error)
-            : null) ||
+          (resultRecord?.error ? String(resultRecord.error) : null) ||
           'Critic evaluation failed';
 
-        const recoveryResult = await this.recoveryExecutor.executeRecovery(
-          errorMessage
-        );
+        const recoveryResult = await this.recoveryExecutor.executeRecovery(errorMessage);
 
         if (recoveryResult.succeeded) {
           return {
@@ -611,8 +610,8 @@ ${qualityIssues.length > 0 ? `Quality Issues Found:\n${qualityIssues.join('\n')}
 
   // ── Required by IAgent interface ──────────────────────────────────────────
 
-  async execute(input: CriticInput): Promise<CriticOutput> {
-    return this.evaluate(input);
+  async execute(input: CriticInput, model?: string): Promise<CriticOutput> {
+    return this.evaluate(input, model);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

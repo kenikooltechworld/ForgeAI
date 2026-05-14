@@ -1,7 +1,7 @@
 {
   "name": "forgeai",
   "displayName": "ForgeAI",
-  "description": "Autonomous AI coding assistant powered by Qwen3-Coder-397B",
+  "description": "Autonomous AI coding assistant powered by Ollama",
   "version": "1.0.0",
   "publisher": "forgeai",
   "icon": "resources/kenikoolLogo.png",
@@ -34,6 +34,61 @@
         "command": "forgeai.resetOnboarding",
         "title": "Reset Onboarding Tooltips",
         "category": "ForgeAI"
+      },
+      {
+        "command": "forgeai.openRagSettings",
+        "title": "Open RAG Documentation Settings",
+        "category": "ForgeAI"
+      },
+      {
+        "command": "forgeai.uiux.createDesignSystem",
+        "title": "Create Design System",
+        "category": "ForgeAI: UI/UX"
+      },
+      {
+        "command": "forgeai.uiux.generateTokens",
+        "title": "Generate Design Tokens",
+        "category": "ForgeAI: UI/UX"
+      },
+      {
+        "command": "forgeai.uiux.critiqueDesign",
+        "title": "Critique Design",
+        "category": "ForgeAI: UI/UX"
+      },
+      {
+        "command": "forgeai.uiux.checkAccessibility",
+        "title": "Check Accessibility",
+        "category": "ForgeAI: UI/UX"
+      },
+      {
+        "command": "forgeai.openSpecReview",
+        "title": "Open Spec Review Panel",
+        "category": "ForgeAI"
+      },
+      {
+        "command": "forgeai.openTaskTracker",
+        "title": "Open Task Tracker Panel",
+        "category": "ForgeAI"
+      },
+      {
+        "command": "forgeai.openDesignSystem",
+        "title": "Open Design System Panel",
+        "category": "ForgeAI"
+      },
+      {
+        "command": "forgeai.generateSpec",
+        "title": "Generate Spec from Prompt",
+        "category": "ForgeAI: Spec"
+      },
+      {
+        "command": "forgeai.loadSpec",
+        "title": "Load Spec into Panels",
+        "category": "ForgeAI: Spec"
+      },
+      {
+        "command": "forgeai.runSpec",
+        "title": "Run Spec (Execute Tasks)",
+        "category": "ForgeAI: Spec"
       }
     ],
     "viewsContainers": {
@@ -50,7 +105,13 @@
         {
           "id": "forgeai.chatView",
           "name": "Chat",
-          "type": "webview"
+          "icon": "resources/forgeai-icon.svg"
+        },
+        {
+          "id": "forgeai.uiux.designSystem",
+          "name": "Design System",
+          "type": "webview",
+          "icon": "resources/forgeai-icon.svg"
         }
       ]
     },
@@ -566,6 +627,53 @@
             "type": "string",
             "default": "http://localhost:11434",
             "description": "Ollama server base URL"
+          },
+          "forgeai.enableRagBootstrap": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable startup RAG scraping/index refresh. Keep off to maximize extension startup responsiveness."
+          },
+          "forgeai.search.provider": {
+            "type": "string",
+            "default": "auto",
+            "enum": [
+              "auto",
+              "serpapi",
+              "serpstack"
+            ],
+            "description": "Web search provider. Auto tries SerpAPI first, then SerpStack."
+          },
+          "forgeai.search.serpApiKey": {
+            "type": "string",
+            "default": "",
+            "description": "SerpAPI API key for Google Search (get one at serpapi.com)"
+          },
+          "forgeai.search.serpStackKey": {
+            "type": "string",
+            "default": "",
+            "description": "SerpStack API key for real-time SERP data (get one at serpstack.com)"
+          },
+          "forgeai.browser.headless": {
+            "type": "boolean",
+            "default": true,
+            "description": "Run browser in headless mode (background) vs headful (visible window). Only used when web search APIs are unavailable and local browser fallback is needed."
+          },
+          "forgeai.browser.type": {
+            "type": "string",
+            "default": "chromium",
+            "enum": [
+              "chromium",
+              "firefox",
+              "webkit"
+            ],
+            "description": "Browser engine for web research"
+          },
+          "forgeai.browser.pageLoadTimeout": {
+            "type": "number",
+            "default": 30,
+            "minimum": 5,
+            "maximum": 120,
+            "description": "Page load timeout in seconds"
           }
         }
       }
@@ -574,7 +682,7 @@
   "scripts": {
     "clean": "rimraf dist",
     "compile": "npm run compile:extension && npm run compile:webview",
-    "compile:extension": "esbuild src/extension/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:cheerio --external:@lancedb/lancedb --platform=node --target=node24 --sourcemap",
+    "compile:extension": "esbuild src/extension/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:cheerio --external:@lancedb/lancedb --external:playwright --platform=node --target=node24 --sourcemap",
     "compile:webview": "vite build",
     "watch": "npm run compile:extension -- --watch & vite build --watch",
     "package": "npm run compile && vsce package",
@@ -617,6 +725,7 @@
     "cheerio": "^1.0.0-rc.12",
     "jsdom": "^24.0.0",
     "lucide-react": "^1.14.0",
+    "playwright": "^1.60.0",
     "react": "^19.0.0",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",

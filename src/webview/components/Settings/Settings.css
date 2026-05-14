@@ -96,6 +96,10 @@
   padding: 20px;
 }
 
+.settings-content.scrollable-modern {
+  scrollbar-width: thin;
+}
+
 /* Section */
 .settings-section {
   margin-bottom: 32px;
@@ -278,28 +282,6 @@
   .settings-section {
     margin-bottom: 24px;
   }
-}
-
-/* Scrollbar Styling */
-.settings-content::-webkit-scrollbar {
-  width: 10px;
-}
-
-.settings-content::-webkit-scrollbar-track {
-  background: var(--vscode-editor-background);
-}
-
-.settings-content::-webkit-scrollbar-thumb {
-  background: var(--vscode-scrollbarSlider-background);
-  border-radius: 5px;
-}
-
-.settings-content::-webkit-scrollbar-thumb:hover {
-  background: var(--vscode-scrollbarSlider-hoverBackground);
-}
-
-.settings-content::-webkit-scrollbar-thumb:active {
-  background: var(--vscode-scrollbarSlider-activeBackground);
 }
 
 /* Select Dropdown */

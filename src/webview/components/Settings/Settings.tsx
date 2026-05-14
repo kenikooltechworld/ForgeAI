@@ -271,7 +271,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose }) => {
         </div>
 
         {/* Content */}
-        <div className="settings-content">
+        <div className="settings-content scrollable-modern">
           {/* Model Configuration Section */}
           <section className="settings-section">
             <h3 className="settings-section-title">Model Configuration</h3>

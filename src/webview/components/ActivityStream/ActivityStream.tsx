@@ -9,7 +9,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Square } from 'lucide-react';
 
 function ActivityStream() {
-  const { isStreaming } = useStreamingResponse();
+  const { isStreaming, currentAssistantMessageId } = useStreamingResponse();
   const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const maxIterationsWarning = useConversationStore((state) => state.maxIterationsWarning);
   const clearMaxIterationsWarning = useConversationStore(
@@ -31,6 +31,12 @@ function ActivityStream() {
           setIsAgentLoopRunning(true);
         }
       } else if (message.type === 'agentLoopStopped') {
+        if (message.conversationId === activeConversationId) {
+          setIsAgentLoopRunning(false);
+        }
+      } else if (message.type === 'errorSkipped') {
+        // User clicked Skip on an error — clear the running state
+        // so they can continue the conversation
         if (message.conversationId === activeConversationId) {
           setIsAgentLoopRunning(false);
         }
@@ -144,11 +150,14 @@ function ActivityStream() {
       />
 
       {/* Message List (middle section) */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto scrollable-modern">
         <MessageList
           filterType={filterType}
           searchQuery={searchQuery}
           onResultCountChange={handleResultCountChange}
+          isStreaming={isStreaming}
+          currentAssistantMessageId={currentAssistantMessageId}
+          isAgentLoopRunning={isAgentLoopRunning}
         />
 
         {/* Max Iterations Warning */}
@@ -174,24 +183,6 @@ function ActivityStream() {
               />
             </div>
           )}
-
-        {/* Typing indicator */}
-        {isStreaming && (
-          <div className="px-4 pb-4">
-            <div className="flex items-center gap-2 text-xs text-(--vscode-descriptionForeground)">
-              <div className="flex gap-1">
-                <span className="animate-pulse">●</span>
-                <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>
-                  ●
-                </span>
-                <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>
-                  ●
-                </span>
-              </div>
-              <span>ForgeAI is typing...</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Message Input (bottom section) */}

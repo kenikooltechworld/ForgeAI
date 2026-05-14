@@ -181,7 +181,7 @@ export const MarkdownRendererWithMath = memo(function MarkdownRendererWithMath({
       />
     ),
     table: ({ node, ...props }) => (
-      <div style={{ overflowX: 'auto', margin: '16px 0' }}>
+      <div className="scrollable-modern" style={{ overflowX: 'auto', margin: '16px 0' }}>
         <table
           style={{
             borderCollapse: 'collapse',

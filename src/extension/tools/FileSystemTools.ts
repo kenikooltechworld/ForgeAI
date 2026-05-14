@@ -118,22 +118,25 @@ export class FileSystemTools {
         },
       },
       execute: async (args: { pattern: string }, token?: vscode.CancellationToken) => {
-        // Check cancellation
-        if (token?.isCancellationRequested) {
-          throw new Error('Operation cancelled');
-        }
+        if (token?.isCancellationRequested) throw new Error('Operation cancelled');
 
-        const files = await vscode.workspace.findFiles(args.pattern);
+        const exclude =
+          '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/out/**,**/.next/**,**/coverage/**,**/.cache/**}';
+        const files = await vscode.workspace.findFiles(args.pattern, exclude, 300);
 
-        // Check cancellation after search
-        if (token?.isCancellationRequested) {
-          throw new Error('Operation cancelled');
-        }
+        if (token?.isCancellationRequested) throw new Error('Operation cancelled');
 
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         return {
           pattern: args.pattern,
-          files: files.map((uri) => uri.fsPath),
+          files: files.map((uri) =>
+            workspaceRoot ? uri.fsPath.replace(workspaceRoot, '').replace(/^[\\/]/, '') : uri.fsPath
+          ),
           count: files.length,
+          note:
+            files.length === 300
+              ? 'Result capped at 300 files. Use a more specific pattern.'
+              : undefined,
         };
       },
     };
@@ -477,18 +480,28 @@ export class FileSystemTools {
           throw new Error('Operation cancelled');
         }
 
-        const files = await vscode.workspace.findFiles(args.include, args.exclude || null);
+        const defaultExclude =
+          '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/out/**,**/.next/**,**/coverage/**,**/.cache/**}';
+        const files = await vscode.workspace.findFiles(
+          args.include,
+          args.exclude ?? defaultExclude,
+          300
+        );
 
-        // Check cancellation after search
-        if (token?.isCancellationRequested) {
-          throw new Error('Operation cancelled');
-        }
+        if (token?.isCancellationRequested) throw new Error('Operation cancelled');
 
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
         return {
           include: args.include,
-          exclude: args.exclude,
-          files: files.map((uri) => uri.fsPath),
+          exclude: args.exclude ?? defaultExclude,
+          files: files.map((uri) =>
+            workspaceRoot ? uri.fsPath.replace(workspaceRoot, '').replace(/^[\\/]/, '') : uri.fsPath
+          ),
           count: files.length,
+          note:
+            files.length === 300
+              ? 'Result capped at 300 files. Use a more specific pattern.'
+              : undefined,
         };
       },
     };
@@ -684,7 +697,9 @@ export class FileSystemTools {
         }
 
         const pattern = args.filePattern || '**/*';
-        const files = await vscode.workspace.findFiles(pattern);
+        const defaultExclude =
+          '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/out/**,**/.next/**,**/coverage/**,**/.cache/**}';
+        const files = await vscode.workspace.findFiles(pattern, defaultExclude, 200);
         const results: Array<{
           file: string;
           line: number;

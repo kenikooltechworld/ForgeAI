@@ -122,7 +122,7 @@ function TestResults({ results, onRunAgain }: TestResultsProps) {
       </div>
 
       {/* Test Files List */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto scrollable-modern p-4">
         {results.files.map((file) => {
           const status = getFileStatus(file);
           const isExpanded = expandedFiles.has(file.fileName);

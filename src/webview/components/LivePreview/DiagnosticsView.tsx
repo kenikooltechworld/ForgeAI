@@ -183,7 +183,7 @@ export function DiagnosticsView({ diagnostics }: DiagnosticsViewProps) {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-4 bg-editor">
+    <div className="h-full overflow-y-auto scrollable-modern p-4 bg-editor">
       {/* Header */}
       <div className="mb-4 pb-2 border-b border-input">
         <h2 className="text-lg font-semibold flex items-center gap-2">

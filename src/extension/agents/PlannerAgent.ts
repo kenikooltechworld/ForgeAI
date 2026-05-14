@@ -13,7 +13,7 @@ import {
   DependencyGraph,
   CriticFeedback,
   PlanContext,
-} from '../orchestrator/types';
+} from './types';
 import * as vscode from 'vscode';
 
 /**
@@ -385,12 +385,96 @@ export class PlannerAgent extends BaseAgent {
   /**
    * Replan: Update plan based on critic feedback
    */
-  async replan(currentPlan: TaskPlan, feedback: CriticFeedback): Promise<TaskPlan> {
+  async replan(currentPlan: TaskPlan, feedback: CriticFeedback, model?: string): Promise<TaskPlan> {
     return this.executeWithErrorHandling(async () => {
       this.logInfo('Replanning based on feedback');
 
-      // Placeholder: Return current plan unchanged
-      return currentPlan;
+      const selectedModel = model || 'gemma4:31b-cloud';
+
+      const feedbackContext = `
+The previous plan had the following issues:
+${feedback.issues.map((i) => `- ${i}`).join('\n')}
+
+Required changes:
+${feedback.requiredChanges.map((c) => `- ${c}`).join('\n')}
+
+Suggestions:
+${feedback.suggestions.map((s) => `- ${s}`).join('\n')}
+
+Previous plan had ${currentPlan.tasks.length} tasks:
+${currentPlan.tasks.map((t, i) => `${i}. [${t.type}] ${t.description}`).join('\n')}
+`;
+
+      try {
+        const response = await this.ollamaClient.chat({
+          model: selectedModel,
+          messages: [
+            { role: 'system', content: PLANNER_SYSTEM_PROMPT },
+            {
+              role: 'user',
+              content: `${feedbackContext}\n\nOriginal request: ${currentPlan.userRequest}\n\nGenerate an improved plan that addresses the feedback above.`,
+            },
+          ],
+          stream: false,
+        });
+
+        if (Symbol.asyncIterator in response) {
+          throw new Error('Unexpected streaming response');
+        }
+
+        const content = response.message.content;
+        const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\[[\s\S]*\]/);
+        const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content;
+        const tasksData = JSON.parse(jsonStr);
+
+        if (!Array.isArray(tasksData) || tasksData.length < 3) {
+          this.logInfo('Replan produced insufficient tasks, keeping current plan');
+          return currentPlan;
+        }
+
+        // Convert to Task objects (same logic as decomposeRequest)
+        const validTypes: TaskType[] = [
+          'read_code',
+          'analyze',
+          'generate_fix',
+          'run_tests',
+          'apply_changes',
+          'verify',
+        ];
+        const tasks: Task[] = tasksData.slice(0, 10).map((taskData: any, index: number) => ({
+          id: `task-${index}`,
+          type: validTypes.includes(taskData.type) ? taskData.type : 'analyze',
+          description: taskData.description || `Task ${index + 1}`,
+          dependencies: (taskData.dependencies || []).map((depIndex: number) => `task-${depIndex}`),
+          criteria: {
+            functional: taskData.criteria?.functional || ['Complete the task'],
+            quality: taskData.criteria?.quality || ['Maintain code quality'],
+            performance: taskData.criteria?.performance,
+          },
+          priority: ['P0', 'P1', 'P2'].includes(taskData.priority) ? taskData.priority : 'P1',
+          estimatedDuration: (taskData.estimatedMinutes || 5) * 60 * 1000,
+          metadata: { originalIndex: index },
+        }));
+
+        const dependencyGraph = this.buildDependencyGraph(tasks);
+        const estimatedDuration = this.estimateDuration(tasks);
+
+        const newPlan: TaskPlan = {
+          id: `plan-replan-${Date.now()}`,
+          userRequest: currentPlan.userRequest,
+          tasks,
+          context: currentPlan.context,
+          dependencyGraph,
+          estimatedDuration,
+          createdAt: Date.now(),
+        };
+
+        this.logInfo(`Replan produced ${newPlan.tasks.length} tasks`);
+        return newPlan;
+      } catch (error) {
+        this.logError('Replan failed, keeping current plan', error);
+        return currentPlan;
+      }
     }, 'replan');
   }
 

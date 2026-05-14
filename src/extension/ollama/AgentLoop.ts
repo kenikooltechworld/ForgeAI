@@ -6,6 +6,7 @@ import { ToolRegistry } from '../tools/ToolRegistry';
 import { generateSystemPrompt, getWorkspaceContext } from './SystemPrompt';
 import { MessageRouter, RoutingContext, RoutingResult } from '../classification/MessageRouter';
 import type { RagService } from '../rag/RagService';
+import type { SpecContext } from '../spec/types';
 
 /**
  * Agent Loop Update Types
@@ -66,6 +67,10 @@ export class AgentLoop {
   private shouldStop = false;
   private messageRouter = new MessageRouter(); // Message classification system
 
+  // Track tool failures to detect loops and force alternative approaches
+  private toolFailureCounts = new Map<string, number>();
+  private readonly maxToolRetries = 2; // Max failures per tool before forcing alternative
+
   constructor(
     private readonly ollamaClient: OllamaClient,
     private readonly logger: Logger,
@@ -85,7 +90,7 @@ export class AgentLoop {
     onUpdate: (update: AgentLoopUpdate) => void,
     tools: any[] = [],
     model: string = 'gpt-oss:120b-cloud',
-    options?: { maxIterations?: number } // undefined => unbounded (autonomous)
+    options?: { maxIterations?: number; specContext?: SpecContext } // undefined => unbounded (autonomous)
   ): Promise<void> {
     this.logger.info('Starting agent loop execution');
     this.logger.info(`Using model: ${model}`);
@@ -93,7 +98,7 @@ export class AgentLoop {
     this.shouldStop = false;
 
     // Get workspace context for system prompt and classification
-    const workspaceContext = this.gatherWorkspaceContext();
+    const workspaceContext = await this.gatherWorkspaceContext();
     this.logger.info(
       `Workspace context: ${workspaceContext.workspacePath || 'none'}, ` +
         `${workspaceContext.currentFiles?.length || 0} recent files`
@@ -119,6 +124,9 @@ export class AgentLoop {
           : [];
 
       ragChunks.push(...fetched);
+      this.logger.info(
+        `RAG retrieval: ${fetched.length} chunk(s) fetched${this.ragService ? '' : ' (service not configured)'}`
+      );
 
       const routingContext: RoutingContext = {
         userMessage,
@@ -129,8 +137,13 @@ export class AgentLoop {
         sessionHistory: [], // TODO: Add session history
       };
 
-      // Generate base system prompt (optionally grounded with RAG)
-      const baseSystemPrompt = generateSystemPrompt(workspaceContext, language, ragChunks);
+      // Generate base system prompt (optionally grounded with RAG and spec context)
+      const baseSystemPrompt = generateSystemPrompt(
+        workspaceContext,
+        language,
+        ragChunks,
+        options?.specContext
+      );
 
       // Route the message and get category-specific system prompt
       routing = this.messageRouter.route(routingContext, baseSystemPrompt);
@@ -153,7 +166,8 @@ export class AgentLoop {
     // that the final system prompt is consistently grounded.
     const messages = [...initialMessages];
     const systemPrompt =
-      routing?.systemPrompt || generateSystemPrompt(workspaceContext, language, ragChunks);
+      routing?.systemPrompt ||
+      generateSystemPrompt(workspaceContext, language, ragChunks, options?.specContext);
 
     if (messages.length === 0 || messages[0].role !== 'system') {
       messages.unshift({
@@ -208,7 +222,9 @@ export class AgentLoop {
             `Tool names being sent: ${effectiveTools.map((t: any) => t.function.name).join(', ')}`
           );
         } else {
-          this.logger.info('No tools being sent to Ollama (disabled by classification or not available)');
+          this.logger.info(
+            'No tools being sent to Ollama (disabled by classification or not available)'
+          );
         }
 
         // Get response from Ollama with streaming
@@ -249,7 +265,9 @@ export class AgentLoop {
 
               // Log token usage when available
               if (tokenUsage) {
-                this.logger.info(`📊📊📊 SENDING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(tokenUsage)}`);
+                this.logger.info(
+                  `📊📊📊 SENDING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(tokenUsage)}`
+                );
               }
 
               if (streamHandler.isDone()) {
@@ -336,13 +354,26 @@ export class AgentLoop {
             }
 
             // Add tool result to message history (Requirement 18.2)
+            // Truncate to prevent HTTP 400 from oversized payloads.
+            const MAX_TOOL_RESULT_CHARS = 12_000;
+            let toolResultJson = JSON.stringify(result);
+            if (toolResultJson.length > MAX_TOOL_RESULT_CHARS) {
+              toolResultJson =
+                toolResultJson.slice(0, MAX_TOOL_RESULT_CHARS) +
+                `\n... [truncated — ${toolResultJson.length - MAX_TOOL_RESULT_CHARS} chars omitted]`;
+            }
             messages.push({
               role: 'tool',
               tool_name: toolCall.function.name,
-              content: JSON.stringify(result),
+              content: toolResultJson,
             });
 
-            this.logger.info(`Tool ${toolCall.function.name} completed successfully in ${toolDuration}ms`);
+            // Reset failure count on success — the tool works again
+            this.toolFailureCounts.delete(toolCall.function.name);
+
+            this.logger.info(
+              `Tool ${toolCall.function.name} completed successfully in ${toolDuration}ms`
+            );
             onUpdate({
               type: 'toolComplete',
               toolCall,
@@ -355,11 +386,35 @@ export class AgentLoop {
             const toolDuration = Date.now() - toolStartTime; // Calculate duration even on error
             this.logger.error(`Tool ${toolCall.function.name} failed`, error);
 
+            // Track failures to detect loops
+            const toolKey = `${toolCall.function.name}`;
+            const currentFails = (this.toolFailureCounts.get(toolKey) || 0) + 1;
+            this.toolFailureCounts.set(toolKey, currentFails);
+
+            // Build error content with smart hints if this tool keeps failing
+            let errorContent = JSON.stringify({ error: errorMessage });
+
+            if (currentFails >= this.maxToolRetries) {
+              // Force the AI to try a completely different approach
+              const alternatives = this.getAlternativeTools(toolCall.function.name);
+              errorContent = JSON.stringify({
+                error: errorMessage,
+                warning: `This tool has failed ${currentFails} times. Do NOT retry it. Try a different approach.`,
+                suggestions: alternatives,
+              });
+
+              // Inject a system reminder about exploration
+              messages.push({
+                role: 'system',
+                content: `REMINDER: ${toolCall.function.name} keeps failing. Use a different tool. ${alternatives.join(' ')}`,
+              });
+            }
+
             // Add error result to message history
             messages.push({
               role: 'tool',
               tool_name: toolCall.function.name,
-              content: JSON.stringify({ error: errorMessage }),
+              content: errorContent,
             });
 
             onUpdate({
@@ -421,9 +476,56 @@ export class AgentLoop {
   }
 
   /**
+   * Get alternative tool suggestions when a tool keeps failing.
+   * Returns specific guidance based on the failed tool type.
+   */
+  private getAlternativeTools(failedTool: string): string[] {
+    const alternatives: Record<string, string[]> = {
+      forgeai_readFile: [
+        'Use forgeai_listDirectory(path) to see what files actually exist.',
+        'Use forgeai_findFiles(pattern) with a wildcard to discover the correct file name.',
+        'Use forgeai_searchInFiles(query) to find files containing specific text.',
+      ],
+      forgeai_writeFile: [
+        'Use forgeai_readFile first to check if the file already exists.',
+        'Use forgeai_listDirectory to verify the target directory exists.',
+        'Use forgeai_createDirectory if the parent directory is missing.',
+      ],
+      forgeai_listDirectory: [
+        'Use forgeai_findFiles("**/*") to list files recursively.',
+        'Use forgeai_getFileStats to check if the path exists and what type it is.',
+      ],
+      forgeai_searchInFiles: [
+        'Use forgeai_findFiles(pattern) to discover files by name first.',
+        'Use forgeai_listDirectory to explore the directory structure.',
+      ],
+      forgeai_findFiles: [
+        'Use forgeai_listDirectory(path) to see directory contents directly.',
+        'Use forgeai_searchInFiles(query) to search by file content instead of name.',
+      ],
+      forgeai_runCommand: [
+        'Use forgeai_getErrors() to see workspace errors that might explain the failure.',
+        'Use forgeai_searchInFiles to find relevant files before running commands.',
+      ],
+      forgeai_browser_navigate: [
+        'Use forgeai_webSearch(query) to get search results without a browser.',
+        'Use forgeai_webResearch(topic) for deep web research.',
+      ],
+    };
+
+    return (
+      alternatives[failedTool] || [
+        'Try a different tool that achieves the same goal.',
+        'Use forgeai_listDirectory to explore the workspace.',
+        'Use forgeai_findFiles to search for files by pattern.',
+      ]
+    );
+  }
+
+  /**
    * Gather workspace context for system prompt generation
    */
-  private gatherWorkspaceContext(): import('./SystemPrompt').WorkspaceContext {
+  private async gatherWorkspaceContext(): Promise<import('./SystemPrompt').WorkspaceContext> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
 
     if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -432,15 +534,115 @@ export class AgentLoop {
 
     const workspacePath = workspaceFolders[0].uri.fsPath;
 
-    // Get currently open files
     const openFiles = vscode.window.visibleTextEditors
       .map((editor) => vscode.workspace.asRelativePath(editor.document.uri))
       .filter((path) => !path.startsWith('..'));
 
+    // Fetch workspace files for a compact tree (excluding noise folders, capped at 80)
+    let workspaceFiles: string[] = [];
+    try {
+      const exclude =
+        '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/out/**,**/.next/**,**/coverage/**,**/.cache/**}';
+      const uris = await vscode.workspace.findFiles('**/*', exclude, 80);
+      workspaceFiles = uris.map((uri) => vscode.workspace.asRelativePath(uri)).sort();
+    } catch {
+      // Non-fatal — proceed without file tree
+    }
+
+    const workspaceTree = this.buildCompactTree(workspaceFiles, 60);
+
     return {
       workspacePath,
       openFiles,
-      currentFiles: openFiles, // For now, use the same as openFiles
+      currentFiles: openFiles,
+      workspaceFiles,
+      workspaceTree,
     };
+  }
+
+  /**
+   * Build a compact, line-capped directory tree from relative file paths.
+   * Deep or densely-populated directories collapse into summaries like:
+   *   - components/ ... (12 sub-items, 34 files)
+   */
+  private buildCompactTree(paths: string[], maxLines = 60): string {
+    interface TreeNode {
+      [key: string]: TreeNode;
+    }
+
+    const tree: TreeNode = {};
+    for (const p of paths) {
+      const parts = p.split(/[\\/]/).filter(Boolean);
+      if (parts.length === 0) {
+        continue;
+      }
+      let node: TreeNode = tree;
+      for (const part of parts) {
+        if (!node[part]) {
+          node[part] = {};
+        }
+        node = node[part];
+      }
+    }
+
+    let lineCount = 0;
+    const lines: string[] = [];
+
+    const countFiles = (node: TreeNode): number => {
+      let c = 0;
+      for (const k of Object.keys(node)) {
+        if (Object.keys(node[k]).length === 0) {
+          c++;
+        } else {
+          c += countFiles(node[k]);
+        }
+      }
+      return c;
+    };
+
+    const render = (node: TreeNode, indent = '', depth = 0) => {
+      const entries = Object.keys(node).sort((a, b) => {
+        const aIsDir = Object.keys(node[a]).length > 0;
+        const bIsDir = Object.keys(node[b]).length > 0;
+        if (aIsDir && !bIsDir) {
+          return -1;
+        }
+        if (!aIsDir && bIsDir) {
+          return 1;
+        }
+        return a.localeCompare(b);
+      });
+
+      for (let i = 0; i < entries.length; i++) {
+        if (lineCount >= maxLines) {
+          return;
+        }
+        const key = entries[i];
+        const children = Object.keys(node[key]);
+        const isFile = children.length === 0;
+
+        if (isFile) {
+          lines.push(`${indent}- ${key}`);
+          lineCount++;
+        } else {
+          const fileCount = countFiles(node[key]);
+          // Collapse deep or wide directories to stay within the line budget
+          if (depth >= 2 && (children.length > 4 || fileCount > 6)) {
+            lines.push(`${indent}- ${key}/ ... (${children.length} sub-items, ${fileCount} files)`);
+            lineCount++;
+          } else {
+            lines.push(`${indent}- ${key}/`);
+            lineCount++;
+            render(node[key], indent + '  ', depth + 1);
+          }
+        }
+      }
+    };
+
+    render(tree);
+    if (paths.length > 0 && lineCount >= maxLines) {
+      lines.push('... (tree truncated — use forgeai_listFiles to explore deeper)');
+    }
+    return lines.join('\n');
   }
 }

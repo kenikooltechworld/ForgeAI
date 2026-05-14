@@ -12,7 +12,7 @@ import {
   TaskPlan,
   RecoveryStrategy,
   TaskType,
-} from '../../orchestrator/types';
+} from '../types';
 import { createMockToolRegistry, createMockOllamaClient } from '../../__tests__/testUtils';
 
 describe('CriticAgent', () => {

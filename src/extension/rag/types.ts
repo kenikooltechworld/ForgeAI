@@ -1,11 +1,34 @@
 export type DocSourceId =
+  // Development docs
   | 'reactjs'
-  | 'python'
-  | 'go'
+  | 'typescript'
   | 'javascript'
+  | 'python'
+  | 'nodejs'
+  | 'go'
+  | 'rust'
+  | 'nextjs'
+  | 'vuejs'
+  | 'express'
+  | 'fastapi'
   | 'tailwindcss'
   | 'shadcn'
+  | 'prisma'
+  | 'vite'
+  | 'docker'
+  | 'git'
+  | 'postgresql'
+  | 'mongodb'
+  | 'vscode-api'
+  | 'zustand'
   | 'chakra-ui'
+  // Design system docs (UI/UX Architect Agent)
+  | 'material-design-3'
+  | 'apple-hig'
+  | 'wcag-guidelines'
+  | 'tailwind-docs'
+  | 'design-patterns'
+  | 'animation-patterns'
   | string;
 
 export interface ScrapedDocPage {

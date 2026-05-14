@@ -262,7 +262,7 @@ function CodeDiff({ diff, onApply, onReject, onOpenInEditor }: CodeDiffProps) {
       )}
 
       {/* Diff content with scrollbar */}
-      <div className="flex-1" style={{ overflow: 'auto', minHeight: 0 }}>
+      <div className="flex-1 scrollable-modern" style={{ overflow: 'auto', minHeight: 0 }}>
         <div
           className="border border-input rounded"
           style={{ margin: '0.5rem', minWidth: 'max-content' }}

@@ -202,7 +202,7 @@ export const FilePreview = memo(function FilePreview({
       )}
 
       {/* File content with syntax highlighting */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto scrollable-modern">
         <SyntaxHighlighter
           language={language}
           style={syntaxTheme}

@@ -91,7 +91,7 @@ export function MaxIterationsWarning({
                       <div className="font-semibold text-[var(--vscode-editor-foreground)]">
                         Last reasoning:
                       </div>
-                      <div className="mt-1 max-h-32 overflow-y-auto text-[var(--vscode-descriptionForeground)]">
+                      <div className="mt-1 max-h-32 overflow-y-auto scrollable-modern text-[var(--vscode-descriptionForeground)]">
                         {context.lastThinking.slice(0, 300)}
                         {context.lastThinking.length > 300 && '...'}
                       </div>
@@ -104,7 +104,7 @@ export function MaxIterationsWarning({
                       <div className="font-semibold text-[var(--vscode-editor-foreground)]">
                         Last message:
                       </div>
-                      <div className="mt-1 max-h-32 overflow-y-auto text-[var(--vscode-descriptionForeground)]">
+                      <div className="mt-1 max-h-32 overflow-y-auto scrollable-modern text-[var(--vscode-descriptionForeground)]">
                         {context.lastContent.slice(0, 300)}
                         {context.lastContent.length > 300 && '...'}
                       </div>

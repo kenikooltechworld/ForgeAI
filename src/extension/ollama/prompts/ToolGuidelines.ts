@@ -36,6 +36,12 @@ You have access to comprehensive file system, terminal, git, and diagnostic tool
 **forgeai_gitPull()** - Pull commits from remote
 **forgeai_gitCreateBranch(name, checkout)** - Create new branch
 
+### Web Search Tools (No local browser needed)
+
+**forgeai_webSearch(query)** - Search the web for documentation, errors, or general information
+**forgeai_webResearch(topic, subQueries)** - Deep research with multiple aggregated queries
+**forgeai_searchDocs(library, topic)** - Find official documentation for a library or framework
+
 ### Diagnostics Tools
 
 **forgeai_getErrors()** - Get all errors and warnings in workspace
@@ -51,7 +57,66 @@ You have access to comprehensive file system, terminal, git, and diagnostic tool
 
 **Handle Errors Gracefully**: When commands fail, analyze the error and fix the underlying issue automatically.
 
-**Use Correct Tool Names**: All tools are prefixed with 'forgeai_'. Never use tool names without this prefix.`;
+**Use Correct Tool Names**: All tools are prefixed with 'forgeai_'. Never use tool names without this prefix.
+
+### EXPLORATION STRATEGY — Critical
+
+When you cannot find something or a tool fails, you MUST try a different approach. Do NOT retry the same failed tool with the same parameters.
+
+**If a file is not found:**
+1. Use forgeai_listDirectory(path) to see what files actually exist
+2. Use forgeai_findFiles(pattern) with a broader pattern (e.g., "**/*task*", "**/*.tsx")
+3. Then use forgeai_readFile with the correct name you discovered
+
+**If you don't know the exact file name:**
+1. ALWAYS use forgeai_listDirectory first to explore
+2. Or use forgeai_findFiles with a wildcard pattern
+3. Never guess file names — explore first
+
+**If a tool returns "not found" or fails:**
+1. Do NOT call the same tool again with the same args
+2. Try a different tool that achieves the same goal
+3. Example: readFile fails → try listDirectory + findFiles
+
+**When researching online:**
+1. Use forgeai_webSearch for quick lookups (errors, docs, best practices)
+2. Use forgeai_webResearch for deep investigation
+3. Only use browser tools (forgeai_browser_*) if you need to interact with a page (click, screenshot)
+4. Prefer web search over browser tools — they are faster and don't need local Chromium
+
+### Code Completeness & Verification Checklist
+
+Every time you create or modify files, you MUST run through this checklist BEFORE declaring the task complete:
+
+**Step 1: Create complete files**
+- Write the full implementation, not stubs
+- Include all imports at the top of each file
+- Export everything that other files need
+- Add TypeScript types where appropriate
+
+**Step 2: Connect to the app**
+- Import new components/modules where they are used
+- Add new routes if creating pages
+- Register new services/providers in the app entry point
+- Update barrel exports (index.ts) if the project uses them
+
+**Step 3: Apply styling**
+- Add CSS/SCSS, styled-components, Tailwind classes, or whatever the project uses
+- Ensure the UI looks good, not just functional
+- Follow the project's existing styling conventions
+- Never deliver unstyled UI components
+
+**Step 4: Verify with build/test**
+- Run the build (npm run build, tsc --noEmit, etc.)
+- Fix any TypeScript errors immediately
+- Run tests if available
+- Fix any failing tests
+
+**Step 5: Final check**
+- Re-read the files you created — do they make sense?
+- Are all imports resolving correctly?
+- Is the feature actually usable from the user's perspective?
+- Would a developer be proud to ship this code?`;
 }
 
 export function getTerminalGuidelines(): string {
@@ -62,7 +127,8 @@ export function getTerminalGuidelines(): string {
 
 **Error Recovery**: When commands fail:
 1. Analyze the error message
-2. Fix the root cause (install dependencies, correct paths, fix syntax)
-3. Retry the operation
-4. Only escalate if you can't resolve it`;
+2. Try a different approach or tool — do NOT retry the exact same failing command blindly
+3. Fix the root cause (install dependencies, correct paths, fix syntax)
+4. Only retry after you've changed something meaningful
+5. Only escalate if you can't resolve it after trying multiple approaches`;
 }

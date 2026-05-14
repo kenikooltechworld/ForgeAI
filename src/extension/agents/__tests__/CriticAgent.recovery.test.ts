@@ -1,7 +1,7 @@
 import { CriticAgent } from '../CriticAgent';
 import { createMockToolRegistry, createMockOllamaClient } from '../../__tests__/testUtils';
-import { RecoveryExecutor } from '../../orchestrator/RecoveryExecutor';
-import { CriticInput, CriticOutput, Task, ExecutorOutput } from '../../orchestrator/types';
+import { RecoveryExecutor } from '../recovery/RecoveryExecutor';
+import { CriticInput, CriticOutput, Task, ExecutorOutput } from '../types';
 
 describe('CriticAgent Phase 3 recovery', () => {
   test('returns pass after executing recovery when initial critic status is fail', async () => {
@@ -22,9 +22,7 @@ describe('CriticAgent Phase 3 recovery', () => {
       .mockResolvedValue({
         succeeded: true,
         confidence: 0.9,
-        steps: [
-          { action: 'Install dependency', tool: 'forgeai_runCommand', succeeded: true },
-        ],
+        steps: [{ action: 'Install dependency', tool: 'forgeai_runCommand', succeeded: true }],
         errorMessage: 'Error: Cannot find module ...',
         category: 'missing_dependency',
       });

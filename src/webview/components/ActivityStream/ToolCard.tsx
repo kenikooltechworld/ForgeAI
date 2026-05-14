@@ -123,6 +123,9 @@ function ToolCard({
     // Git operations
     if (name.includes('git') || name.includes('Git')) return <GitBranch {...iconProps} />;
 
+    // Browser operations
+    if (name.includes('browser') || name.includes('Browser')) return <Globe {...iconProps} />;
+
     // Default tool icon
     return <Wrench {...iconProps} />;
   };
@@ -253,7 +256,7 @@ function ToolCard({
           {args && Object.keys(args).length > 0 && (
             <div className="mb-3">
               <div className="text-xs font-semibold text-muted mb-1">Input Parameters:</div>
-              <div className="p-2 rounded bg-editor text-xs overflow-x-auto">
+              <div className="p-2 rounded bg-editor text-xs overflow-x-auto scrollable-modern">
                 <pre
                   className="text-editor m-0"
                   style={{ fontFamily: 'var(--vscode-editor-font-family)' }}
@@ -268,7 +271,7 @@ function ToolCard({
           {result && status === 'Complete' && (
             <div>
               <div className="text-xs font-semibold text-muted mb-1">Output Data:</div>
-              <div className="p-2 rounded bg-editor text-xs overflow-x-auto">
+              <div className="p-2 rounded bg-editor text-xs overflow-x-auto scrollable-modern">
                 <pre
                   className="text-editor m-0"
                   style={{ fontFamily: 'var(--vscode-editor-font-family)' }}

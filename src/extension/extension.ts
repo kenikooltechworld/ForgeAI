@@ -3,6 +3,9 @@ import { StorageManager } from './storage/StorageManager';
 import { Logger } from './utils/Logger';
 import { CommandManager } from './utils/CommandManager';
 import { WebviewManager } from './utils/WebviewManager';
+import type { RagService } from './rag/RagService';
+import { SpecReader } from './spec/SpecReader';
+import { SpecTaskExecutor } from './spec/SpecTaskExecutor';
 
 /**
  * ForgeAI Extension - Production-ready OOP architecture
@@ -17,7 +20,7 @@ export class ForgeAIExtension {
   public async activate(): Promise<void> {
     await this.initializeServices();
     this.registerCommands();
-    this.registerProviders();
+    await this.registerProviders();
 
     this.context.subscriptions.push(new vscode.Disposable(() => this.deactivate()));
 
@@ -44,64 +47,155 @@ export class ForgeAIExtension {
     toolRegistry.registerAllTools();
     this.services.set('toolRegistry', toolRegistry);
 
-    // Check Ollama availability
-    const isAvailable = await ollama.isAvailable();
-    if (isAvailable) {
-      logger.info('Ollama is available and ready');
+    // Initialize RAG retrieval service used during chat execution.
+    const ragService = await this.createRagService(logger, ollama);
+    if (ragService) {
+      this.services.set('ragService', ragService);
+      logger.info('RAG service initialized for chat retrieval');
     } else {
-      logger.warn('Ollama is not running. Please start Ollama to use AI features.');
+      logger.warn('RAG service unavailable - chat will run without retrieval grounding');
     }
 
-    // Kick off initial RAG ingestion (first install only).
-    // MVP: runs once asynchronously; later we’ll add scheduler + diff/replace.
+    // Keep activation responsive: run non-critical checks in background.
+    void this.checkOllamaAvailability(ollama, logger);
+    void this.startOptionalRagBootstrap(storage, logger);
+
+    logger.info('Core services initialized');
+  }
+
+  private async createRagService(logger: Logger, ollama: any): Promise<RagService | undefined> {
+    try {
+      const { RagServiceImpl } = await import('./rag/RagService');
+      const { LanceDbRagStore } = await import('./rag/store/LanceDbRagStore');
+      const { OllamaEmbeddingsProvider } =
+        await import('./rag/embeddings/OllamaEmbeddingsProvider');
+
+      const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
+      const embeddingsModel = 'nomic-embed-text:latest';
+      const embeddings = new OllamaEmbeddingsProvider({
+        ollama,
+        logger,
+        embeddingsModel,
+      });
+      const store = new LanceDbRagStore({
+        logger,
+        embeddings,
+        dbPath,
+      });
+
+      return new RagServiceImpl(store);
+    } catch (error) {
+      logger.warn('Failed to initialize RAG service', error);
+      return undefined;
+    }
+  }
+
+  private async checkOllamaAvailability(ollama: any, logger: Logger): Promise<void> {
+    try {
+      const isAvailable = await ollama.isAvailable();
+      if (isAvailable) {
+        logger.info('Ollama is available and ready');
+      } else {
+        logger.warn('Ollama is not running. Please start Ollama to use AI features.');
+      }
+    } catch (error) {
+      logger.warn('Failed to check Ollama availability', error);
+    }
+  }
+
+  private async startOptionalRagBootstrap(storage: StorageManager, logger: Logger): Promise<void> {
+    try {
+      // Delay startup-heavy indexing so activation and UI stay responsive.
+      setTimeout(() => {
+        void this.runRagBootstrap(storage, logger);
+      }, 1500);
+    } catch (error) {
+      logger.warn('RAG bootstrap initialization skipped', error);
+    }
+  }
+
+  private async runRagBootstrap(storage: StorageManager, logger: Logger): Promise<void> {
     try {
       const didInitialIngest = await storage.getGlobalValue('forgeai.rag.didInitialIngest', false);
-      if (!didInitialIngest) {
-        const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
-        const embeddingsModel = 'nomic-embed-text:latest';
-
-        void (async () => {
-          logger.info('RAG ingestion: starting initial scrape (first install)...');
-          const { RagIngestionService } = await import('./rag/RagIngestionService');
-          await new RagIngestionService({
-            logger,
-            ollamaEmbeddingsModel: embeddingsModel,
-            dbPath,
-          }).runOnSources({ sourceIds: ['reactjs'] });
-
-          await storage.setGlobalValue('forgeai.rag.didInitialIngest', true);
-          logger.info('RAG ingestion: initial scrape complete');
-        })().catch((err) => {
-          logger.error('RAG ingestion: initial scrape failed', err);
-        });
-      }
-
-      // Always schedule/attempt refresh after activation (will self-skip if not due).
-      const { RagScheduler } = await import('./rag/scheduler/RagScheduler');
       const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
       const embeddingsModel = 'nomic-embed-text:latest';
 
-// StorageManager.getGlobalValue is synchronous (returns T), but RagSchedulerDeps expects Promise<T>.
-// Wrap to satisfy the scheduler interface.
-      // RagSchedulerDeps typing expects async storage functions, but StorageManager.getGlobalValue is sync.
-      // Cast the whole dependency object to avoid a generic mismatch and keep runtime behavior correct.
-      void new (RagScheduler as any)({
-        logger,
-        ollamaEmbeddingsModel: embeddingsModel,
-        dbPath,
-        storage: {
-          getGlobalValue: async <T>(key: string, defaultValue: T): Promise<T> => {
-            return storage.getGlobalValue<T>(key, defaultValue);
-          },
-          setGlobalValue: storage.setGlobalValue.bind(storage),
-        },
-        refreshMs: 3 * 24 * 60 * 60 * 1000,
-      }).runRefresh({ sourceIds: ['reactjs'] });
-    } catch (err) {
-      logger.warn('RAG ingestion bootstrap skipped (config/storage error)', err);
-    }
+      const allSourceIds = [
+        'reactjs',
+        'typescript',
+        'javascript',
+        'python',
+        'nodejs',
+        'go',
+        'rust',
+        'nextjs',
+        'vuejs',
+        'express',
+        'fastapi',
+        'tailwindcss',
+        'shadcn',
+        'prisma',
+        'vite',
+        'docker',
+        'git',
+        'postgresql',
+        'mongodb',
+        'vscode-api',
+        'zustand',
+      ];
 
-    logger.info('Core services initialized');
+      if (!didInitialIngest) {
+        logger.info('RAG ingestion: first install — prompting user to select sources');
+
+        const action = await vscode.window.showInformationMessage(
+          'ForgeAI: Choose which documentation sources to index for AI context.',
+          { modal: false },
+          'Open RAG Settings'
+        );
+
+        if (action === 'Open RAG Settings') {
+          await this.openRagSettings();
+        }
+
+        // Mark as seen so we don't prompt again on next activation
+        await storage.setGlobalValue('forgeai.rag.didInitialIngest', true);
+      } else {
+        // Only run periodic refresh on subsequent activations if explicitly enabled
+        const enableBootstrap = vscode.workspace
+          .getConfiguration('forgeai')
+          .get<boolean>('enableRagBootstrap', false);
+        if (enableBootstrap) {
+          const { RagScheduler } = await import('./rag/scheduler/RagScheduler');
+          const scheduler = new (RagScheduler as any)({
+            logger,
+            ollamaEmbeddingsModel: embeddingsModel,
+            dbPath,
+            storage: {
+              getGlobalValue: async <T>(key: string, defaultValue: T): Promise<T> => {
+                return storage.getGlobalValue<T>(key, defaultValue);
+              },
+              setGlobalValue: storage.setGlobalValue.bind(storage),
+            },
+            refreshMs: 3 * 24 * 60 * 60 * 1000,
+            onRefreshStart: () => {
+              void vscode.window.showInformationMessage(
+                'ForgeAI: Refreshing documentation index in the background\u2026'
+              );
+            },
+          });
+          void scheduler.runRefresh({ sourceIds: allSourceIds });
+        }
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(
+        'RAG ingestion bootstrap failed',
+        error instanceof Error ? error : new Error(msg)
+      );
+      void vscode.window.showErrorMessage(
+        `ForgeAI: Documentation indexing failed — ${msg}. Check the ForgeAI output channel for details.`
+      );
+    }
   }
 
   private registerCommands(): void {
@@ -111,16 +205,38 @@ export class ForgeAIExtension {
     commandManager.registerCommand('forgeai.open', () => this.openForgeAI());
     commandManager.registerCommand('forgeai.manage', () => this.manageForgeAI());
     commandManager.registerCommand('forgeai.resetOnboarding', () => this.resetOnboarding());
+    commandManager.registerCommand('forgeai.openRagSettings', () => this.openRagSettings());
+
+    // UI/UX Architect Agent commands (Phase 2.5)
+    commandManager.registerCommand('forgeai.uiux.createDesignSystem', () =>
+      this.createDesignSystem()
+    );
+    commandManager.registerCommand('forgeai.uiux.generateTokens', () => this.generateTokens());
+    commandManager.registerCommand('forgeai.uiux.critiqueDesign', () => this.critiqueDesign());
+    commandManager.registerCommand('forgeai.uiux.checkAccessibility', () =>
+      this.checkAccessibility()
+    );
+
+    // Phase 5: Webview UI Panel commands
+    commandManager.registerCommand('forgeai.openSpecReview', () => this.openSpecReview());
+    commandManager.registerCommand('forgeai.openTaskTracker', () => this.openTaskTracker());
+    commandManager.registerCommand('forgeai.openDesignSystem', () => this.openDesignSystem());
+
+    // Spec-driven architecture commands
+    commandManager.registerCommand('forgeai.generateSpec', () => this.generateSpecCommand());
+    commandManager.registerCommand('forgeai.loadSpec', () => this.loadSpec());
+    commandManager.registerCommand('forgeai.runSpec', () => this.runSpec());
 
     this.context.subscriptions.push(commandManager);
     logger.info('Commands registered');
   }
 
-  private registerProviders(): void {
+  private async registerProviders(): Promise<void> {
     const logger = this.services.get('logger') as Logger;
     const storage = this.services.get('storage') as StorageManager;
     const ollama = this.services.get('ollama');
     const toolRegistry = this.services.get('toolRegistry');
+    const ragService = this.services.get('ragService');
 
     try {
       // Register webview provider
@@ -129,7 +245,8 @@ export class ForgeAIExtension {
         storage,
         logger,
         ollama,
-        toolRegistry
+        toolRegistry,
+        ragService
       );
 
       // VS Code typings in this repo expect TWO args here.
@@ -148,7 +265,12 @@ export class ForgeAIExtension {
       this.registerLanguageModelChatProvider(logger, ollama, toolRegistry);
 
       // Register Chat Participant (Task 11.2)
-      this.registerChatParticipant(logger, ollama, toolRegistry);
+      this.registerChatParticipant(logger, ollama, toolRegistry, ragService);
+
+      // Register UI/UX Architect Agent Design System webview (Phase 2.6)
+      await this.registerUIUXDesignSystemView(logger);
+
+      // RAG messages are handled inside the main WebviewManager
     } catch (error) {
       logger.error('Failed to register providers', error);
       throw error;
@@ -179,9 +301,12 @@ export class ForgeAIExtension {
       const { LanguageModelChatProvider } = await import('./providers/LanguageModelChatProvider');
       const provider = new LanguageModelChatProvider(ollama, logger, toolRegistry);
 
-// VS Code typing in this repo expects TWO arguments here.
+      // VS Code typing in this repo expects TWO arguments here.
       // repo typing expects (id, provider) only
-      const disposable = (vscode.lm as any).registerLanguageModelChatProvider('forgeai', provider as any);
+      const disposable = (vscode.lm as any).registerLanguageModelChatProvider(
+        'forgeai',
+        provider as any
+      );
 
       this.context.subscriptions.push(disposable);
       logger.info('Language Model Chat Provider registered successfully');
@@ -194,11 +319,12 @@ export class ForgeAIExtension {
   private async registerChatParticipant(
     logger: Logger,
     ollama: any,
-    toolRegistry: any
+    toolRegistry: any,
+    ragService: RagService | undefined
   ): Promise<void> {
     try {
       const { ChatParticipant } = await import('./providers/ChatParticipant');
-      const chatParticipant = new ChatParticipant(ollama, toolRegistry, logger);
+      const chatParticipant = new ChatParticipant(ollama, toolRegistry, logger, ragService);
 
       const participant = (vscode.chat as any).createChatParticipant(
         'forgeai.assistant',
@@ -237,6 +363,15 @@ export class ForgeAIExtension {
     );
   }
 
+  private async openRagSettings(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    logger.info('Opening RAG Settings view');
+    if (this.webviewManager) {
+      await this.webviewManager.reveal();
+      this.webviewManager.showRagSettings();
+    }
+  }
+
   private async resetOnboarding(): Promise<void> {
     const logger = this.services.get('logger') as Logger;
     const storage = this.services.get('storage') as StorageManager;
@@ -256,6 +391,289 @@ export class ForgeAIExtension {
     }
 
     logger.info('Onboarding tooltips reset successfully');
+  }
+
+  // ─── UI/UX Architect Agent Commands (Phase 2.5) ────────────────────────
+
+  private async createDesignSystem(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const ollama = this.services.get('ollama') as import('./ollama/OllamaClient').OllamaClient;
+    const toolRegistry = this.services.get(
+      'toolRegistry'
+    ) as import('./tools/ToolRegistry').ToolRegistry;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+
+    const { UIUXArchitectAgent } = await import('./agents/ui-ux-architect/UIUXArchitectAgent');
+    const agent = new UIUXArchitectAgent(toolRegistry, ollama, logger, workspaceRoot);
+
+    const primaryColor = await vscode.window.showInputBox({
+      prompt: 'Enter primary brand color (hex, e.g., #3b82f6)',
+      value: '#3b82f6',
+    });
+    if (!primaryColor) return;
+
+    const name = await vscode.window.showInputBox({
+      prompt: 'Design system name',
+      value: 'My Design System',
+    });
+    if (!name) return;
+
+    const result = await agent.execute({
+      request: `create design system "${name}" with primary color ${primaryColor}`,
+      workspaceRoot,
+    });
+
+    if (result.success) {
+      vscode.window.showInformationMessage(`Design system "${name}" created successfully!`);
+      logger.info('UI/UX: Design system created', result);
+    } else {
+      vscode.window.showErrorMessage(`Failed: ${result.error || 'Unknown error'}`);
+    }
+  }
+
+  private async generateTokens(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const ollama = this.services.get('ollama') as import('./ollama/OllamaClient').OllamaClient;
+    const toolRegistry = this.services.get(
+      'toolRegistry'
+    ) as import('./tools/ToolRegistry').ToolRegistry;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+
+    const { UIUXArchitectAgent } = await import('./agents/ui-ux-architect/UIUXArchitectAgent');
+    const agent = new UIUXArchitectAgent(toolRegistry, ollama, logger, workspaceRoot);
+
+    const format = await vscode.window.showQuickPick(['json', 'css', 'tailwind', 'all'], {
+      placeHolder: 'Select token export format',
+    });
+    if (!format) return;
+
+    const result = await agent.execute({
+      request: `generate tokens in ${format} format`,
+      workspaceRoot,
+    });
+
+    if (result.success) {
+      vscode.window.showInformationMessage(`Tokens exported in ${format} format!`);
+    } else {
+      vscode.window.showErrorMessage(`Failed: ${result.error || 'No design system found'}`);
+    }
+  }
+
+  private critiqueDesign(): void {
+    void vscode.window.showInformationMessage(
+      'Design critique: analyze open files for design issues (coming soon)'
+    );
+  }
+
+  private checkAccessibility(): void {
+    void vscode.window.showInformationMessage(
+      'Accessibility check: WCAG compliance scanner (coming soon)'
+    );
+  }
+
+  // ─── Phase 5: Webview UI Panel Commands ──────────────────────────────
+
+  private openSpecReview(): void {
+    this.ensureWebviewOpen();
+    this.webviewManager?.postMessage({ type: 'openSpecReview' });
+    const logger = this.services.get('logger') as Logger;
+    logger.info('Opening Spec Review panel');
+  }
+
+  private openTaskTracker(): void {
+    this.ensureWebviewOpen();
+    this.webviewManager?.postMessage({ type: 'openTaskTracker' });
+    const logger = this.services.get('logger') as Logger;
+    logger.info('Opening Task Tracker panel');
+  }
+
+  private openDesignSystem(): void {
+    this.ensureWebviewOpen();
+    this.webviewManager?.postMessage({ type: 'openDesignSystem' });
+    const logger = this.services.get('logger') as Logger;
+    logger.info('Opening Design System panel');
+  }
+
+  private ensureWebviewOpen(): void {
+    if (!this.webviewManager) return;
+    // Focus the webview view if available
+    void vscode.commands.executeCommand('forgeai.chatView.focus');
+  }
+
+  // ─── Spec-Driven Architecture Commands ────────────────────────────────
+
+  private async loadSpec(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      void vscode.window.showWarningMessage('No workspace open to load specs from');
+      return;
+    }
+
+    const specsDir = vscode.Uri.joinPath(vscode.Uri.file(workspaceRoot), '.forgeai', 'specs');
+    try {
+      await vscode.workspace.fs.createDirectory(specsDir);
+    } catch {
+      // Directory may already exist
+    }
+
+    // Let user pick a spec directory
+    const specUris = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri: specsDir,
+      openLabel: 'Load Spec',
+      title: 'Select a spec directory (contains requirements.md and tasks.md)',
+    });
+
+    if (!specUris || specUris.length === 0) {
+      return;
+    }
+
+    const specDir = specUris[0].fsPath;
+    logger.info(`Loading spec from: ${specDir}`);
+
+    try {
+      const specReader = new SpecReader();
+      const spec = await specReader.parseSpecDirectory(specDir);
+
+      // Store parsed spec in workspace state so WebviewManager can access it
+      await this.webviewManager?.loadSpecIntoPanels(spec);
+
+      // Open the spec review panel to show loaded data
+      this.openSpecReview();
+      this.openTaskTracker();
+
+      void vscode.window.showInformationMessage(
+        `Loaded spec "${spec.id}": ${spec.requirements.length} requirements, ${spec.tasks.length} tasks, ${spec.progress}% complete`
+      );
+      logger.info(`Spec loaded: ${spec.id} with ${spec.tasks.length} tasks`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to load spec', error);
+      void vscode.window.showErrorMessage(`Failed to load spec: ${msg}`);
+    }
+  }
+
+  private async runSpec(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const ollama = this.services.get('ollama');
+    if (!ollama) {
+      void vscode.window.showWarningMessage('Ollama client not available. Cannot run spec.');
+      return;
+    }
+
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      void vscode.window.showWarningMessage('No workspace open to run specs from');
+      return;
+    }
+
+    // Let user pick a spec directory
+    const specsDir = vscode.Uri.joinPath(vscode.Uri.file(workspaceRoot), '.forgeai', 'specs');
+    const specUris = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri: specsDir,
+      openLabel: 'Run Spec',
+      title: 'Select a spec directory to execute',
+    });
+
+    if (!specUris || specUris.length === 0) {
+      return;
+    }
+
+    const specDir = specUris[0].fsPath;
+    logger.info(`Running spec from: ${specDir}`);
+
+    try {
+      const executor = new SpecTaskExecutor();
+
+      // Open panels to show progress
+      this.openSpecReview();
+      this.openTaskTracker();
+
+      const result = await executor.executeSpec(
+        specDir,
+        { execute: ollama.execute.bind(ollama) },
+        {
+          stopAtCheckpoints: true,
+          autoRetry: true,
+          maxRetries: 2,
+          continueOnFailure: true,
+          onTaskProgress: (task, progress) => {
+            logger.info(`Spec progress: ${progress}% — Task ${task.id}: ${task.description}`);
+            void this.webviewManager?.updateTaskInPanel(task);
+          },
+          onTaskComplete: (task, compliance) => {
+            logger.info(`Task ${task.id} completed with score ${compliance.score}`);
+            void this.webviewManager?.updateTaskInPanel(task);
+          },
+          onTaskFail: (task, error) => {
+            logger.warn(`Task ${task.id} failed: ${error}`);
+            void this.webviewManager?.updateTaskInPanel(task);
+          },
+          onCheckpoint: async (phase) => {
+            const choice = await vscode.window.showInformationMessage(
+              `Checkpoint reached: Phase ${phase.number} — ${phase.title}`,
+              'Continue',
+              'Pause'
+            );
+            return choice === 'Continue';
+          },
+        }
+      );
+
+      void vscode.window.showInformationMessage(
+        `Spec execution complete: ${result.completed}/${result.spec.tasks.length} tasks completed, ${result.failed} failed`
+      );
+      logger.info(`Spec run finished: ${result.completed} completed, ${result.failed} failed`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to run spec', error);
+      void vscode.window.showErrorMessage(`Failed to run spec: ${msg}`);
+    }
+  }
+
+  private async generateSpecCommand(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+
+    const userRequest = await vscode.window.showInputBox({
+      prompt: 'Describe the feature or system to spec out',
+      placeHolder: 'e.g., "User authentication with OAuth2 and email verification"',
+      title: 'Generate Spec',
+    });
+
+    if (!userRequest || !userRequest.trim()) {
+      return;
+    }
+
+    // Ensure webview is open
+    this.ensureWebviewOpen();
+
+    // Use a synthetic conversation ID for the command-based flow
+    const conversationId = `spec-gen-${Date.now()}`;
+    await this.webviewManager?.generateSpec(conversationId, userRequest.trim());
+    logger.info(`Command-triggered spec generation for: ${userRequest}`);
+  }
+
+  private async registerUIUXDesignSystemView(logger: Logger): Promise<void> {
+    try {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+      const { UIUXWebviewProvider } = await import('./agents/ui-ux-architect/UIUXWebviewProvider');
+      const provider = new UIUXWebviewProvider(this.context, workspaceRoot);
+
+      const disposable = vscode.window.registerWebviewViewProvider(
+        UIUXWebviewProvider.viewType,
+        provider
+      );
+      this.context.subscriptions.push(disposable);
+      logger.info('UI/UX Design System webview registered');
+    } catch (error) {
+      logger.error('Failed to register UI/UX webview', error);
+    }
   }
 
   private deactivate(): void {

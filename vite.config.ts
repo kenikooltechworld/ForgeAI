@@ -26,7 +26,7 @@ export default defineConfig({
     },
     target: 'ES2022',
     minify: 'terser',
-    sourcemap: true,
+    sourcemap: false,
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),

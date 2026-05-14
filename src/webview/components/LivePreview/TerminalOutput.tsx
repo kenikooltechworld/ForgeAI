@@ -99,7 +99,7 @@ export function TerminalOutput({
       </div>
 
       {/* Output Content */}
-      <div className="flex-1 overflow-auto p-3">
+      <div className="flex-1 overflow-auto scrollable-modern p-3">
         {/* STDOUT */}
         {stdout && (
           <div className="mb-4">

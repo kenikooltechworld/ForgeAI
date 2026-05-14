@@ -2,12 +2,12 @@ import { MessageSquare, Search, ChevronDown } from 'lucide-react';
 import { useConversationStore } from '../../store/conversationStore';
 import ThinkingBlock from './ThinkingBlock';
 import ToolCard from './ToolCard';
+import SkeletonLoader from './SkeletonLoader';
 import { MarkdownRenderer, StreamingMarkdownRenderer } from '../MarkdownRenderer';
 import { ErrorNotification } from '../ErrorNotification';
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { useStreamingResponse } from '../../hooks/useStreamingResponse';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { Message } from '../../types';
+import type { Message } from '../../types';
 import type { MessageFilterType } from './MessageFilter';
 import type { ErrorType } from '../ErrorNotification';
 
@@ -15,15 +15,20 @@ interface MessageListProps {
   filterType?: MessageFilterType;
   searchQuery?: string;
   onResultCountChange?: (count: number) => void;
+  isStreaming?: boolean;
+  currentAssistantMessageId?: string | null;
+  isAgentLoopRunning?: boolean;
 }
 
 function MessageList({
   filterType = 'all',
   searchQuery = '',
   onResultCountChange,
+  isStreaming = false,
+  currentAssistantMessageId = null,
+  isAgentLoopRunning = false,
 }: MessageListProps) {
   const conversations = useConversationStore((state) => state.conversations);
-  const { isStreaming, currentAssistantMessageId } = useStreamingResponse();
   const activeConversationId = useConversationStore((state) => state.activeConversationId);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
@@ -35,7 +40,7 @@ function MessageList({
 
   // Filter messages by type and search query
   const filteredMessages = useMemo(() => {
-    let filtered = messages;
+    let filtered: Message[] = messages;
 
     // Filter by message type (Requirement 34.2)
     if (filterType !== 'all') {
@@ -90,18 +95,33 @@ function MessageList({
     }
   }, [filteredMessages.length, onResultCountChange]);
 
-  // Auto-scroll to bottom when new messages are added (only if user hasn't manually scrolled up)
+  // Track last message content length for streaming auto-scroll
+  const previousLastContentRef = useRef('');
+
+  // Auto-scroll to bottom when:
+  // 1. New messages are added
+  // 2. The last message content changes (streaming)
+  // 3. isStreaming becomes true (AI starts responding)
   useEffect(() => {
-    if (filteredMessages.length > previousMessageCountRef.current && !isUserScrolling) {
-      // New message added, scroll to bottom
+    if (filteredMessages.length === 0) return;
+
+    const lastMsg = filteredMessages[filteredMessages.length - 1];
+    const lastContent = lastMsg.content || '';
+    const hasNewMessage = filteredMessages.length > previousMessageCountRef.current;
+    const hasContentChange = lastContent !== previousLastContentRef.current;
+    const shouldScroll = !isUserScrolling || isStreaming;
+
+    if (shouldScroll && (hasNewMessage || hasContentChange || isStreaming)) {
       virtuosoRef.current?.scrollToIndex({
         index: filteredMessages.length - 1,
-        behavior: 'smooth',
+        behavior: hasNewMessage ? 'smooth' : 'auto',
         align: 'end',
       });
     }
+
     previousMessageCountRef.current = filteredMessages.length;
-  }, [filteredMessages.length, isUserScrolling]);
+    previousLastContentRef.current = lastContent;
+  }, [filteredMessages, isUserScrolling, isStreaming]);
 
   // Show empty state if no conversation or no messages
   if (!activeConversation || messages.length === 0) {
@@ -243,7 +263,7 @@ function MessageList({
             {/* Display attached images for user messages */}
             {message.role === 'user' && message.images && message.images.length > 0 && (
               <div className="flex gap-2 mb-2 flex-wrap">
-                {message.images.map((image, idx) => (
+                {message.images.map((image: { name: string; dataUrl: string }, idx: number) => (
                   <div
                     key={idx}
                     className="rounded border border-(--vscode-input-border) overflow-hidden"
@@ -261,10 +281,7 @@ function MessageList({
 
             {message.role === 'assistant' ? (
               isStreaming && currentAssistantMessageId === message.id ? (
-                <StreamingMarkdownRenderer
-                  content={message.content}
-                  isStreaming={true}
-                />
+                <StreamingMarkdownRenderer content={message.content} isStreaming={true} />
               ) : (
                 <MarkdownRenderer content={message.content} />
               )
@@ -300,7 +317,7 @@ function MessageList({
 
   // Render virtualized message list
   return (
-    <div className="relative h-full bg-(--vscode-editor-background)">
+    <div className="relative h-full bg-(--vscode-editor-background) scrollable-modern">
       <Virtuoso
         ref={virtuosoRef}
         data={filteredMessages}
@@ -311,8 +328,13 @@ function MessageList({
         atBottomStateChange={handleAtBottomStateChange}
         style={{ height: '100%' }}
         components={{
-          // Custom footer for spacing
-          Footer: () => <div style={{ height: '8px' }} />,
+          // Custom footer for spacing and skeleton loader
+          Footer: () => (
+            <>
+              <div style={{ height: '8px' }} />
+              {isAgentLoopRunning && <SkeletonLoader />}
+            </>
+          ),
         }}
       />
 

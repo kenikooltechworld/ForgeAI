@@ -14,11 +14,10 @@ if (!rootElement) {
 console.log('[ForgeAI] Root element found, creating React root');
 const root = createRoot(rootElement);
 
-console.log('[ForgeAI] Rendering App component');
 root.render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
 );
 
-console.log('[ForgeAI] App component rendered');
+console.log('[ForgeAI] Root component rendered');

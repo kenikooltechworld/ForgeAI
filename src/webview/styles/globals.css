@@ -28,29 +28,68 @@ code {
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
 }
 
-/* Scrollbar styling */
+/* ============================================================
+   Modern Scrollbar Styles — Polished, thin, VS Code theme aware
+   ============================================================ */
+
+/* Base: hide scrollbar track, show thin thumb */
 ::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--vscode-editor-background);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--vscode-editorGroupHeader-tabsBorder);
-  border-radius: 6px;
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 3px;
+  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--vscode-editor-lineHighlightBorder);
+  background: var(--vscode-scrollbarSlider-hoverBackground);
 }
 
-/* Custom scrollbar for Firefox */
+::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground);
+}
+
+/* Corner where vertical + horizontal meet */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
 * {
-  scrollbar-color: var(--vscode-editorGroupHeader-tabsBorder) var(--vscode-editor-background);
   scrollbar-width: thin;
+  scrollbar-color: var(--vscode-scrollbarSlider-background) transparent;
+}
+
+/* Modern Scrollable component — enhanced hover reveal */
+.scrollable-modern::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollable-modern::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollable-modern::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 3px;
+  opacity: 0.5;
+}
+
+.scrollable-modern:hover::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+  opacity: 1;
+}
+
+.scrollable-modern::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground);
 }
 
 /* Selection styling */

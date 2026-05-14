@@ -121,7 +121,7 @@ function TabBar() {
   return (
     <div className="flex items-center bg-(--vscode-editorGroupHeader-tabsBackground) border-b border-(--vscode-editorGroupHeader-tabsBorder)">
       {/* Scrollable tabs container */}
-      <div className="flex items-center gap-1 overflow-x-auto flex-1">
+      <div className="flex items-center gap-1 overflow-x-auto scrollable-modern flex-1">
         {visibleTabs.map((tab) => {
           const isActive = tab.id === activeTab?.id;
           const isDragging = tab.id === draggedTabId;

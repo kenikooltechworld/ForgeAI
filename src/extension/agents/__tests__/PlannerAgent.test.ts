@@ -4,7 +4,7 @@
  */
 
 import { PlannerAgent } from '../PlannerAgent';
-import { PlannerInput, TaskPlan } from '../../orchestrator/types';
+import { PlannerInput, TaskPlan } from '../types';
 import { createMockToolRegistry, createMockOllamaClient } from '../../__tests__/testUtils';
 
 describe('PlannerAgent', () => {
@@ -141,9 +141,10 @@ describe('PlannerAgent', () => {
 
       const newPlan = await plannerAgent.replan(currentPlan, feedback);
 
-      // Placeholder returns same plan
+      // Successful replan creates a new plan with a new ID
       expect(newPlan).toBeDefined();
-      expect(newPlan.id).toBe(currentPlan.id);
+      expect(newPlan.id).not.toBe(currentPlan.id);
+      expect(newPlan.id).toMatch(/^plan-replan-/);
     });
   });
 

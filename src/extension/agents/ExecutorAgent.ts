@@ -12,7 +12,7 @@ import {
   CriticFeedback,
   Task,
   TaskStatus,
-} from '../orchestrator/types';
+} from './types';
 
 /**
  * System prompt for Executor agent
@@ -125,7 +125,7 @@ export class ExecutorAgent extends BaseAgent {
   /**
    * Execute: Implement a task by routing to the appropriate handler
    */
-  async execute(input: ExecutorInput): Promise<ExecutorOutput> {
+  async execute(input: ExecutorInput, model?: string): Promise<ExecutorOutput> {
     return this.executeWithErrorHandling(async () => {
       const startTime = Date.now();
       const toolsUsed: string[] = [];
@@ -135,16 +135,19 @@ export class ExecutorAgent extends BaseAgent {
       let result: any = null;
 
       try {
+        // Use provided model or default
+        const selectedModel = model || 'gemma4:31b-cloud';
+
         // Route to appropriate handler based on task type
         switch (input.task.type) {
           case 'read_code':
             result = await this.executeReadCode(input, toolsUsed);
             break;
           case 'analyze':
-            result = await this.executeAnalyze(input, toolsUsed);
+            result = await this.executeAnalyze(input, toolsUsed, selectedModel);
             break;
           case 'generate_fix':
-            result = await this.executeGenerateFix(input, toolsUsed);
+            result = await this.executeGenerateFix(input, toolsUsed, selectedModel);
             break;
           case 'run_tests':
             result = await this.executeRunTests(input, toolsUsed);
@@ -156,7 +159,7 @@ export class ExecutorAgent extends BaseAgent {
             result = await this.executeVerify(input, toolsUsed);
             break;
           default:
-            throw new Error(`Unknown task type: ${(input.task as Task).type}`);
+            throw new Error(`Unknown task type: ${input.task.type}`);
         }
 
         const duration = Date.now() - startTime;
@@ -216,7 +219,11 @@ export class ExecutorAgent extends BaseAgent {
   /**
    * Refine: Improve output based on Critic feedback
    */
-  async refine(previousOutput: ExecutorOutput, feedback: CriticFeedback): Promise<ExecutorOutput> {
+  async refine(
+    previousOutput: ExecutorOutput,
+    feedback: CriticFeedback,
+    model?: string
+  ): Promise<ExecutorOutput> {
     return this.executeWithErrorHandling(async () => {
       this.logInfo(`Refining task: ${previousOutput.taskId}`);
       this.logInfo(`Feedback issues: ${feedback.issues.join(', ')}`);
@@ -240,8 +247,9 @@ ${JSON.stringify(previousOutput.result, null, 2)}
 `;
 
       // Use Ollama to generate refined result
+      const selectedModel = model || 'gemma4:31b-cloud';
       const response = await this.ollamaClient.chat({
-        model: 'gemma4:31b-cloud',
+        model: selectedModel,
         messages: [
           { role: 'system', content: EXECUTOR_SYSTEM_PROMPT },
           {
@@ -371,7 +379,11 @@ Apply all required changes and return an improved result as JSON:
   /**
    * Execute analyze task: Analyze code for issues or patterns
    */
-  private async executeAnalyze(input: ExecutorInput, toolsUsed: string[]): Promise<any> {
+  private async executeAnalyze(
+    input: ExecutorInput,
+    toolsUsed: string[],
+    model?: string
+  ): Promise<any> {
     this.logInfo(`Executing analyze task: ${input.task.description}`);
 
     // Gather code to analyze — from dependency results or by reading files
@@ -381,8 +393,11 @@ Apply all required changes and return an improved result as JSON:
     // Pull code from dependency task results
     if (input.dependencyResults.size > 0) {
       for (const [, depOutput] of input.dependencyResults) {
-        if (depOutput.result?.filesRead) {
-          for (const [path, content] of Object.entries(depOutput.result.filesRead)) {
+        const depResult = depOutput.result as Record<string, unknown>;
+        if (depResult?.filesRead) {
+          for (const [path, content] of Object.entries(
+            depResult.filesRead as Record<string, string>
+          )) {
             codeToAnalyze += `\n\n// File: ${path}\n${content}`;
           }
         }
@@ -406,7 +421,7 @@ Apply all required changes and return an improved result as JSON:
       : `Analyze the workspace for: ${input.task.description}`;
 
     const response = await this.ollamaClient.chat({
-      model: 'gemma4:31b-cloud',
+      model: model || 'gemma4:31b-cloud',
       messages: [
         { role: 'system', content: EXECUTOR_SYSTEM_PROMPT },
         { role: 'user', content: analysisPrompt },
@@ -428,19 +443,26 @@ Apply all required changes and return an improved result as JSON:
   /**
    * Execute generate_fix task: Generate code fixes or new implementations
    */
-  private async executeGenerateFix(input: ExecutorInput, toolsUsed: string[]): Promise<any> {
+  private async executeGenerateFix(
+    input: ExecutorInput,
+    toolsUsed: string[],
+    model?: string
+  ): Promise<any> {
     this.logInfo(`Executing generate_fix task: ${input.task.description}`);
 
     // Gather context from dependency results
     let context = '';
     for (const [taskId, depOutput] of input.dependencyResults) {
-      if (depOutput.result?.filesRead) {
-        for (const [path, content] of Object.entries(depOutput.result.filesRead)) {
+      const depResult = depOutput.result as Record<string, unknown>;
+      if (depResult?.filesRead) {
+        for (const [path, content] of Object.entries(
+          depResult.filesRead as Record<string, string>
+        )) {
           context += `\n\n// File: ${path}\n${content}`;
         }
       }
-      if (depOutput.result?.analysis) {
-        context += `\n\nAnalysis from ${taskId}:\n${depOutput.result.analysis}`;
+      if (depResult?.analysis) {
+        context += `\n\nAnalysis from ${taskId}:\n${depResult.analysis}`;
       }
     }
 
@@ -458,7 +480,7 @@ ${feedbackContext}
 Generate the complete, production-ready implementation. Return ONLY the code, no explanations.`;
 
     const response = await this.ollamaClient.chat({
-      model: 'gemma4:31b-cloud',
+      model: model || 'gemma4:31b-cloud',
       messages: [
         { role: 'system', content: EXECUTOR_SYSTEM_PROMPT },
         { role: 'user', content: prompt },
@@ -530,8 +552,10 @@ Generate the complete, production-ready implementation. Return ONLY the code, no
 
     // Get generated code from dependency results
     for (const [, depOutput] of input.dependencyResults) {
-      if (depOutput.result?.generatedCode && depOutput.result?.targetFile) {
-        const { targetFile, generatedCode } = depOutput.result;
+      const depResult = depOutput.result as Record<string, unknown>;
+      if (depResult?.generatedCode && depResult?.targetFile) {
+        const targetFile = depResult.targetFile as string;
+        const generatedCode = depResult.generatedCode as string;
         try {
           await this.toolRegistry.executeTool('forgeai_writeFile', {
             path: targetFile,
@@ -548,14 +572,15 @@ Generate the complete, production-ready implementation. Return ONLY the code, no
 
     // If no dependency provided file info, check task metadata
     if (appliedFiles.length === 0 && input.task.metadata?.targetFile) {
-      const { targetFile } = input.task.metadata;
+      const targetFile = input.task.metadata.targetFile as string;
       // Find generated code from any dependency
       for (const [, depOutput] of input.dependencyResults) {
-        if (depOutput.result?.generatedCode) {
+        const depResult = depOutput.result as Record<string, unknown>;
+        if (depResult?.generatedCode) {
           try {
             await this.toolRegistry.executeTool('forgeai_writeFile', {
               path: targetFile,
-              content: depOutput.result.generatedCode,
+              content: depResult.generatedCode as string,
             });
             toolsUsed.push('forgeai_writeFile');
             appliedFiles.push(targetFile);

@@ -1,5 +1,6 @@
 import type { Logger } from '../../utils/Logger';
 import type { DocSourceId } from '../types';
+import type { CancellationToken } from '../scraper/DocSource';
 import { RagIngestionService } from '../RagIngestionService';
 
 export interface RagSchedulerDeps {
@@ -11,7 +12,7 @@ export interface RagSchedulerDeps {
     setGlobalValue(key: string, value: unknown): Promise<void>;
   };
   /**
-   * How often to refresh. MVP says every 2–3 days; we’ll use a default of 3 days.
+   * How often to refresh. MVP says every 2–3 days; we'll use a default of 3 days.
    */
   refreshMs?: number;
 }
@@ -23,10 +24,16 @@ export class RagScheduler {
     this.deps = deps;
   }
 
-  public async runRefresh(params: { sourceIds: DocSourceId[] }): Promise<void> {
+  public async runRefresh(
+    params: { sourceIds: DocSourceId[] },
+    token?: CancellationToken
+  ): Promise<void> {
     const { logger, storage, refreshMs } = this.deps;
 
-    const lastRun = await storage.getGlobalValue<number | null>('forgeai.rag.lastRefreshAtMs', null);
+    const lastRun = await storage.getGlobalValue<number | null>(
+      'forgeai.rag.lastRefreshAtMs',
+      null
+    );
     const now = Date.now();
     const effectiveRefreshMs = refreshMs ?? 3 * 24 * 60 * 60 * 1000;
 
@@ -36,15 +43,21 @@ export class RagScheduler {
       return;
     }
 
+    if (token?.isCancellationRequested) {
+      return;
+    }
+
     logger.info(`RAG refresh starting... sourceIds=${params.sourceIds.join(', ')}`);
 
     await new RagIngestionService({
       logger,
       ollamaEmbeddingsModel: this.deps.ollamaEmbeddingsModel,
       dbPath: this.deps.dbPath,
-    }).runOnSources({ sourceIds: params.sourceIds });
+    }).runOnSources({ sourceIds: params.sourceIds, token });
 
-    await storage.setGlobalValue('forgeai.rag.lastRefreshAtMs', now);
+    if (!token?.isCancellationRequested) {
+      await storage.setGlobalValue('forgeai.rag.lastRefreshAtMs', now);
+    }
     logger.info('RAG refresh complete');
   }
 }

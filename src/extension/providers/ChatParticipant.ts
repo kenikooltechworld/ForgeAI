@@ -3,8 +3,7 @@ import { Logger } from '../utils/Logger';
 import { AgentLoop, AgentLoopUpdate } from '../ollama/AgentLoop';
 import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { ToolRegistry } from '../tools/ToolRegistry';
-import { MultiAgentOrchestrator } from '../orchestrator/MultiAgentOrchestrator';
-import { Task, WorkflowStatus } from '../orchestrator/types';
+import type { RagService } from '../rag/RagService';
 
 /**
  * Chat Participant for ForgeAI
@@ -25,26 +24,16 @@ export class ChatParticipant {
   private agentLoop: AgentLoop;
   private toolRegistry: ToolRegistry;
 
-  private readonly complexPatterns: RegExp[] = [
-    /fix.*bug|bug.*fix/i,
-    /add.*test|write.*test|create.*test/i,
-    /refactor/i,
-    /implement.*feature|add.*feature/i,
-    /fix.*error|error.*fix/i,
-    /and.*then|first.*then/i,
-    /multiple.*file/i,
-    /analyze.*and|and.*fix/i,
-  ];
-
-  constructor(ollamaClient: OllamaClient, toolRegistry: ToolRegistry, logger: Logger) {
+  constructor(
+    ollamaClient: OllamaClient,
+    toolRegistry: ToolRegistry,
+    logger: Logger,
+    ragService?: RagService
+  ) {
     this.toolRegistry = toolRegistry;
     this.logger = logger;
     // Reuse existing AgentLoop - no duplication!
-    this.agentLoop = new AgentLoop(ollamaClient, logger, toolRegistry);
-  }
-
-  private shouldUseOrchestrator(requestPrompt: string): boolean {
-    return this.complexPatterns.some((p) => p.test(requestPrompt));
+    this.agentLoop = new AgentLoop(ollamaClient, logger, toolRegistry, ragService);
   }
 
   /**
@@ -52,7 +41,7 @@ export class ChatParticipant {
    * Requirement 3.3: Stream progress updates via ChatResponseStream
    * Requirement 3.4: Use model selected by user via request.model
    *
-   * IMPLEMENTATION: Uses MultiAgentOrchestrator for complex requests; otherwise uses existing AgentLoop.
+   * IMPLEMENTATION: All requests routed through AgentLoop (spec-driven architecture replaces multi-agent orchestration).
    */
   public async handleRequest(
     request: vscode.ChatRequest,
@@ -63,6 +52,24 @@ export class ChatParticipant {
     this.logger.info(`Chat request received: command=${request.command}, prompt=${request.prompt}`);
 
     try {
+      // Spec-generation intent detection for @forgeai chat
+      if (this.isSpecGenerationIntent(request.prompt)) {
+        stream.markdown(
+          `📋 **Spec Generation Detected**\n\nI'll create a formal spec with requirements, architecture, and tasks for: *"${request.prompt}"*\n\nStarting the spec pipeline (Clarifier → SpecWriter → Architect → TaskDecomposer)...\n`
+        );
+        await vscode.commands.executeCommand('forgeai.generateSpec');
+        stream.button({
+          command: 'forgeai.openSpecReview',
+          title: 'Open Spec Review',
+        });
+        return {
+          metadata: {
+            command: request.command,
+            specGeneration: true,
+          },
+        };
+      }
+
       // Convert VS Code chat history to Ollama message format
       const messages = this.convertChatHistory(context.history, request);
 
@@ -70,70 +77,7 @@ export class ChatParticipant {
       const tools = this.toolRegistry.getToolDefinitions();
       this.logger.info(`Using ${tools.length} tools from ToolRegistry`);
 
-      // Multi-agent orchestration for complex requests
-      if (this.shouldUseOrchestrator(request.prompt)) {
-        const selectedModel = String(request.model ?? 'gpt-oss:120b-cloud');
-        this.logger.info('Routing complex request through MultiAgentOrchestrator');
-
-        const orchestrator = new MultiAgentOrchestrator(
-          this.agentLoop,
-          this.toolRegistry,
-          // MultiAgentOrchestrator expects ollamaClient + optional logger; we can reuse it via agentLoop internals
-          // but here we only pass what its constructor needs. If ollamaClient isn't accessible,
-          // MultiAgentOrchestrator will be created with its required constructor signature elsewhere.
-          // NOTE: In this codebase, agentLoop already encapsulates ollama; we reuse it by creating a new instance below.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (this.agentLoop as any).ollamaClient,
-          this.logger
-        );
-
-        orchestrator.onProgress((update) => {
-          const pct = Math.round(update.progress);
-          const taskName = update.currentTask?.description ?? 'Working...';
-          stream.progress(`⚙️ [${pct}%] ${taskName}`);
-        });
-
-        orchestrator.onTaskComplete((taskId, result) => {
-          const icon =
-            result.status === 'success' ? '✅' : result.status === 'partial' ? '⚠️' : '❌';
-          stream.progress(
-            `${icon} Task ${taskId} (${result.selfEvaluation.confidence ? Math.round(result.selfEvaluation.confidence * 100) : 0}%)`
-          );
-        });
-
-        orchestrator.onError((error) => {
-          stream.markdown(`\n❌ **Orchestrator Error:** ${error.message}\n\n`);
-        });
-
-        const orchestratorResult = await orchestrator.run(request.prompt, {
-          model: selectedModel,
-          maxIterations: 5,
-          enableParallel: false,
-        });
-
-        if (orchestratorResult.success) {
-          stream.progress('✅ Orchestration complete');
-        } else {
-          stream.markdown(
-            `\n❌ Orchestration failed: ${orchestratorResult.error?.message ?? 'Unknown error'}\n\n`
-          );
-        }
-
-        stream.button({
-          command: 'forgeai.open',
-          title: 'Open ForgeAI Panel',
-        });
-
-        return {
-          metadata: {
-            command: request.command,
-            multiAgent: true,
-            status: orchestratorResult.status,
-          },
-        };
-      }
-
-      // Single-agent path (existing behavior)
+      // All requests go through AgentLoop (spec-driven architecture)
       let sentContentLength = 0;
       let lastThinkingUpdate = 0;
       const THINKING_UPDATE_INTERVAL = 2000;
@@ -377,5 +321,22 @@ export class ChatParticipant {
     }
 
     return followups;
+  }
+
+  /**
+   * Detect if the user prompt indicates spec-generation intent.
+   */
+  private isSpecGenerationIntent(prompt: string): boolean {
+    const lower = prompt.toLowerCase();
+    const specPatterns = [
+      /create\s+a?\s*spec\s+(for|about)/i,
+      /write\s+(requirements|a?\s*spec)\s+(for|about)/i,
+      /spec\s+out\s+/i,
+      /generate\s+a?\s*(task\s*plan|spec)\s+(for|about)/i,
+      /formal\s+requirements\s+(for|about)/i,
+      /ears\s+notation\s+(for|about)/i,
+      /decompose\s+.*into\s+tasks/i,
+    ];
+    return specPatterns.some((p) => p.test(lower));
   }
 }

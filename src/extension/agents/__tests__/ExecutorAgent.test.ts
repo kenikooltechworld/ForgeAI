@@ -4,13 +4,7 @@
  */
 
 import { ExecutorAgent } from '../ExecutorAgent';
-import {
-  ExecutorInput,
-  ExecutorOutput,
-  Task,
-  CriticFeedback,
-  TaskType,
-} from '../../orchestrator/types';
+import { ExecutorInput, ExecutorOutput, Task, CriticFeedback, TaskType } from '../types';
 import { createMockToolRegistry, createMockOllamaClient } from '../../__tests__/testUtils';
 
 describe('ExecutorAgent', () => {
@@ -237,7 +231,7 @@ describe('ExecutorAgent', () => {
 
       // Should return 'failed' status with error (design.md uses 'failed')
       expect(output.status).toBe('failed');
-      expect(output.result.error).toContain('Unknown task type');
+      expect((output.result as Record<string, unknown>).error).toContain('Unknown task type');
     });
 
     test('should measure execution duration', async () => {
