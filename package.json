@@ -105,6 +105,7 @@
         {
           "id": "forgeai.chatView",
           "name": "Chat",
+          "type": "webview",
           "icon": "resources/forgeai-icon.svg"
         },
         {

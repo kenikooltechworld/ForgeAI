@@ -240,14 +240,7 @@ export class ForgeAIExtension {
 
     try {
       // Register webview provider
-      this.webviewManager = new WebviewManager(
-        this.context,
-        storage,
-        logger,
-        ollama,
-        toolRegistry,
-        ragService
-      );
+      this.webviewManager = new WebviewManager(this.context, storage, logger, ollama, toolRegistry);
 
       // VS Code typings in this repo expect TWO args here.
       const webviewDisposable = vscode.window.registerWebviewViewProvider(

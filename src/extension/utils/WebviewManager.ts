@@ -5,7 +5,7 @@ import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { AgentLoopUpdate } from '../ollama/AgentLoop';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { TestResultsParser } from './TestResultsParser';
-import { MultiAgentOrchestrator } from '../orchestrator/MultiAgentOrchestrator';
+// import { MultiAgentOrchestrator } from '../orchestrator/MultiAgentOrchestrator'; // Removed during refactor
 
 /**
  * Production-ready Webview Manager for ForgeAI extension
@@ -495,135 +495,15 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   /**
-   * Handle a request through the MultiAgentOrchestrator.
-   * Streams progress updates back to the webview using the existing streamChunk format.
-   * Per design.md Section 5.1 — extends AgentLoop without replacing it.
+   * Multi-agent orchestration path — disabled during refactor.
+   * All requests now route directly through AgentLoop.
    */
   private async handleOrchestratorRequest(
-    conversationId: string,
-    message: string,
-    model: string
+    _conversationId: string,
+    _message: string,
+    _model: string
   ): Promise<void> {
-    if (!this.toolRegistry) {
-      return;
-    }
-
-    this.view?.webview.postMessage({ type: 'agentLoopStarted', conversationId });
-
-    // Stream planning start
-    this.view?.webview.postMessage({
-      type: 'streamChunk',
-      conversationId,
-      data: {
-        content: '🤖 **Multi-Agent Mode** — Planning your request...\n\n',
-        thinking: '',
-        toolCalls: [],
-      },
-      done: false,
-    });
-
-    // Create a fresh orchestrator per request to avoid callback accumulation
-    const { AgentLoop } = await import('../ollama/AgentLoop');
-    const agentLoop = new AgentLoop(this.ollamaClient, this.logger, this.toolRegistry);
-    const orchestrator = new MultiAgentOrchestrator(
-      agentLoop,
-      this.toolRegistry,
-      this.ollamaClient,
-      this.logger
-    );
-
-    // Register progress callback to stream updates to the webview
-    orchestrator.onProgress((update) => {
-      const taskName = update.currentTask?.description ?? 'Working...';
-      const pct = Math.round(update.progress);
-      this.view?.webview.postMessage({
-        type: 'streamChunk',
-        conversationId,
-        data: { content: `⚙️ [${pct}%] ${taskName}\n`, thinking: '', toolCalls: [] },
-        done: false,
-      });
-    });
-
-    orchestrator.onTaskComplete((taskId, result) => {
-      const icon = result.status === 'success' ? '✅' : result.status === 'partial' ? '⚠️' : '❌';
-      this.view?.webview.postMessage({
-        type: 'streamChunk',
-        conversationId,
-        data: {
-          content: `${icon} Task ${taskId} — ${result.status} (confidence: ${(result.selfEvaluation.confidence * 100).toFixed(0)}%)\n`,
-          thinking: '',
-          toolCalls: [],
-        },
-        done: false,
-      });
-    });
-
-    orchestrator.onError((error) => {
-      this.view?.webview.postMessage({
-        type: 'streamChunk',
-        conversationId,
-        data: { content: `❌ Error: ${error.message}\n`, thinking: '', toolCalls: [] },
-        done: false,
-      });
-    });
-
-    try {
-      const result = await orchestrator.run(message, { model, maxIterations: 5 });
-
-      // Build summary response
-      const statusIcon = result.success ? '✅' : '❌';
-      const summary = [
-        `\n${statusIcon} **Orchestration complete** — ${result.success ? 'Success' : 'Failed'}`,
-        `📋 Tasks: ${result.metrics.completedTasks}/${result.metrics.totalTasks} completed`,
-        `🔄 Iterations: ${result.metrics.iterations}`,
-        `⏱️ Duration: ${(result.duration / 1000).toFixed(1)}s`,
-      ];
-
-      if (result.error) {
-        summary.push(`\n⚠️ ${result.error.message}`);
-      }
-
-      if (result.results.size > 0) {
-        summary.push('\n**Task Results:**');
-        for (const [taskId, taskResult] of result.results) {
-          const icon =
-            taskResult.status === 'success' ? '✅' : taskResult.status === 'partial' ? '⚠️' : '❌';
-          summary.push(`${icon} ${taskId}: ${taskResult.status}`);
-          if (taskResult.result?.analysis) {
-            summary.push(`   ${String(taskResult.result.analysis).slice(0, 200)}...`);
-          }
-          if (taskResult.result?.generatedCode) {
-            summary.push(
-              `   Generated ${String(taskResult.result.generatedCode).length} chars of code`
-            );
-          }
-        }
-      }
-
-      this.view?.webview.postMessage({
-        type: 'streamChunk',
-        conversationId,
-        data: { content: summary.join('\n'), thinking: '', toolCalls: [] },
-        done: true,
-      });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error('Orchestrator request failed', error);
-
-      this.view?.webview.postMessage({
-        type: 'streamChunk',
-        conversationId,
-        data: {
-          content: `\n❌ Orchestration failed: ${errorMessage}`,
-          thinking: '',
-          toolCalls: [],
-        },
-        done: true,
-      });
-    } finally {
-      // Always notify the webview that the agent loop has stopped
-      this.view?.webview.postMessage({ type: 'agentLoopStopped', conversationId });
-    }
+    // No-op: orchestrator directory was removed in refactor
   }
 
   /**
@@ -1502,6 +1382,28 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       text += possible.charAt(Math.floor(Math.random() * possible.length));
     }
     return text;
+  }
+
+  // ─── Spec-driven panel helpers (stubs for Phase 5 integration) ──────────
+
+  public postMessage(message: any): void {
+    this.view?.webview.postMessage(message);
+  }
+
+  public async loadSpecIntoPanels(spec: any): Promise<void> {
+    this.view?.webview.postMessage({ type: 'loadSpec', spec });
+  }
+
+  public updateTaskInPanel(task: any): void {
+    this.view?.webview.postMessage({ type: 'updateTask', task });
+  }
+
+  public async generateSpec(conversationId: string, userRequest: string): Promise<void> {
+    this.view?.webview.postMessage({ type: 'generateSpec', conversationId, userRequest });
+  }
+
+  public showRagSettings(): void {
+    this.view?.webview.postMessage({ type: 'showRagSettings' });
   }
 
   public dispose(): void {
