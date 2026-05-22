@@ -46,22 +46,29 @@ export class StreamHandler {
         this.logger.info(`Final chunk received: ${JSON.stringify(chunk)}`);
       }
 
+      // Guard against chunks that lack a message object
+      const msg = chunk.message;
+      if (!msg) {
+        this.logger.warn('Stream chunk missing message object');
+        return;
+      }
+
       // Accumulate thinking field
-      if (chunk.message.thinking) {
-        this.thinking += chunk.message.thinking;
-        this.logger.info(`Accumulated thinking: ${chunk.message.thinking.length} chars`);
+      if (msg.thinking) {
+        this.thinking += msg.thinking;
+        this.logger.info(`Accumulated thinking: ${msg.thinking.length} chars`);
       }
 
       // Accumulate content field
-      if (chunk.message.content) {
-        this.content += chunk.message.content;
-        this.logger.info(`Accumulated content: ${chunk.message.content.length} chars`);
+      if (msg.content) {
+        this.content += msg.content;
+        this.logger.info(`Accumulated content: ${msg.content.length} chars`);
       }
 
       // Accumulate tool_calls field
-      if (chunk.message.tool_calls && chunk.message.tool_calls.length > 0) {
-        this.toolCalls.push(...chunk.message.tool_calls);
-        this.logger.info(`Accumulated ${chunk.message.tool_calls.length} tool calls`);
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        this.toolCalls.push(...msg.tool_calls);
+        this.logger.info(`Accumulated ${msg.tool_calls.length} tool calls`);
       }
 
       // Capture token usage (typically in final chunk when done=true)

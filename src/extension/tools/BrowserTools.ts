@@ -115,9 +115,8 @@ export class BrowserTools {
       name: 'forgeai_browser_navigate',
       description:
         '[REQUIRES PLAYWRIGHT] Navigate to a URL using a local browser. ' +
-        'ONLY use this if you need to interact with a page (click, fill forms, screenshots). ' +
-        'For reading documentation or researching topics, prefer forgeai_webSearch or forgeai_webResearch ' +
-        'which do NOT require a local browser.',
+        'Use this when forgeai_fetchPage fails (e.g., JavaScript-rendered content, single-page apps). ' +
+        'After navigating, call forgeai_browser_extract to get the page content.',
       inputSchema: {
         type: 'object',
         required: ['url'],
@@ -197,7 +196,8 @@ export class BrowserTools {
       name: 'forgeai_browser_extract',
       description:
         '[REQUIRES PLAYWRIGHT] Extract text from the current browser page after navigation. ' +
-        'For research that does not require clicking or screenshots, use forgeai_webSearch instead.',
+        'Call this after forgeai_browser_navigate to get the actual page content. ' +
+        'For static pages, prefer forgeai_fetchPage which is faster and does not need Playwright.',
       inputSchema: {
         type: 'object',
         properties: {

@@ -9,7 +9,7 @@ export interface OllamaMessage {
   content: string;
   thinking?: string;
   tool_calls?: OllamaToolCall[];
-  tool_name?: string;
+  name?: string; // Tool name for role='tool' messages (Ollama API convention)
   images?: string[]; // Base64 encoded images for vision models
 }
 
@@ -210,7 +210,7 @@ export class OllamaClient {
             content: msg.content,
             thinking: msg.thinking,
             tool_calls: msg.tool_calls,
-            tool_name: msg.tool_name,
+            name: msg.name,
             images: msg.images, // Include images for vision models
           })),
           stream: false,
@@ -259,7 +259,7 @@ export class OllamaClient {
             content: msg.content,
             thinking: msg.thinking,
             tool_calls: msg.tool_calls,
-            tool_name: msg.tool_name,
+            name: msg.name,
             images: msg.images, // Include images for vision models
           })),
           stream: true,

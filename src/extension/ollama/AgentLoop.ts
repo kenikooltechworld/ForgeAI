@@ -197,11 +197,19 @@ export class AgentLoop {
     let iteration = 0;
     let lastRequestTime = 0; // Track last request time for rate limiting
     const MIN_REQUEST_INTERVAL = 500; // Minimum 500ms between requests
+    const maxIterations = options?.maxIterations ?? this.defaultMaxIterations;
 
     try {
       while (!this.shouldStop) {
         iteration++;
-        this.logger.info(`Agent loop iteration ${iteration}`);
+        if (iteration > maxIterations) {
+          this.logger.warn(
+            `Agent loop stopped after ${maxIterations} iterations to prevent infinite loops`
+          );
+          onUpdate({ type: 'maxIterations', iteration });
+          break;
+        }
+        this.logger.info(`Agent loop iteration ${iteration}/${maxIterations}`);
         onUpdate({ type: 'iteration', iteration });
 
         // Rate limiting: Wait if we're making requests too quickly
@@ -215,7 +223,7 @@ export class AgentLoop {
         lastRequestTime = Date.now();
 
         this.logger.info(
-          `Sending to Ollama: model=gpt-oss:120b-cloud, messages=${messages.length}, tools=${effectiveTools.length}, think=true`
+          `Sending to Ollama: model=${model}, messages=${messages.length}, tools=${effectiveTools.length}, think=true`
         );
         if (effectiveTools.length > 0) {
           this.logger.info(
@@ -230,13 +238,26 @@ export class AgentLoop {
         // Get response from Ollama with streaming
         const streamHandler = new StreamHandler(this.logger);
 
+        // Track tool calls made this session to enforce maxToolCalls limit
+        const toolCallsMade = messages.filter(
+          (m) => m.role === 'assistant' && m.tool_calls?.length
+        ).length;
+        const maxToolCalls = routing?.maxToolCalls ?? this.defaultMaxIterations;
+        if (toolCallsMade >= maxToolCalls && effectiveTools.length > 0) {
+          this.logger.warn(
+            `Max tool calls (${maxToolCalls}) reached. Disabling tools to force chat response.`
+          );
+          effectiveTools = []; // Force the model to chat instead of calling more tools
+        }
+
         try {
           const result = await this.ollamaClient.chat({
-            model, // Use the provided model parameter
+            model,
             messages,
             stream: true,
             think: true,
             tools: effectiveTools,
+            options: { num_ctx: 8192 }, // Prevent context overflow with large tool results
           });
 
           // Type guard: result should be AsyncGenerator when stream=true
@@ -364,7 +385,7 @@ export class AgentLoop {
             }
             messages.push({
               role: 'tool',
-              tool_name: toolCall.function.name,
+              name: toolCall.function.name,
               content: toolResultJson,
             });
 
@@ -413,7 +434,7 @@ export class AgentLoop {
             // Add error result to message history
             messages.push({
               role: 'tool',
-              tool_name: toolCall.function.name,
+              name: toolCall.function.name,
               content: errorContent,
             });
 

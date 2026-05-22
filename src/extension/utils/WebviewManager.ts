@@ -5,7 +5,10 @@ import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { AgentLoopUpdate } from '../ollama/AgentLoop';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { TestResultsParser } from './TestResultsParser';
-// import { MultiAgentOrchestrator } from '../orchestrator/MultiAgentOrchestrator'; // Removed during refactor
+import type { ForgeAIWorkspace } from '../forgeaiWorkspace/ForgeAIWorkspace';
+import type { ResearchAgent } from '../agents/research/ResearchAgent';
+import type { RagService } from '../rag/RagService';
+import { SpecWriterAgent } from '../agents/spec/SpecWriterAgent';
 
 /**
  * Production-ready Webview Manager for ForgeAI extension
@@ -21,11 +24,16 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     private readonly storageManager: StorageManager,
     private readonly logger: Logger,
     private readonly ollamaClient: OllamaClient,
-    private readonly toolRegistry?: ToolRegistry
+    private readonly toolRegistry?: ToolRegistry,
+    private readonly forgeaiWorkspace?: ForgeAIWorkspace,
+    private readonly researchAgent?: ResearchAgent,
+    private readonly ragService?: RagService
   ) {
     this.logger.info(
       'WebviewManager initialized' +
-        (toolRegistry ? ' with ToolRegistry and MultiAgentOrchestrator support' : '')
+        (toolRegistry ? ' with ToolRegistry support' : '') +
+        (forgeaiWorkspace ? ' and ForgeAIWorkspace' : '') +
+        (ragService ? ' and RAG' : '')
     );
   }
 
@@ -106,6 +114,15 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
             message.conversationHistory || [],
             message.model || 'gpt-oss:120b-cloud', // Use provided model or default
             message.images || [] // Extract images from message
+          );
+          break;
+        }
+        case 'generateSpec': {
+          this.logger.info('Handling generateSpec from webview');
+          await this.handleGenerateSpec(
+            message.title as string,
+            message.description as string,
+            (message.mode as string) === 'quick' ? 'quick' : 'full'
           );
           break;
         }
@@ -384,16 +401,14 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         this.logger.warn('NO TOOLS AVAILABLE - ToolRegistry might not be initialized!');
       }
 
-      // Route complex requests through the MultiAgentOrchestrator
-      if (this.toolRegistry && this.isComplexRequest(message) && images.length === 0) {
-        this.logger.info('Routing complex request through MultiAgentOrchestrator');
-        await this.handleOrchestratorRequest(conversationId, message, model);
-        return;
-      }
-
       // Use AgentLoop for autonomous tool execution
       const { AgentLoop } = await import('../ollama/AgentLoop');
-      const agentLoop = new AgentLoop(this.ollamaClient, this.logger, this.toolRegistry);
+      const agentLoop = new AgentLoop(
+        this.ollamaClient,
+        this.logger,
+        this.toolRegistry,
+        this.ragService
+      );
 
       // Convert conversation history to Ollama message format
       const messages: OllamaMessage[] = conversationHistory.map((msg: any) => {
@@ -405,7 +420,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         // Only include optional fields if they have values
         if (msg.thinking) ollamaMsg.thinking = msg.thinking;
         if (msg.tool_calls) ollamaMsg.tool_calls = msg.tool_calls;
-        if (msg.tool_name) ollamaMsg.tool_name = msg.tool_name;
+        if (msg.name) ollamaMsg.name = msg.name;
         if (msg.images) ollamaMsg.images = msg.images;
 
         return ollamaMsg;
@@ -476,34 +491,77 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   /**
-   * Detect if a request is complex enough to warrant multi-agent orchestration.
-   * Routes to orchestrator when the request involves multiple steps, file changes,
-   * testing, or error fixing — per design.md Section 5.2 (Complexity Analysis).
+   * Handle spec generation request from the webview.
+   * Creates a SpecWriterAgent and runs the spec generation flow.
    */
-  private isComplexRequest(message: string): boolean {
-    const complexPatterns = [
-      /fix.*bug|bug.*fix/i,
-      /add.*test|write.*test|create.*test/i,
-      /refactor/i,
-      /implement.*feature|add.*feature/i,
-      /fix.*error|error.*fix/i,
-      /and.*then|first.*then/i,
-      /multiple.*file/i,
-      /analyze.*and|and.*fix/i,
-    ];
-    return complexPatterns.some((p) => p.test(message));
-  }
-
-  /**
-   * Multi-agent orchestration path — disabled during refactor.
-   * All requests now route directly through AgentLoop.
-   */
-  private async handleOrchestratorRequest(
-    _conversationId: string,
-    _message: string,
-    _model: string
+  private async handleGenerateSpec(
+    title: string,
+    description: string,
+    mode: 'quick' | 'full'
   ): Promise<void> {
-    // No-op: orchestrator directory was removed in refactor
+    if (!this.forgeaiWorkspace || !this.forgeaiWorkspace.spec) {
+      this.view?.webview.postMessage({
+        type: 'specGenerationFailed',
+        error: 'ForgeAIWorkspace not initialized. Open a workspace folder first.',
+      });
+      return;
+    }
+
+    const specModel = 'gemma4-31b-cloud';
+    const agent = new SpecWriterAgent({
+      executeLLM: async (systemPrompt, userPrompt) => {
+        const response = await this.ollamaClient.chat({
+          model: specModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          stream: false,
+          options: { temperature: 0.3, num_ctx: 8192 },
+        });
+        const chatResponse = response as { message: { content: string } };
+        return chatResponse.message.content;
+      },
+      specManager: this.forgeaiWorkspace.spec,
+      productManager: this.forgeaiWorkspace.product,
+      memoryManager: this.forgeaiWorkspace.memory,
+      researchAgent: (this.researchAgent ?? undefined) as ResearchAgent,
+    });
+
+    this.view?.webview.postMessage({
+      type: 'specGenerationStarted',
+      title,
+    });
+
+    try {
+      const result = await agent.generate({ title, description, mode }, (event) => {
+        this.view?.webview.postMessage({
+          type: 'specGenerationProgress',
+          phase: event.phase,
+          status: event.status,
+          message: event.message,
+        });
+      });
+
+      if (result.success) {
+        this.view?.webview.postMessage({
+          type: 'specGenerated',
+          specId: result.specId,
+          title: result.title,
+          phasesCompleted: result.phasesCompleted,
+        });
+      } else {
+        this.view?.webview.postMessage({
+          type: 'specGenerationFailed',
+          error: result.error,
+        });
+      }
+    } catch (err) {
+      this.view?.webview.postMessage({
+        type: 'specGenerationFailed',
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+    }
   }
 
   /**
@@ -521,7 +579,12 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
       // Use AgentLoop for autonomous tool execution
       const { AgentLoop } = await import('../ollama/AgentLoop');
-      const agentLoop = new AgentLoop(this.ollamaClient, this.logger, this.toolRegistry);
+      const agentLoop = new AgentLoop(
+        this.ollamaClient,
+        this.logger,
+        this.toolRegistry,
+        this.ragService
+      );
 
       // Convert conversation history to Ollama message format
       const messages: OllamaMessage[] = conversationHistory.map((msg: any) => {
@@ -533,7 +596,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         // Only include optional fields if they have values
         if (msg.thinking) ollamaMsg.thinking = msg.thinking;
         if (msg.tool_calls) ollamaMsg.tool_calls = msg.tool_calls;
-        if (msg.tool_name) ollamaMsg.tool_name = msg.tool_name;
+        if (msg.name) ollamaMsg.name = msg.name;
 
         return ollamaMsg;
       });
@@ -1345,11 +1408,16 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview', 'style.css')
     );
 
+    const logoUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'resources', 'kenikoolLogo.png')
+    );
+
     const nonce = this.getNonce();
 
     this.logger.info(`Script URI: ${scriptUri.toString()}`);
     this.logger.info(`Style Reset URI: ${styleResetUri.toString()}`);
     this.logger.info(`Style URI: ${styleUri.toString()}`);
+    this.logger.info(`Logo URI: ${logoUri.toString()}`);
     this.logger.info(`CSP nonce: ${nonce}`);
 
     return `<!DOCTYPE html>
@@ -1357,20 +1425,46 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https: data:; font-src ${webview.cspSource};" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}' ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https: data:; font-src ${webview.cspSource};" />
     <title>ForgeAI</title>
+    <style nonce="${nonce}">
+      @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.6; transform: scale(0.92); }
+      }
+    </style>
     <link rel="stylesheet" href="${styleResetUri}" />
     <link rel="stylesheet" href="${styleUri}" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="forgeai-loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;font-family:var(--vscode-font-family);background:var(--vscode-editor-background);">
+        <img src="${logoUri}" alt="Kenikool Logo" style="width:64px;height:64px;object-fit:contain;border-radius:50px;animation:pulse 1.5s ease-in-out infinite;" />
+        <span style="color:var(--vscode-descriptionForeground);font-size:13px;">Loading ForgeAI...</span>
+      </div>
+    </div>
     <script nonce="${nonce}">
       console.log('[ForgeAI] Webview initializing...');
+      window.__FORGEAI_LOGO_URI__ = '${logoUri}';
       const vscodeApi = acquireVsCodeApi();
       window.vscode = vscodeApi;
       console.log('[ForgeAI] VS Code API acquired');
+      window.addEventListener('error', function(e) {
+        console.error('[ForgeAI] Global error:', e.message, e.filename, e.lineno);
+        const root = document.getElementById('root');
+        if (root) {
+          root.innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground);font-family:var(--vscode-font-family);"><h3>ForgeAI Error</h3><pre>' + e.message + '<br/>' + (e.filename || '') + ':' + (e.lineno || '') + '</pre></div>';
+        }
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error('[ForgeAI] Unhandled rejection:', e.reason);
+        const root = document.getElementById('root');
+        if (root) {
+          root.innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground);font-family:var(--vscode-font-family);"><h3>ForgeAI Error</h3><pre>Unhandled Promise Rejection:<br/>' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)) + '</pre></div>';
+        }
+      });
     </script>
-    <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
+    <script type="module" nonce="${nonce}" src="${scriptUri}" onerror="document.getElementById('root').innerHTML='<div style=\'padding:20px;color:var(--vscode-errorForeground);\'>Failed to load ForgeAI script.</div>'"></script>
   </body>
 </html>`;
   }

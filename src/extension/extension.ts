@@ -41,11 +41,25 @@ export class ForgeAIExtension {
     const ollama = new OllamaClient('http://localhost:11434', logger);
     this.services.set('ollama', ollama);
 
-    // Initialize Tool Registry (Task 4.1)
-    const { ToolRegistry } = await import('./tools/ToolRegistry');
-    const toolRegistry = new ToolRegistry(this.context, logger);
-    toolRegistry.registerAllTools();
-    this.services.set('toolRegistry', toolRegistry);
+    // Set globals for SpecTools lazy access (must be before ToolRegistry init)
+    (global as any).__FORGEAI_OLLAMA__ = ollama;
+    (global as any).__FORGEAI_STORAGE__ = storage;
+
+    // Initialize ForgeAIWorkspace (spec-driven development)
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    let forgeaiWorkspace:
+      | import('./forgeaiWorkspace/ForgeAIWorkspace').ForgeAIWorkspace
+      | undefined;
+    if (workspaceRoot) {
+      const { ForgeAIWorkspace } = await import('./forgeaiWorkspace/ForgeAIWorkspace');
+      forgeaiWorkspace = new ForgeAIWorkspace(workspaceRoot, logger, this.context);
+      await forgeaiWorkspace.maybeAutoInitialize();
+      this.services.set('forgeaiWorkspace', forgeaiWorkspace);
+      (global as any).__FORGEAI_WORKSPACE__ = forgeaiWorkspace;
+      logger.info('ForgeAIWorkspace initialized at ' + workspaceRoot);
+    } else {
+      logger.warn('No workspace open - ForgeAIWorkspace not initialized');
+    }
 
     // Initialize RAG retrieval service used during chat execution.
     const ragService = await this.createRagService(logger, ollama);
@@ -55,6 +69,50 @@ export class ForgeAIExtension {
     } else {
       logger.warn('RAG service unavailable - chat will run without retrieval grounding');
     }
+
+    // Initialize ResearchAgent for spec generation
+    let researchAgent: import('./agents/research/ResearchAgent').ResearchAgent | undefined;
+    if (workspaceRoot) {
+      const { ResearchAgent } = await import('./agents/research/ResearchAgent');
+      researchAgent = new ResearchAgent({
+        ragService: {
+          retrieve: async (query: string, k?: number) => {
+            if (!ragService) return [];
+            const results = await ragService.retrieve({ query, topK: k ?? 5 });
+            return results.map((r) => ({
+              text: r.text,
+              sourceId: r.sourceId,
+              score: r.score ?? 0,
+            }));
+          },
+        },
+        webSearch: {
+          performSearch: async () => ({ results: [], totalResults: 0, source: 'none' }),
+        },
+        executeLLM: async (systemPrompt: string, userPrompt: string) => {
+          const response = await ollama.chat({
+            model: 'gemma4-31b-cloud',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            stream: false,
+          });
+          const chatResponse = response as { message: { content: string } };
+          return chatResponse.message.content;
+        },
+        workspaceRoot,
+      });
+      this.services.set('researchAgent', researchAgent);
+      (global as any).__FORGEAI_RESEARCH_AGENT__ = researchAgent;
+      logger.info('ResearchAgent initialized');
+    }
+
+    // Initialize Tool Registry (Task 4.1)
+    const { ToolRegistry } = await import('./tools/ToolRegistry');
+    const toolRegistry = new ToolRegistry(this.context, logger);
+    toolRegistry.registerAllTools();
+    this.services.set('toolRegistry', toolRegistry);
 
     // Keep activation responsive: run non-critical checks in background.
     void this.checkOllamaAvailability(ollama, logger);
@@ -240,7 +298,18 @@ export class ForgeAIExtension {
 
     try {
       // Register webview provider
-      this.webviewManager = new WebviewManager(this.context, storage, logger, ollama, toolRegistry);
+      const forgeaiWorkspace = this.services.get('forgeaiWorkspace');
+      const researchAgent = this.services.get('researchAgent');
+      this.webviewManager = new WebviewManager(
+        this.context,
+        storage,
+        logger,
+        ollama,
+        toolRegistry,
+        forgeaiWorkspace,
+        researchAgent,
+        ragService
+      );
 
       // VS Code typings in this repo expect TWO args here.
       const webviewDisposable = vscode.window.registerWebviewViewProvider(

@@ -88,7 +88,18 @@ Documentation excerpts:
 
 ${cleaned}
 
-When facts are not present in the excerpts, proceed carefully and prefer asking clarifying questions over guessing.`;
+**If the information you need is NOT in the excerpts above, you MUST:**
+1. Call 'forgeai_webSearch' or 'forgeai_webResearch' to find current documentation URLs
+2. **CRITICAL: After getting search results, call 'forgeai_fetchPage(url)' for the 2-3 most relevant URLs** — search snippets are surface-level. You need the ACTUAL page content (docs, GitHub READMEs, API references, best practices)
+3. Do NOT guess, assume, or rely on training data
+4. Do NOT ask the user for clarification unless the topic is about their specific business logic
+
+**For ANY planning, architecture, or feature discussion:**
+- Present your research findings to the user in chat BEFORE creating specs or writing code
+- Cite sources (RAG docs, fetched page content) when making recommendations
+- Only create a formal spec after the user agrees or explicitly asks for one
+
+Research first, FETCH actual content, share findings, then act.`;
 }
 
 /**

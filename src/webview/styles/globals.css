@@ -1095,3 +1095,99 @@ button:disabled {
   animation: blink 1s infinite;
   vertical-align: middle;
 }
+
+/* ── Skeleton Loader ────────────────────────────── */
+
+.skeleton-loader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.skeleton-role-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+
+.skeleton-card {
+  border-radius: 6px;
+  border: 1px solid var(--vscode-input-border);
+  padding: 12px;
+  background-color: var(--vscode-sideBar-background);
+}
+
+.skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.skeleton-logo {
+  height: 16px;
+  width: 16px;
+  object-fit: contain;
+  border-radius: 50%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-status-text {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--vscode-panel-border) 25%,
+    var(--vscode-input-border) 50%,
+    var(--vscode-panel-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+}
+
+.skeleton-line:nth-child(1) {
+  width: 60%;
+}
+
+.skeleton-line:nth-child(2) {
+  width: 90%;
+  animation-delay: 0.1s;
+}
+
+.skeleton-line:nth-child(3) {
+  width: 85%;
+  animation-delay: 0.2s;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.92);
+  }
+}

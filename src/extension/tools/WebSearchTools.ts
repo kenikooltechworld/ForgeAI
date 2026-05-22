@@ -150,11 +150,15 @@ export class WebSearchTools {
     return {
       name: 'forgeai_webSearch',
       description:
+        'MANDATORY fallback when RAG documentation is insufficient. ' +
         'Search the web using cloud APIs (SerpAPI/SerpStack). ' +
-        'NO local browser needed — works immediately with your API keys. ' +
+        'NO local browser needed. ' +
+        'Call this tool WHENEVER: ' +
+        '(1) The RAG context in your system prompt does not contain the information you need, ' +
+        '(2) You need current best practices, latest versions, or 2026 documentation, ' +
+        '(3) You are planning a feature and need to verify technology choices. ' +
         'Returns top search results with titles, URLs, and snippets. ' +
-        'This is the PREFERRED way to research topics, find documentation, or debug errors. ' +
-        'Only use browser tools if you need to click or screenshot a page.',
+        'AFTER getting search results, you MUST call forgeai_fetchPage(url) for the most relevant URLs to get the ACTUAL content — not just snippets.',
       inputSchema: {
         type: 'object',
         required: ['query'],
@@ -194,10 +198,15 @@ export class WebSearchTools {
     return {
       name: 'forgeai_webResearch',
       description:
-        'Perform deep web research using cloud search APIs (no local browser). ' +
-        'Runs multiple related queries and aggregates unique results. ' +
-        'Useful for investigating bugs, learning new libraries, or gathering comprehensive context. ' +
-        'Preferred over browser navigation for research tasks.',
+        'MANDATORY deep research before creating any spec or plan. ' +
+        'Runs multiple related queries and aggregates results. ' +
+        'Call this tool WHENEVER: ' +
+        '(1) The user asks you to plan, design, or architect a feature, ' +
+        '(2) You need comprehensive context on a technology (Python, React, database, etc.), ' +
+        '(3) RAG documentation is missing or insufficient for the topic. ' +
+        'This tool finds current best practices, latest versions, security recommendations, and architecture patterns. ' +
+        'Always call this BEFORE forgeai_createSpec. ' +
+        'AFTER getting results, you MUST call forgeai_fetchPage(url) for the most relevant URLs to get the ACTUAL documentation content — not just snippets.',
       inputSchema: {
         type: 'object',
         required: ['topic'],
@@ -305,5 +314,144 @@ export class WebSearchTools {
         };
       },
     };
+  }
+
+  /**
+   * Tool: forgeai_fetchPage
+   * Fetch the actual HTML content of a web page and extract readable text.
+   * Use this AFTER webSearch/webResearch to get real documentation content,
+   * best practices, or GitHub READMEs — not just search snippets.
+   */
+  public fetchPage(): Tool {
+    return {
+      name: 'forgeai_fetchPage',
+      description:
+        'MANDATORY follow-up after webSearch/webResearch. ' +
+        'Fetches the actual HTML content of a URL and extracts readable text. ' +
+        'Call this tool for EVERY relevant URL you find to get REAL documentation, ' +
+        'best practices, GitHub READMEs, API references — not just search snippets. ' +
+        'NO local browser needed. Works immediately.',
+      inputSchema: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: {
+            type: 'string',
+            description: 'Full URL to fetch (e.g., "https://react.dev/learn/thinking-in-react")',
+          },
+          maxLength: {
+            type: 'number',
+            description: 'Maximum characters to return (default: 8000)',
+          },
+        },
+      },
+      execute: async (args: { url: string; maxLength?: number }) => {
+        const maxLen = args.maxLength ?? 8000;
+
+        // Validate URL
+        let url: URL;
+        try {
+          url = new URL(args.url);
+        } catch {
+          throw new Error(`Invalid URL: ${args.url}`);
+        }
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+          throw new Error(`Unsupported protocol: ${url.protocol}`);
+        }
+
+        // Fetch the page
+        const response = await fetch(url.toString(), {
+          signal: AbortSignal.timeout(15000),
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const html = await response.text();
+
+        // Extract readable text from HTML
+        let text = this.extractTextFromHtml(html);
+
+        // Truncate if too long
+        const truncated = text.length > maxLen;
+        if (truncated) {
+          text =
+            text.slice(0, maxLen) + '\n\n... [truncated — content exceeds ' + maxLen + ' chars]';
+        }
+
+        return {
+          success: true,
+          url: args.url,
+          title: this.extractTitle(html),
+          content: text,
+          length: text.length,
+          truncated,
+        };
+      },
+    };
+  }
+
+  /**
+   * Extract readable text from raw HTML using simple heuristics.
+   */
+  private extractTextFromHtml(html: string): string {
+    // Remove script and style blocks
+    let text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, ' ');
+
+    // Try to extract from main content areas first
+    const mainMatch =
+      text.match(/<main[^>]*>([\s\S]*?)<\/main>/i) ||
+      text.match(/<article[^>]*>([\s\S]*?)<\/article>/i) ||
+      text.match(/<div[^>]*class=["']content["'][^>]*>([\s\S]*?)<\/div>/i) ||
+      text.match(/<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/i) ||
+      text.match(/<div[^>]*class=["']documentation["'][^>]*>([\s\S]*?)<\/div>/i);
+
+    if (mainMatch) {
+      text = mainMatch[1];
+    }
+
+    // Convert common block elements to newlines
+    text = text
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<\/h[1-6]>/gi, '\n\n');
+
+    // Strip all remaining tags
+    text = text.replace(/<[^>]+>/g, ' ');
+
+    // Decode common HTML entities
+    text = text
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&hellip;/g, '...')
+      .replace(/&mdash;/g, '—')
+      .replace(/&ndash;/g, '–');
+
+    // Clean up whitespace
+    text = text
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+
+    return text;
+  }
+
+  private extractTitle(html: string): string {
+    const match = html.match(/<title[^>]*>(.*?)<\/title>/i);
+    return match ? match[1].trim() : '';
   }
 }

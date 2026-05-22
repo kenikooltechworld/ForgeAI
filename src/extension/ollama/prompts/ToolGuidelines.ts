@@ -36,16 +36,28 @@ You have access to comprehensive file system, terminal, git, and diagnostic tool
 **forgeai_gitPull()** - Pull commits from remote
 **forgeai_gitCreateBranch(name, checkout)** - Create new branch
 
-### Web Search Tools (No local browser needed)
+### Web Search & Content Fetching (CRITICAL — Call these when RAG is insufficient)
 
-**forgeai_webSearch(query)** - Search the web for documentation, errors, or general information
-**forgeai_webResearch(topic, subQueries)** - Deep research with multiple aggregated queries
-**forgeai_searchDocs(library, topic)** - Find official documentation for a library or framework
+**forgeai_webSearch(query)** — MANDATORY when RAG docs are missing info. Search the web for current documentation, latest versions, best practices, or errors.
+**forgeai_webResearch(topic, subQueries)** — MANDATORY before creating ANY spec or plan. Deep research with multiple aggregated queries. Call this FIRST when the user asks you to plan, design, or architect a feature.
+**forgeai_fetchPage(url)** — MANDATORY follow-up after webSearch/webResearch. Fetches the ACTUAL HTML content of a URL and extracts readable text. Call this for EVERY relevant URL to get real documentation, GitHub READMEs, API references — NOT just snippets.
+**forgeai_searchDocs(library, topic)** — Find official documentation for a specific library or framework.
 
 ### Diagnostics Tools
 
 **forgeai_getErrors()** - Get all errors and warnings in workspace
 **forgeai_getDiagnostics(paths)** - Get diagnostics for specific files
+
+### Spec Tools (Spec-Driven Development)
+
+**forgeai_createSpec(title, workflow, description)** — Create a new spec. ONLY call this AFTER doing research (RAG + webResearch) and AFTER getting user agreement.
+**forgeai_continueSpec(specId)** — Generate the next phase of a spec (requirements → design → tasks) using AI.
+**forgeai_writeSpecArtifact(specId, type, content)** — Write content to a spec artifact file. After writing, summarize what you created in chat.
+**forgeai_readSpec(specId)** - Read an existing spec and its artifacts.
+**forgeai_listSpecs()** - List all specs in the workspace.
+**forgeai_approveSpec(specId)** - Approve a pending phase so continueSpec can proceed.
+**forgeai_checkDrift(specId)** - Run drift detection to check if requirements are implemented.
+**forgeai_deleteSpec(specId)** - Delete a spec and all its artifacts.
 
 ### Tool Usage Best Practices
 

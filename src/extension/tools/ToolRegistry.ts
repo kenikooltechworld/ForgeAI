@@ -83,6 +83,7 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(webSearchTools.webSearch());
     this.registerTool(webSearchTools.webResearch());
     this.registerTool(webSearchTools.searchDocs());
+    this.registerTool(webSearchTools.fetchPage());
 
     // Register browser tools (local Playwright — optional fallback)
     const { BrowserTools } = require('./BrowserTools');
@@ -102,6 +103,28 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(uiuxTools.generateDesignTokens());
     this.registerTool(uiuxTools.exportTokens());
     this.registerTool(uiuxTools.checkContrast());
+
+    // Register Spec Tools (spec-driven development)
+    const { SpecTools } = require('./SpecTools');
+    const specTools = new SpecTools(
+      () => (global as any).__FORGEAI_WORKSPACE__?.spec,
+      () => (global as any).__FORGEAI_WORKSPACE__?.drift,
+      () => (global as any).__FORGEAI_OLLAMA__,
+      () => (global as any).__FORGEAI_STORAGE__,
+      () => (global as any).__FORGEAI_WORKSPACE__?.product,
+      () => (global as any).__FORGEAI_WORKSPACE__?.memory,
+      () => (global as any).__FORGEAI_RESEARCH_AGENT__
+    );
+    this.registerTool(specTools.createSpec());
+    this.registerTool(specTools.writeSpecArtifact());
+    this.registerTool(specTools.readSpec());
+    this.registerTool(specTools.listSpecs());
+    this.registerTool(specTools.continueSpec());
+    this.registerTool(specTools.checkDrift());
+    this.registerTool(specTools.deleteSpec());
+    this.registerTool(specTools.startTask());
+    this.registerTool(specTools.runAllTasks());
+    this.registerTool(specTools.approveSpec());
 
     this.logger.info(`✅ Tool registry initialized with ${this.tools.size} tools`);
     this.logger.info(`✅ Registered tools: ${this.getToolNames().join(', ')}`);

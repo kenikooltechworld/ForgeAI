@@ -33,7 +33,9 @@ export class SpecTools {
     return {
       name: 'forgeai_createSpec',
       description:
-        'Create a new ForgeAI spec (spec-driven development artifact). Use this when the user asks you to create a spec, feature spec, requirements document, or design document. Creates .forgeai/specs/<id>/ directory with requirements.md, design.md, tasks.md (or bugfix.md for bugfix specs). Returns the spec ID.',
+        'Create a new ForgeAI spec. ONLY call this AFTER researching (RAG + webResearch) and AFTER the user explicitly agrees to create a spec. ' +
+        'If the user asked for a plan or recommendations, do research first and present findings in chat BEFORE calling this tool. ' +
+        'Creates .forgeai/specs/<id>/ directory with requirements.md, design.md, tasks.md. Returns the spec ID.',
       inputSchema: {
         type: 'object',
         required: ['title'],
@@ -87,7 +89,7 @@ export class SpecTools {
     return {
       name: 'forgeai_writeSpecArtifact',
       description:
-        'Write content to a spec artifact file (requirements.md, design.md, tasks.md, or bugfix.md). Use this to save generated spec content instead of returning it in chat.',
+        'Write content to a spec artifact file (requirements.md, design.md, tasks.md, or bugfix.md). After writing, ALSO summarize the key points in your chat response so the user knows what was created.',
       inputSchema: {
         type: 'object',
         required: ['specId', 'type', 'content'],
@@ -118,6 +120,7 @@ export class SpecTools {
           specId: args.specId,
           type: args.type,
           message: `Wrote ${args.type}.md for spec ${args.specId}`,
+          content: args.content,
         });
       },
     };
@@ -256,6 +259,7 @@ export class SpecTools {
             specId: args.specId,
             phasesCompleted: result.phasesCompleted,
             message: `Generated next phase for spec "${result.title}". Phases completed: ${result.phasesCompleted.join(', ') || 'none'}`,
+            content: result.content || '',
           };
         }
         return { success: false, error: result.error || 'Unknown error' };

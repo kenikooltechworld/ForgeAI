@@ -18,6 +18,8 @@ export interface SpecWriterOutput {
   phasesCompleted: ('requirements' | 'design' | 'tasks' | 'bugfix')[];
   success: boolean;
   error?: string;
+  /** The generated artifact content for the phase that was just completed */
+  content?: string;
 }
 
 export interface SpecWriterDeps {
@@ -792,6 +794,8 @@ export class SpecWriterAgent {
           status: 'completed',
           message: 'Requirements analysis complete',
         });
+
+        return { specId, title, phasesCompleted, success: true, content: requirements };
       } else if (nextPhase === 'design') {
         const requirements = artifacts.requirements || '';
         onProgress?.({
@@ -810,6 +814,8 @@ export class SpecWriterAgent {
           message: 'Design document complete',
         });
         phasesCompleted.push('design');
+
+        return { specId, title, phasesCompleted, success: true, content: design };
       } else if (nextPhase === 'tasks') {
         const requirements = artifacts.requirements || '';
         const design = artifacts.design || '';
@@ -829,6 +835,8 @@ export class SpecWriterAgent {
           message: 'Tasks document complete',
         });
         phasesCompleted.push('tasks');
+
+        return { specId, title, phasesCompleted, success: true, content: tasks };
       }
 
       return { specId, title, phasesCompleted, success: true };
@@ -879,7 +887,7 @@ export class SpecWriterAgent {
         status: 'completed',
         message: 'Bugfix specification complete',
       });
-      return { specId, title, phasesCompleted: ['bugfix'], success: true };
+      return { specId, title, phasesCompleted: ['bugfix'], success: true, content: bugfix };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error during bugfix generation';
