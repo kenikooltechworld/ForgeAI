@@ -7,6 +7,7 @@ import { generateSystemPrompt, getWorkspaceContext } from './SystemPrompt';
 import { MessageRouter, RoutingContext, RoutingResult } from '../classification/MessageRouter';
 import type { RagService } from '../rag/RagService';
 import type { SpecContext } from '../spec/types';
+import { DEFAULT_MODEL } from '../config/ModelConfig';
 
 /**
  * Agent Loop Update Types
@@ -83,13 +84,13 @@ export class AgentLoop {
    * @param initialMessages Initial conversation messages
    * @param onUpdate Callback for real-time updates
    * @param tools Available tools for the agent
-   * @param model Ollama model to use (default: gpt-oss:120b-cloud)
+   * @param model Ollama model to use (default: from ModelConfig)
    */
   public async execute(
     initialMessages: OllamaMessage[],
     onUpdate: (update: AgentLoopUpdate) => void,
     tools: any[] = [],
-    model: string = 'gpt-oss:120b-cloud',
+    model: string = DEFAULT_MODEL,
     options?: { maxIterations?: number; specContext?: SpecContext } // undefined => unbounded (autonomous)
   ): Promise<void> {
     this.logger.info('Starting agent loop execution');

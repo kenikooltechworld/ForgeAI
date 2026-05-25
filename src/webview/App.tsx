@@ -97,6 +97,8 @@ function App() {
   const showFile = useConversationStore((state) => state.showFile);
   const showTerminal = useConversationStore((state) => state.showTerminal);
   const showTest = useConversationStore((state) => state.showTest);
+  const showTaskTracker = useConversationStore((state) => state.showTaskTracker);
+  const updateTaskTracker = useConversationStore((state) => state.updateTaskTracker);
   const addMessage = useConversationStore((state) => state.addMessage);
   const updateMessage = useConversationStore((state) => state.updateMessage);
   const activeConversationId = useConversationStore((state) => state.activeConversationId);
@@ -193,6 +195,17 @@ function App() {
       } else if (message.type === 'showTestResults') {
         console.log('[ForgeAI] Show test results message received:', message.data);
         showTest(message.data);
+      } else if (message.type === 'openTaskTracker') {
+        console.log('[ForgeAI] Opening Task Tracker panel');
+        showTaskTracker(message.spec || { tasks: [] });
+      } else if (message.type === 'loadSpec') {
+        console.log('[ForgeAI] Loading spec into Task Tracker:', message.spec);
+        showTaskTracker(message.spec || { tasks: [] });
+      } else if (message.type === 'updateTask') {
+        console.log('[ForgeAI] Updating task in Task Tracker:', message.task);
+        if (message.task?.id) {
+          updateTaskTracker(message.task.id, message.task);
+        }
       } else if (message.type === 'toolExecutionStart') {
         console.log('[ForgeAI] Tool execution start:', message.data);
         if (activeConversationId) {
@@ -260,6 +273,8 @@ function App() {
       showFile,
       showTerminal,
       showTest,
+      showTaskTracker,
+      updateTaskTracker,
       addMessage,
       updateMessage,
       activeConversationId,

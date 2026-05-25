@@ -66,10 +66,12 @@ export class SpecReader {
       ? this.parseRequirements(fs.readFileSync(requirementsPath, 'utf-8'))
       : [];
 
-    // Parse tasks
-    const tasks = fs.existsSync(tasksPath)
+    // Parse tasks (also captures phase titles from headers)
+    const parseResult = fs.existsSync(tasksPath)
       ? this.parseTasks(fs.readFileSync(tasksPath, 'utf-8'))
-      : [];
+      : { tasks: [] as ExecutableTask[], phaseTitles: new Map<number, string>() };
+    const tasks = parseResult.tasks;
+    const phaseTitles = parseResult.phaseTitles;
 
     // Load saved status if exists
     if (fs.existsSync(statusPath)) {
@@ -79,8 +81,8 @@ export class SpecReader {
     // Build dependency graph
     const dependencyGraph = this.buildDependencyGraph(tasks);
 
-    // Group into phases
-    const phases = this.groupIntoPhases(tasks);
+    // Group into phases (use captured titles)
+    const phases = this.groupIntoPhases(tasks, phaseTitles);
 
     // Calculate progress
     const completedCount = tasks.filter((t) => t.status === 'complete').length;
@@ -95,6 +97,7 @@ export class SpecReader {
       tasks,
       phases,
       dependencyGraph,
+      phaseTitles,
       progress,
       completedCount,
       failedCount,
@@ -214,11 +217,16 @@ export class SpecReader {
    *
    * - [ ] N Checkpoint - Title
    */
-  public parseTasks(content: string): ExecutableTask[] {
+  public parseTasks(content: string): {
+    tasks: ExecutableTask[];
+    phaseTitles: Map<number, string>;
+  } {
     const tasks: ExecutableTask[] = [];
     const lines = content.split('\n');
 
     let currentPhase = 0;
+    let currentPhaseTitle = '';
+    const phaseTitles = new Map<number, string>();
     let currentTask: ExecutableTask | null = null;
     let inSubInstructions = false;
     let indentLevel = 0;
@@ -232,6 +240,8 @@ export class SpecReader {
       const phaseMatch = trimmed.match(/^#{3}\s+Phase\s+(\d+)\s*[:\-]?\s*(.+)$/i);
       if (phaseMatch) {
         currentPhase = parseInt(phaseMatch[1], 10);
+        currentPhaseTitle = phaseMatch[2].trim();
+        phaseTitles.set(currentPhase, currentPhaseTitle);
         // Save current task
         if (currentTask) {
           tasks.push(currentTask);
@@ -361,7 +371,7 @@ export class SpecReader {
     // Post-process: infer expected artifacts from instructions
     this.inferArtifacts(tasks);
 
-    return tasks;
+    return { tasks, phaseTitles };
   }
 
   /**
@@ -460,7 +470,7 @@ export class SpecReader {
   /**
    * Group tasks into phases
    */
-  private groupIntoPhases(tasks: ExecutableTask[]): TaskPhase[] {
+  private groupIntoPhases(tasks: ExecutableTask[], phaseTitles?: Map<number, string>): TaskPhase[] {
     const phaseMap = new Map<number, ExecutableTask[]>();
 
     for (const task of tasks) {
@@ -474,7 +484,7 @@ export class SpecReader {
     for (const [number, phaseTasks] of phaseMap) {
       phases.push({
         number,
-        title: `Phase ${number}`,
+        title: phaseTitles?.get(number) || `Phase ${number}`,
         tasks: phaseTasks,
         isComplete: phaseTasks.every((t) => t.status === 'complete' || t.status === 'skipped'),
       });

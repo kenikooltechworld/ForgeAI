@@ -38,9 +38,9 @@ You have access to comprehensive file system, terminal, git, and diagnostic tool
 
 ### Web Search & Content Fetching (CRITICAL — Call these when RAG is insufficient)
 
-**forgeai_webSearch(query)** — MANDATORY when RAG docs are missing info. Search the web for current documentation, latest versions, best practices, or errors.
-**forgeai_webResearch(topic, subQueries)** — MANDATORY before creating ANY spec or plan. Deep research with multiple aggregated queries. Call this FIRST when the user asks you to plan, design, or architect a feature.
-**forgeai_fetchPage(url)** — MANDATORY follow-up after webSearch/webResearch. Fetches the ACTUAL HTML content of a URL and extracts readable text. Call this for EVERY relevant URL to get real documentation, GitHub READMEs, API references — NOT just snippets.
+**forgeai_webSearch(query)** — MANDATORY when RAG docs are missing info. Searches the web AND auto-fetches content from the top 3 result URLs. Returns both snippets and real page content. NO separate fetchPage needed unless you need deeper content from a specific URL.
+**forgeai_webResearch(topic, subQueries)** — MANDATORY before creating ANY spec or plan. Runs multiple related queries AND auto-fetches content from the top 5 result URLs. Call this FIRST when the user asks you to plan, design, or architect a feature. Returns aggregated results with real page content — not just snippets.
+**forgeai_fetchPage(url)** — Fetches the ACTUAL HTML content of a specific URL with Playwright fallback for bot protection. Use this ONLY when you need content from a specific URL that was not auto-fetched by webSearch/webResearch, or when you need more than the auto-fetched summary.
 **forgeai_searchDocs(library, topic)** — Find official documentation for a specific library or framework.
 
 ### Diagnostics Tools

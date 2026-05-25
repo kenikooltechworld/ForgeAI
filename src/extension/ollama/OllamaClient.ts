@@ -17,6 +17,7 @@ export interface OllamaMessage {
  * Ollama tool call format
  */
 export interface OllamaToolCall {
+  id?: string;
   function: {
     name: string;
     arguments: Record<string, any>;

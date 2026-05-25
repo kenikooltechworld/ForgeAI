@@ -7,6 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { SpecReader } from './SpecReader';
 import {
   ParsedSpec,
@@ -16,6 +17,7 @@ import {
   SpecExecutionOptions,
   SPEC_DIR_LAYOUT,
 } from './types';
+import { DEFAULT_MODEL } from '../config/ModelConfig';
 
 /**
  * Simple internal logger
@@ -26,12 +28,15 @@ class TaskLogger {
     this.prefix = prefix;
   }
   info(msg: string) {
+    // eslint-disable-next-line no-console
     console.log(`[${this.prefix}] ${msg}`);
   }
   warn(msg: string) {
+    // eslint-disable-next-line no-console
     console.warn(`[${this.prefix}] ${msg}`);
   }
   error(msg: string) {
+    // eslint-disable-next-line no-console
     console.error(`[${this.prefix}] ${msg}`);
   }
 }
@@ -94,15 +99,47 @@ export class SpecTaskExecutor {
           break;
         }
 
-        // Check for checkpoint
+        // Check for checkpoint — Phase Gate: run ALL tests for the phase at 100%
         if (nextTask.isCheckpoint && opts.stopAtCheckpoints) {
           const phase = spec.phases.find((p) => p.number === nextTask.phase);
-          if (phase && opts.onCheckpoint) {
-            this.logger.info(`Checkpoint reached: Phase ${nextTask.phase}`);
-            const shouldContinue = await opts.onCheckpoint(phase);
-            if (!shouldContinue) {
-              this.logger.info('Paused at checkpoint.');
-              break;
+          if (phase) {
+            this.logger.info(
+              `Phase Gate reached: Phase ${nextTask.phase} — running full test suite`
+            );
+
+            // Run ALL tests for this phase before proceeding
+            const phaseTestResult = this.runPhaseTests(phase);
+
+            if (opts.onPhaseGate) {
+              opts.onPhaseGate(phase, phaseTestResult.passed, phaseTestResult.output);
+            }
+
+            if (!phaseTestResult.passed) {
+              this.logger.error(
+                `Phase ${nextTask.phase} gate FAILED. Tests must pass at 100% before proceeding.`
+              );
+              nextTask.status = 'failed';
+              nextTask.error = `Phase gate failed: ${phaseTestResult.output}`;
+              failed++;
+              if (opts.onTaskFail) {
+                opts.onTaskFail(nextTask, nextTask.error);
+              }
+              if (!opts.continueOnFailure) {
+                this.logger.error('Stopping: phase gate failed and continueOnFailure=false');
+                break;
+              }
+              this.specReader.saveStatus(spec);
+              continue;
+            }
+
+            this.logger.info(`Phase ${nextTask.phase} gate PASSED. All tests pass at 100%.`);
+
+            if (opts.onCheckpoint) {
+              const shouldContinue = await opts.onCheckpoint(phase);
+              if (!shouldContinue) {
+                this.logger.info('Paused at checkpoint.');
+                break;
+              }
             }
           }
           // Mark checkpoint as complete and continue
@@ -344,10 +381,8 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
   }
 
   /**
-   * Verify task output against acceptance criteria
-   *
-   * TODO: Phase 1.3 will implement the real ComplianceChecker
-   * For now, this is a placeholder that checks if expected artifacts exist.
+   * Verify task output against acceptance criteria by running actual tests,
+   * TypeScript compilation, and artifact checks. Task passes ONLY at 100%.
    */
   private verifyCompliance(
     task: ExecutableTask,
@@ -357,26 +392,105 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
     const startTime = Date.now();
     const criterionResults: ComplianceResult['criterionResults'] = [];
     let allPassed = true;
+    const errors: string[] = [];
 
     // Check 1: Did expected artifacts get created?
     for (const artifact of task.expectedArtifacts) {
-      const artifactPath = path.join(task.id.startsWith('ui-ux') ? '.' : 'src/extension', artifact);
+      const artifactPath = path.resolve(artifact);
       const exists = fs.existsSync(artifactPath);
       criterionResults.push({
         criterion: `Artifact ${artifact} should exist`,
         passed: exists,
         explanation: exists ? `Found ${artifact}` : `Missing ${artifact}`,
       });
-      if (!exists) allPassed = false;
+      if (!exists) {
+        allPassed = false;
+        errors.push(`Missing artifact: ${artifact}`);
+      }
     }
 
-    // Check 2: If no expected artifacts, check if task has instructions that were followed
-    if (task.expectedArtifacts.length === 0) {
+    // Check 2: TypeScript compilation (zero errors required)
+    try {
+      execSync('npx tsc --noEmit', { timeout: 60000, stdio: 'pipe' });
       criterionResults.push({
-        criterion: 'Task instructions executed',
+        criterion: 'TypeScript compilation succeeds with zero errors',
         passed: true,
-        explanation: 'No artifact requirements — instructions-based task',
+        explanation: 'tsc --noEmit passed',
       });
+    } catch (err) {
+      allPassed = false;
+      const msg = err instanceof Error ? err.message : String(err);
+      criterionResults.push({
+        criterion: 'TypeScript compilation succeeds with zero errors',
+        passed: false,
+        explanation: `TypeScript errors: ${msg.slice(0, 200)}`,
+      });
+      errors.push(`TypeScript errors: ${msg.slice(0, 200)}`);
+    }
+
+    // Check 3: Run tests if test files are specified in instructions
+    const testFileMatches = this.extractTestFilesFromInstructions(task);
+    if (testFileMatches.length > 0) {
+      try {
+        // Run tests for specific files
+        const testCmd = `npx jest --passWithNoTests ${testFileMatches.join(' ')}`;
+        execSync(testCmd, { timeout: 120000, stdio: 'pipe' });
+        criterionResults.push({
+          criterion: `Tests pass for ${testFileMatches.join(', ')}`,
+          passed: true,
+          explanation: 'All tests passed',
+        });
+      } catch (err) {
+        allPassed = false;
+        const msg = err instanceof Error ? err.message : String(err);
+        criterionResults.push({
+          criterion: `Tests pass for ${testFileMatches.join(', ')}`,
+          passed: false,
+          explanation: `Test failures: ${msg.slice(0, 200)}`,
+        });
+        errors.push(`Test failures: ${msg.slice(0, 200)}`);
+      }
+    } else {
+      // No specific test files — check if any new tests were created
+      criterionResults.push({
+        criterion: 'Tests exist and pass (or not required for this task)',
+        passed: true,
+        explanation: 'No test files specified — skipped',
+      });
+    }
+
+    // Check 4: Lint check if eslint is configured
+    try {
+      if (
+        fs.existsSync(path.resolve('.eslintrc')) ||
+        fs.existsSync(path.resolve('eslint.config.js')) ||
+        fs.existsSync(path.resolve('.eslintignore'))
+      ) {
+        execSync('npx eslint --ext .ts,.tsx src/ --max-warnings=0', {
+          timeout: 60000,
+          stdio: 'pipe',
+        });
+        criterionResults.push({
+          criterion: 'No linting errors introduced',
+          passed: true,
+          explanation: 'ESLint passed',
+        });
+      } else {
+        criterionResults.push({
+          criterion: 'No linting errors introduced',
+          passed: true,
+          explanation: 'No ESLint config — skipped',
+        });
+      }
+    } catch (err) {
+      allPassed = false;
+      const msg = err instanceof Error ? err.message : String(err);
+      criterionResults.push({
+        criterion: 'No linting errors introduced',
+        passed: false,
+        explanation: `Lint errors: ${msg.slice(0, 200)}`,
+      });
+      errors.push(`Lint errors: ${msg.slice(0, 200)}`);
     }
 
     const durationMs = Date.now() - startTime;
@@ -386,16 +500,103 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
     const score =
       criterionResults.length > 0 ? Math.round((passedCount / criterionResults.length) * 100) : 100;
 
+    // STRICT: task passes ONLY at 100% score (Kiro-style)
+    const passed = allPassed && score === 100;
+
     const result: ComplianceResult = {
-      passed: allPassed && score >= 80,
+      passed,
       criterionResults,
       score,
-      correctionInstructions: allPassed
+      correctionInstructions: passed
         ? undefined
-        : `Missing artifacts: ${task.expectedArtifacts.filter((a) => !fs.existsSync(path.join('.', a))).join(', ')}`,
+        : `Task validation failed (${score}%). Fix these issues before proceeding:\n${errors.map((e) => `- ${e}`).join('\n')}`,
       durationMs,
     };
     return result;
+  }
+
+  /**
+   * Extract test file paths from task instructions
+   */
+  private extractTestFilesFromInstructions(task: ExecutableTask): string[] {
+    const files: string[] = [];
+    const allText = [task.description, ...task.instructions].join(' ');
+
+    // Match patterns like: src/feature/__tests__/Component.test.ts or src/**/*.test.ts
+    const testPattern =
+      /(?:test file[s]?|__tests__|\.test\.|\.spec\.)[`"]?(\S+\.test\.(ts|tsx|js|jsx)[`"]?)/gi;
+    let match;
+    while ((match = testPattern.exec(allText)) !== null) {
+      const file = match[1].replace(/[`"]/g, '');
+      if (!files.includes(file)) files.push(file);
+    }
+
+    // Also look for specific test file mentions
+    const filePattern =
+      /(?:Create|Implement|Generate)\s+[`"]?(src\/[^`"\s]*\.test\.(ts|tsx))[`"]?/gi;
+    while ((match = filePattern.exec(allText)) !== null) {
+      const file = match[1];
+      if (!files.includes(file)) files.push(file);
+    }
+
+    return files;
+  }
+
+  /**
+   * Run ALL tests for a phase. Returns passed=true only at 100% pass rate.
+   * Collects test files from all tasks in the phase and runs them together.
+   */
+  private runPhaseTests(phase: import('./types').TaskPhase): { passed: boolean; output: string } {
+    const allTestFiles: string[] = [];
+
+    for (const task of phase.tasks) {
+      if (task.isCheckpoint) continue;
+      const taskTests = this.extractTestFilesFromInstructions(task);
+      for (const testFile of taskTests) {
+        if (!allTestFiles.includes(testFile)) {
+          allTestFiles.push(testFile);
+        }
+      }
+    }
+
+    // If no specific test files found, run the full test suite
+    if (allTestFiles.length === 0) {
+      try {
+        this.logger.info(`Running full test suite for Phase ${phase.number}`);
+        const output = execSync('npx jest --passWithNoTests --silent', {
+          timeout: 300000,
+          stdio: 'pipe',
+          encoding: 'utf-8',
+        });
+        return { passed: true, output: `Full suite passed:\n${output}` };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const stdout = (err as { stdout?: string }).stdout || '';
+        return {
+          passed: false,
+          output: `Full suite FAILED:\n${msg}\n${stdout}`,
+        };
+      }
+    }
+
+    // Run specific test files collected from phase tasks
+    try {
+      this.logger.info(`Running Phase ${phase.number} tests: ${allTestFiles.join(', ')}`);
+      const testCmd = `npx jest --passWithNoTests ${allTestFiles.join(' ')}`;
+      const output = execSync(testCmd, {
+        timeout: 300000,
+        stdio: 'pipe',
+        encoding: 'utf-8',
+      });
+      return { passed: true, output: `Phase tests passed:\n${output}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stdout = (err as { stdout?: string }).stdout || '';
+      return {
+        passed: false,
+        output: `Phase tests FAILED:\n${msg}\n${stdout}`,
+      };
+    }
   }
 
   /**
@@ -426,7 +627,7 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
         }
       },
       [],
-      'gpt-oss:120b-cloud',
+      DEFAULT_MODEL,
       { specContext }
     );
 

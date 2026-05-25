@@ -9,6 +9,7 @@ import type { ForgeAIWorkspace } from '../forgeaiWorkspace/ForgeAIWorkspace';
 import type { ResearchAgent } from '../agents/research/ResearchAgent';
 import type { RagService } from '../rag/RagService';
 import { SpecWriterAgent } from '../agents/spec/SpecWriterAgent';
+import { DEFAULT_MODEL } from '../config/ModelConfig';
 
 /**
  * Production-ready Webview Manager for ForgeAI extension
@@ -112,8 +113,13 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
             message.conversationId,
             message.content,
             message.conversationHistory || [],
-            message.model || 'gpt-oss:120b-cloud', // Use provided model or default
-            message.images || [] // Extract images from message
+            message.model || DEFAULT_MODEL, // Use provided model or default
+            message.images || [], // Extract images from message
+            {
+              isTaskExecution: message.isTaskExecution,
+              specId: message.specId,
+              taskId: message.taskId,
+            }
           );
           break;
         }
@@ -210,7 +216,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           this.logger.info('Handling getSelectedModel message');
           const selectedModel = this.storageManager.getGlobalValue(
             'forgeai.selectedModel',
-            'gpt-oss:120b-cloud'
+            DEFAULT_MODEL
           );
           this.logger.info(`Sending selected model: ${selectedModel}`);
           this.view?.webview.postMessage({ type: 'selectedModel', model: selectedModel });
@@ -333,7 +339,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           this.logger.info('Handling conversationHistoryForRetry');
           // Extract the last user message and resend it
           const history = message.conversationHistory || [];
-          const model = message.model || 'gpt-oss:120b-cloud';
+          const model = message.model || DEFAULT_MODEL;
 
           // Find the last user message
           const lastUserMessage = [...history].reverse().find((msg: any) => msg.role === 'user');
@@ -381,13 +387,17 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     conversationId: string,
     message: string,
     conversationHistory: any[] = [],
-    model: string = 'gpt-oss:120b-cloud',
-    images: Array<{ name: string; dataUrl: string }> = []
+    model: string = DEFAULT_MODEL,
+    images: Array<{ name: string; dataUrl: string }> = [],
+    options: { isTaskExecution?: boolean; specId?: string; taskId?: string } = {}
   ): Promise<void> {
     this.logger.info(`Sending message to Ollama: ${message}`);
     this.logger.info(`Using model: ${model}`);
     this.logger.info(`Conversation history length: ${conversationHistory.length}`);
     this.logger.info(`Attached images: ${images.length}`);
+    if (options.isTaskExecution) {
+      this.logger.info(`Task execution mode: specId=${options.specId}, taskId=${options.taskId}`);
+    }
 
     try {
       // Get tool definitions from ToolRegistry
@@ -471,8 +481,65 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
       this.logger.info(`Total messages to send: ${messages.length}`);
 
-      // Execute agent loop with streaming updates
-      await this.executeAgentLoop(agentLoop, conversationId, messages, tools, model);
+      // Build spec context for task execution
+      let specContext: import('../spec/types').SpecContext | undefined;
+      if (options.isTaskExecution && options.specId) {
+        try {
+          const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          if (workspaceRoot) {
+            const { SpecReader } = await import('../spec/SpecReader');
+            const specReader = new SpecReader();
+            const specDir = vscode.Uri.joinPath(
+              vscode.Uri.file(workspaceRoot),
+              '.forgeai',
+              'specs',
+              options.specId
+            ).fsPath;
+            const spec = await specReader.parseSpecDirectory(specDir);
+
+            // Enforce sequential task locking: reject if any prior task is not complete
+            if (options.taskId) {
+              const taskIndex = spec.tasks.findIndex((t) => t.id === options.taskId);
+              const lockedBy = spec.tasks
+                .slice(0, taskIndex)
+                .filter((t) => t.status !== 'complete');
+              if (lockedBy.length > 0) {
+                const errorMsg = `Task ${options.taskId} is locked. Complete previous tasks first: ${lockedBy.map((t) => t.id).join(', ')}.`;
+                this.logger.warn(errorMsg);
+                this.view?.webview.postMessage({
+                  type: 'streamError',
+                  conversationId,
+                  errorType: 'taskLocked',
+                  errorMessage: errorMsg,
+                  actionButton: { label: 'Run All Tasks', action: 'runAll' },
+                });
+                return;
+              }
+            }
+
+            specContext = {
+              spec,
+              currentTask: spec.tasks.find((t) => t.id === options.taskId) || spec.tasks[0],
+              constitution: '',
+              memoryBank: { product: '', structure: '', tech: '' },
+              completedTasks: spec.tasks
+                .filter((t) => t.status === 'complete')
+                .map((t) => ({
+                  taskId: t.id,
+                  description: t.description,
+                  artifacts: t.producedArtifacts,
+                  summary: `Completed: ${t.description}`,
+                })),
+            };
+            this.logger.info(`Loaded spec context for task execution: ${spec.id}`);
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to load spec context for task execution: ${err}`);
+        }
+      }
+
+      // Execute agent loop with streaming updates and optional spec context
+      await this.executeAgentLoop(agentLoop, conversationId, messages, tools, model, specContext);
     } catch (error) {
       this.logger.error('Failed to send message to Ollama', error);
 
@@ -507,7 +574,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       return;
     }
 
-    const specModel = 'gemma4-31b-cloud';
+    const specModel = DEFAULT_MODEL;
     const agent = new SpecWriterAgent({
       executeLLM: async (systemPrompt, userPrompt) => {
         const response = await this.ollamaClient.chat({
@@ -637,7 +704,8 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     conversationId: string,
     messages: OllamaMessage[],
     tools: any[],
-    model: string = 'gpt-oss:120b-cloud'
+    model: string = DEFAULT_MODEL,
+    specContext?: import('../spec/types').SpecContext
   ): Promise<void> {
     // Store the current agent loop instance so we can stop it
     this.currentAgentLoop = agentLoop;
@@ -869,7 +937,8 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           }
         },
         tools,
-        model // Pass the model parameter
+        model, // Pass the model parameter
+        specContext ? { specContext } : undefined
       );
     } finally {
       // Clear the current agent loop instance
@@ -1347,7 +1416,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         this.logger.error('OLLAMA_MODEL_NOT_FOUND error: Model not available');
         return {
           type: 'OLLAMA_MODEL_NOT_FOUND',
-          message: 'Model not found. Please pull the model using: ollama pull gpt-oss:120b-cloud',
+          message: `Model not found. Please pull the model using: ollama pull ${DEFAULT_MODEL}`,
           actionButton: {
             label: 'Open Ollama Docs',
             url: 'https://docs.ollama.com',

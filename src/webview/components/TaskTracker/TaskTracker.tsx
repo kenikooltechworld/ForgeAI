@@ -16,9 +16,19 @@ import {
   ChevronRight,
   Terminal,
   ListChecks,
+  Lock,
 } from 'lucide-react';
 
-export type TaskStatus = 'pending' | 'running' | 'complete' | 'failed' | 'paused';
+export type TaskStatus = 'pending' | 'in_progress' | 'running' | 'complete' | 'failed' | 'paused';
+export type SubtaskStatus = 'pending' | 'running' | 'complete' | 'failed';
+
+export interface Subtask {
+  id: string;
+  description: string;
+  category: 'backend' | 'frontend';
+  status: SubtaskStatus;
+  details?: string;
+}
 
 export interface ExecutableTask {
   id: string;
@@ -27,6 +37,7 @@ export interface ExecutableTask {
   status: TaskStatus;
   dependencies: string[];
   acceptanceCriteria: string[];
+  subtasks?: Subtask[];
   output?: string;
   error?: string;
   durationMs?: number;
@@ -49,6 +60,7 @@ function StatusIcon({ status }: { status: TaskStatus }) {
     case 'failed':
       return <XCircle size={14} className="text-red-400" />;
     case 'running':
+    case 'in_progress':
       return <Clock size={14} className="text-amber-400 animate-pulse" />;
     case 'paused':
       return <Pause size={14} className="text-purple-400" />;
@@ -61,14 +73,80 @@ function StatusBadge({ status }: { status: TaskStatus }) {
   const styles: Record<string, string> = {
     pending: 'bg-(--vscode-badge-background) text-(--vscode-badge-foreground)',
     running: 'bg-amber-500/20 text-amber-400',
+    in_progress: 'bg-amber-500/20 text-amber-400',
     complete: 'bg-green-500/20 text-green-400',
     failed: 'bg-red-500/20 text-red-400',
     paused: 'bg-purple-500/20 text-purple-400',
   };
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium uppercase ${styles[status]}`}>
-      {status}
+      {status === 'in_progress' ? 'in progress' : status}
     </span>
+  );
+}
+
+function SubtaskProgress({ subtasks }: { subtasks: Subtask[] }) {
+  const backend = subtasks.filter((s) => s.category === 'backend');
+  const frontend = subtasks.filter((s) => s.category === 'frontend');
+
+  const backendComplete = backend.filter((s) => s.status === 'complete').length;
+  const frontendComplete = frontend.filter((s) => s.status === 'complete').length;
+  const backendPct = backend.length > 0 ? (backendComplete / backend.length) * 100 : 0;
+  const frontendPct = frontend.length > 0 ? (frontendComplete / frontend.length) * 100 : 0;
+
+  return (
+    <div className="flex items-center gap-2 text-[10px]">
+      {backend.length > 0 && (
+        <div className="flex items-center gap-1">
+          <span className="text-(--vscode-textLink-foreground)">BE</span>
+          <div className="w-12 h-1.5 bg-(--vscode-editor-inactiveSelectionBackground) rounded-full overflow-hidden">
+            <div
+              className="h-full bg-(--vscode-textLink-foreground) rounded-full transition-all"
+              style={{ width: `${backendPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+      {frontend.length > 0 && (
+        <div className="flex items-center gap-1">
+          <span className="text-green-400">FE</span>
+          <div className="w-12 h-1.5 bg-(--vscode-editor-inactiveSelectionBackground) rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-400 rounded-full transition-all"
+              style={{ width: `${frontendPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubtaskItem({ subtask }: { subtask: Subtask }) {
+  const catColors = {
+    backend: 'text-(--vscode-textLink-foreground)',
+    frontend: 'text-green-400',
+  };
+  const statusIcons: Record<SubtaskStatus, React.ReactNode> = {
+    pending: <Circle size={10} className="text-(--vscode-descriptionForeground)" />,
+    running: <Clock size={10} className="text-amber-400 animate-pulse" />,
+    complete: <CheckCircle size={10} className="text-green-400" />,
+    failed: <XCircle size={10} className="text-red-400" />,
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 py-0.5">
+      {statusIcons[subtask.status]}
+      <span className={`text-[10px] font-medium uppercase ${catColors[subtask.category]}`}>
+        {subtask.category}
+      </span>
+      <span className="text-xs text-(--vscode-editor-foreground)">{subtask.description}</span>
+      {subtask.details && subtask.status === 'running' && (
+        <span className="text-[10px] text-(--vscode-descriptionForeground) italic truncate max-w-[200px]">
+          — {subtask.details}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -83,11 +161,14 @@ export default function TaskTracker({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showOutput, setShowOutput] = useState<string | null>(null);
 
-  const grouped = tasks.reduce((acc, task) => {
-    if (!acc[task.phase]) acc[task.phase] = [];
-    acc[task.phase].push(task);
-    return acc;
-  }, {} as Record<string, ExecutableTask[]>);
+  const grouped = tasks.reduce(
+    (acc, task) => {
+      if (!acc[task.phase]) acc[task.phase] = [];
+      acc[task.phase].push(task);
+      return acc;
+    },
+    {} as Record<string, ExecutableTask[]>
+  );
 
   const toggle = (id: string) => {
     setExpanded((prev) => {
@@ -103,10 +184,25 @@ export default function TaskTracker({
   const running = tasks.filter((t) => t.status === 'running').length;
   const progress = tasks.length > 0 ? (completed / tasks.length) * 100 : 0;
 
-  const allPhases = Object.keys(grouped).sort((a, b) => {
-    const phaseOrder = ['Foundation', 'UI/UX', 'Spec Generators', 'Constitution', 'Integration'];
-    return phaseOrder.indexOf(a) - phaseOrder.indexOf(b);
+  // Determine which tasks are locked based on sequential completion
+  const firstPendingIndex = tasks.findIndex((t) => t.status !== 'complete');
+  const isTaskLocked = (taskId: string): boolean => {
+    const idx = tasks.findIndex((t) => t.id === taskId);
+    if (idx <= 0) return false; // First task is always unlocked
+    // A task is locked if any task before it is not complete
+    return tasks.slice(0, idx).some((t) => t.status !== 'complete');
+  };
+
+  // Derive phase order from first occurrence of each phase in the task list
+  const phaseFirstIndex = new Map<string, number>();
+  tasks.forEach((task, idx) => {
+    if (!phaseFirstIndex.has(task.phase)) {
+      phaseFirstIndex.set(task.phase, idx);
+    }
   });
+  const allPhases = Object.keys(grouped).sort(
+    (a, b) => (phaseFirstIndex.get(a) ?? 0) - (phaseFirstIndex.get(b) ?? 0)
+  );
 
   return (
     <div className="h-full flex flex-col bg-(--vscode-editor-background) text-(--vscode-editor-foreground)">
@@ -119,7 +215,17 @@ export default function TaskTracker({
           </div>
           <button
             onClick={onRunAll}
-            className="text-xs px-3 py-1.5 rounded bg-(--vscode-button-background) text-(--vscode-button-foreground) hover:bg-(--vscode-button-hoverBackground) flex items-center gap-1"
+            disabled={firstPendingIndex > 0}
+            title={
+              firstPendingIndex > 0
+                ? 'Complete previous tasks first to unlock'
+                : 'Run all tasks sequentially'
+            }
+            className={`text-xs px-3 py-1.5 rounded flex items-center gap-1 ${
+              firstPendingIndex > 0
+                ? 'opacity-50 cursor-not-allowed bg-(--vscode-button-secondaryBackground) text-(--vscode-button-secondaryForeground)'
+                : 'bg-(--vscode-button-background) text-(--vscode-button-foreground) hover:bg-(--vscode-button-hoverBackground)'
+            }`}
           >
             <Play size={12} /> Run All
           </button>
@@ -157,6 +263,7 @@ export default function TaskTracker({
         {allPhases.map((phase) => {
           const phaseTasks = grouped[phase];
           const phaseComplete = phaseTasks.filter((t) => t.status === 'complete').length;
+          const phaseHasLocked = phaseTasks.some((t) => isTaskLocked(t.id));
           return (
             <div key={phase} className="mb-3">
               <div className="flex items-center justify-between px-2 py-1">
@@ -169,8 +276,13 @@ export default function TaskTracker({
                   </span>
                   <button
                     onClick={() => onRunPhase(phase)}
-                    className="p-0.5 rounded hover:bg-(--vscode-toolbar-hoverBackground)"
-                    title={`Run ${phase}`}
+                    disabled={phaseHasLocked}
+                    className={`p-0.5 rounded ${
+                      phaseHasLocked
+                        ? 'opacity-30 cursor-not-allowed'
+                        : 'hover:bg-(--vscode-toolbar-hoverBackground)'
+                    }`}
+                    title={phaseHasLocked ? 'Complete previous tasks first' : `Run ${phase}`}
                   >
                     <Play size={10} />
                   </button>
@@ -179,7 +291,9 @@ export default function TaskTracker({
               {phaseTasks.map((task) => (
                 <div
                   key={task.id}
-                  className="rounded border border-(--vscode-panel-border) mb-1 overflow-hidden"
+                  className={`rounded border border-(--vscode-panel-border) mb-1 overflow-hidden ${
+                    isTaskLocked(task.id) && task.status === 'pending' ? 'opacity-60' : ''
+                  }`}
                 >
                   <div className="flex items-center gap-2 px-3 py-2">
                     <button onClick={() => toggle(task.id)} className="shrink-0">
@@ -191,6 +305,9 @@ export default function TaskTracker({
                     </button>
                     <StatusIcon status={task.status} />
                     <span className="text-xs flex-1 truncate">{task.description}</span>
+                    {task.subtasks && task.subtasks.length > 0 && (
+                      <SubtaskProgress subtasks={task.subtasks} />
+                    )}
                     <StatusBadge status={task.status} />
                     {task.retries > 0 && (
                       <span className="text-[10px] text-(--vscode-descriptionForeground)">
@@ -199,8 +316,13 @@ export default function TaskTracker({
                     )}
 
                     {/* Action buttons */}
-                    <div className="flex gap-1">
-                      {task.status === 'pending' && (
+                    <div className="flex gap-1 items-center">
+                      {isTaskLocked(task.id) && task.status === 'pending' && (
+                        <span title="Locked: complete previous tasks first">
+                          <Lock size={12} className="text-(--vscode-descriptionForeground)" />
+                        </span>
+                      )}
+                      {task.status === 'pending' && !isTaskLocked(task.id) && (
                         <button
                           onClick={() => onRunTask(task.id)}
                           className="p-1 rounded hover:bg-(--vscode-toolbar-hoverBackground)"
@@ -239,7 +361,10 @@ export default function TaskTracker({
                         </h4>
                         <ul className="space-y-0.5">
                           {task.acceptanceCriteria.map((c, i) => (
-                            <li key={i} className="text-xs text-(--vscode-editor-foreground) flex items-start gap-1">
+                            <li
+                              key={i}
+                              className="text-xs text-(--vscode-editor-foreground) flex items-start gap-1"
+                            >
                               <CheckCircle size={10} className="shrink-0 mt-0.5 text-green-400" />
                               {c}
                             </li>
@@ -261,6 +386,20 @@ export default function TaskTracker({
                               >
                                 {dep}
                               </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Subtasks */}
+                      {task.subtasks && task.subtasks.length > 0 && (
+                        <div className="mt-2">
+                          <h4 className="text-[10px] font-semibold uppercase text-(--vscode-descriptionForeground) mb-1">
+                            Subtasks
+                          </h4>
+                          <div className="space-y-0">
+                            {task.subtasks.map((st) => (
+                              <SubtaskItem key={st.id} subtask={st} />
                             ))}
                           </div>
                         </div>

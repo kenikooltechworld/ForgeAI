@@ -1,12 +1,16 @@
-import { useState, useEffect } from 'react';
-import { FileText, TestTube, File, Terminal, Search } from 'lucide-react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { FileText, TestTube, File, Terminal, Search, ListChecks } from 'lucide-react';
 import FilePreview from './FilePreview';
 import CodeDiff from './CodeDiff';
 import TerminalOutput from './TerminalOutput';
 import TestResults, { TestResultsData } from './TestResults';
 import DiagnosticsView, { DiagnosticsData } from './DiagnosticsView';
+import { useConversationStore } from '../../store/conversationStore';
 
-type PreviewType = 'diff' | 'test' | 'file' | 'terminal' | 'diagnostics' | 'empty';
+// Lazy load TaskTracker for code splitting
+const TaskTracker = lazy(() => import('../TaskTracker/TaskTracker'));
+
+type PreviewType = 'diff' | 'test' | 'file' | 'terminal' | 'diagnostics' | 'taskTracker' | 'empty';
 
 interface LivePreviewProps {
   type?: PreviewType;
@@ -26,6 +30,151 @@ interface LivePreviewProps {
  *
  * Requirements: 13.4, 21.1, 21.2
  */
+
+/**
+ * TaskTrackerWrapper - Wraps TaskTracker with conversation store integration
+ * Creates new chat tabs when user clicks Run Task or Run All
+ */
+interface PhaseInfo {
+  number: number;
+  title: string;
+}
+
+function normalizeTask(task: any, phases: PhaseInfo[]): any {
+  const phaseTitle = phases.find((p) => p.number === task.phase)?.title || String(task.phase);
+  const statusMap: Record<string, string> = {
+    pending: 'pending',
+    in_progress: 'in_progress',
+    complete: 'complete',
+    failed: 'failed',
+    skipped: 'failed',
+  };
+  return {
+    id: task.id,
+    phase: phaseTitle,
+    description: task.description,
+    status: statusMap[task.status] || task.status,
+    dependencies: task.dependencies || [],
+    acceptanceCriteria: task.instructions || task.acceptanceCriteria || [],
+    subtasks: task.subTasks || task.subtasks,
+    output: task.output,
+    error: task.error,
+    durationMs:
+      task.durationMs || task.completedAt
+        ? (task.completedAt || Date.now()) - (task.startedAt || Date.now())
+        : undefined,
+    retries: task.retryCount ?? task.retries ?? 0,
+  };
+}
+
+function TaskTrackerWrapper({
+  tasks,
+  phases,
+  specId,
+}: {
+  tasks: any[];
+  phases: PhaseInfo[];
+  specId: string;
+}) {
+  const normalizedTasks = tasks.map((t) => normalizeTask(t, phases));
+
+  const createTab = useConversationStore((state) => state.createTab);
+  const addMessage = useConversationStore((state) => state.addMessage);
+
+  const sendTaskToChat = (taskId: string, title: string, prompt: string) => {
+    const conversationId = createTab(title);
+    const userMessage = {
+      id: crypto.randomUUID(),
+      role: 'user' as const,
+      content: prompt,
+      timestamp: Date.now(),
+    };
+    addMessage(conversationId, userMessage);
+
+    // Send to extension host with task execution metadata
+    if (window.vscode) {
+      window.vscode.postMessage({
+        type: 'sendMessage',
+        conversationId,
+        content: prompt,
+        conversationHistory: [],
+        model: 'gpt-oss:120b-cloud',
+        isTaskExecution: true,
+        specId,
+        taskId,
+      });
+    }
+  };
+
+  const handleRunTask = (taskId: string) => {
+    const task = normalizedTasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    const prompt = `Execute Task ${task.id}: ${task.description}
+
+Follow the sequential TDD workflow:
+1. Write tests FIRST for this task
+2. Implement the minimum code to pass tests
+3. Run ALL validation: tests (100% pass), TypeScript (zero errors), lint (zero errors)
+4. Mark task complete ONLY at 100%
+5. Then proceed to the next task if applicable
+
+Task Details:
+- Phase: ${task.phase}
+- Description: ${task.description}
+- Acceptance Criteria: ${task.acceptanceCriteria?.join('\n') || 'N/A'}
+- Dependencies: ${task.dependencies?.join(', ') || 'None'}
+
+Execute this task now. Show your work at every step.`;
+
+    sendTaskToChat(taskId, `Task ${task.id}`, prompt);
+  };
+
+  const handleRunAll = () => {
+    const pendingTasks = normalizedTasks.filter((t) => t.status !== 'complete');
+    if (pendingTasks.length === 0) return;
+
+    const prompt = `Execute ALL remaining tasks sequentially from spec ${specId}.
+
+Follow the strict sequential TDD workflow for EACH task:
+1. Write tests FIRST
+2. Implement minimum code
+3. Validate: tests (100%), TypeScript (zero errors), lint (zero errors)
+4. Mark task complete at 100%
+5. ONLY then move to next task
+
+Tasks to execute:
+${pendingTasks.map((t) => `- [ ] ${t.id}: ${t.description}`).join('\n')}
+
+Start with the first pending task. Show your work at every step.`;
+
+    sendTaskToChat('all', 'Run All Tasks', prompt);
+  };
+
+  return (
+    <TaskTracker
+      tasks={normalizedTasks}
+      onRunTask={handleRunTask}
+      onPauseTask={(taskId) => {
+        window.vscode?.postMessage({ type: 'pauseTask', taskId });
+      }}
+      onRetryTask={handleRunTask}
+      onRunAll={handleRunAll}
+      onRunPhase={(phase) => {
+        const phaseTasks = normalizedTasks.filter(
+          (t) => t.phase === phase && t.status !== 'complete'
+        );
+        const prompt = `Execute all pending tasks in Phase: ${phase}
+
+${phaseTasks.map((t) => `- [ ] ${t.id}: ${t.description}`).join('\n')}
+
+Follow sequential TDD: tests first, then implement, validate at 100%, mark complete, then next task.`;
+        sendTaskToChat(`phase-${phase}`, `Phase ${phase}`, prompt);
+      }}
+    />
+  );
+}
+
 export function LivePreview({ type = 'empty', data }: LivePreviewProps) {
   const [activeView, setActiveView] = useState<PreviewType>(type);
 
@@ -122,6 +271,24 @@ export function LivePreview({ type = 'empty', data }: LivePreviewProps) {
             <div className="text-sm">No diagnostics data available</div>
           </div>
         );
+      case 'taskTracker':
+        return (
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-muted">
+                <div className="text-sm text-(--vscode-descriptionForeground)">
+                  Loading Task Tracker...
+                </div>
+              </div>
+            }
+          >
+            <TaskTrackerWrapper
+              tasks={data?.tasks || []}
+              phases={data?.phases || []}
+              specId={data?.specId || data?.id || ''}
+            />
+          </Suspense>
+        );
       case 'empty':
       default:
         return (
@@ -199,6 +366,17 @@ export function LivePreview({ type = 'empty', data }: LivePreviewProps) {
               style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
             >
               Diagnostics
+            </button>
+            <button
+              onClick={() => setActiveView('taskTracker')}
+              className={
+                activeView === 'taskTracker'
+                  ? 'px-2 py-1 rounded text-xs bg-button text-button'
+                  : 'px-2 py-1 rounded text-xs hover:opacity-80'
+              }
+              style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+            >
+              Tasks
             </button>
           </div>
 

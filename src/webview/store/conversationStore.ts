@@ -28,7 +28,7 @@ interface ConversationState {
   autonomyLevel: 'supervised' | 'semi-autonomous' | 'autonomous'; // Autonomy level setting
 
   // Preview panel state
-  previewType: 'empty' | 'diff' | 'file' | 'terminal' | 'test';
+  previewType: 'empty' | 'diff' | 'file' | 'terminal' | 'test' | 'taskTracker';
   previewData: any | null;
 
   // Max iterations state
@@ -71,6 +71,8 @@ interface ConversationState {
   showFile: (fileData: any) => void;
   showTerminal: (terminalData: any) => void;
   showTest: (testData: any) => void;
+  showTaskTracker: (taskData: any) => void;
+  updateTaskTracker: (taskId: string, updates: any) => void;
   clearPreview: () => void;
 
   // Max iterations actions
@@ -460,6 +462,47 @@ export const useConversationStore = create<ConversationState>()(
       showFile: (fileData) => set({ previewType: 'file', previewData: fileData }),
       showTerminal: (terminalData) => set({ previewType: 'terminal', previewData: terminalData }),
       showTest: (testData) => set({ previewType: 'test', previewData: testData }),
+      showTaskTracker: (taskData) => set({ previewType: 'taskTracker', previewData: taskData }),
+      updateTaskTracker: (taskId, updates) =>
+        set((state) => {
+          if (state.previewType !== 'taskTracker' || !state.previewData?.tasks) {
+            return state;
+          }
+
+          // Normalize extension-format updates to webview format
+          const normalized: any = { ...updates };
+
+          // Map phase number → phase title string
+          if (typeof updates.phase === 'number') {
+            const phases = state.previewData.phases || [];
+            const phaseTitle = phases.find((p: any) => p.number === updates.phase)?.title;
+            normalized.phase = phaseTitle || String(updates.phase);
+          }
+
+          // Map instructions → acceptanceCriteria
+          if (updates.instructions && !updates.acceptanceCriteria) {
+            normalized.acceptanceCriteria = updates.instructions;
+            delete normalized.instructions;
+          }
+
+          // Map retryCount → retries
+          if (updates.retryCount !== undefined && updates.retries === undefined) {
+            normalized.retries = updates.retryCount;
+            delete normalized.retryCount;
+          }
+
+          // Map skipped → failed
+          if (updates.status === 'skipped') {
+            normalized.status = 'failed';
+          }
+
+          const tasks = state.previewData.tasks.map((t: any) =>
+            t.id === taskId ? { ...t, ...normalized } : t
+          );
+          return {
+            previewData: { ...state.previewData, tasks },
+          };
+        }),
       clearPreview: () => set({ previewType: 'empty', previewData: null }),
 
       // Max iterations actions

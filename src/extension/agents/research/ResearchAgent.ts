@@ -24,6 +24,16 @@ interface WebSearchLike {
 interface ResearchAgentDeps {
   ragService: RagServiceLike;
   webSearch: WebSearchLike;
+  fetchPage?: (
+    url: string
+  ) => Promise<{
+    title: string;
+    content: string;
+    url: string;
+    method?: string;
+    truncated?: boolean;
+    status?: number | null;
+  }>;
   executeLLM: (systemPrompt: string, userPrompt: string) => Promise<string>;
   workspaceRoot: string;
 }
@@ -219,6 +229,8 @@ Generate research topics:`;
       try {
         const webResult = await this.deps.webSearch.performSearch(topic.query);
         webQueriesRun++;
+
+        // Store snippets as preliminary findings
         for (const r of webResult.results.slice(0, 5)) {
           findings.push({
             source: 'web',
@@ -226,6 +238,53 @@ Generate research topics:`;
             text: `${r.title}\n${r.snippet}`,
             url: r.url,
             relevanceScore: 0.5, // web results have no embedding score
+            retrievedAt: Date.now(),
+          });
+        }
+
+        // CRITICAL: Fetch ACTUAL page content for top URLs — not just snippets
+        let pagesFetched = 0;
+        let pagesFailed = 0;
+        if (this.deps.fetchPage && webResult.results.length > 0) {
+          // Try up to 5 URLs, skipping failures, to maximize chances of success
+          const candidates = webResult.results.slice(0, 5);
+          for (const r of candidates) {
+            try {
+              const page = await this.deps.fetchPage(r.url);
+              findings.push({
+                source: 'web-page',
+                query: topic.query,
+                text: `📄 ${page.title} (${page.method || 'fetch'})\n${page.content}`,
+                url: page.url,
+                relevanceScore: 0.85, // full page content is more valuable
+                retrievedAt: Date.now(),
+              });
+              pagesFetched++;
+            } catch (fetchErr) {
+              pagesFailed++;
+              // Surface the failure in the research report so it's visible
+              findings.push({
+                source: 'web-page',
+                query: topic.query,
+                text:
+                  `⚠️ Failed to fetch page content for: ${r.url}\n` +
+                  `Error: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}\n` +
+                  `Falling back to snippet only.`,
+                url: r.url,
+                relevanceScore: 0.1,
+                retrievedAt: Date.now(),
+              });
+            }
+          }
+        }
+
+        // Summary finding for this topic's web research
+        if (pagesFetched > 0 || pagesFailed > 0) {
+          findings.push({
+            source: 'web',
+            query: topic.query,
+            text: `📊 Fetch summary: ${pagesFetched} pages fetched successfully, ${pagesFailed} failed (attempted ${pagesFetched + pagesFailed} total).`,
+            relevanceScore: 0.0,
             retrievedAt: Date.now(),
           });
         }
@@ -289,7 +348,11 @@ Generate research topics:`;
       sections.push(`## ${report.topic}\n`);
       for (const finding of report.findings) {
         const badge =
-          finding.source === 'rag' ? '🧠 RAG' : finding.source === 'web' ? '🌐 Web' : '👤 User';
+          finding.source === 'rag'
+            ? '🧠 RAG'
+            : finding.source === 'web' || finding.source === 'web-page'
+              ? '🌐 Web'
+              : '👤 User';
         sections.push(`${badge} (score: ${finding.relevanceScore.toFixed(2)})\n${finding.text}\n`);
         if (finding.url) {
           sections.push(`Source: ${finding.url}\n`);

@@ -9,6 +9,7 @@ import type { StorageManager } from '../storage/StorageManager';
 import type { ProductManager } from '../forgeaiWorkspace/ProductManager';
 import type { MemoryManager } from '../forgeaiWorkspace/MemoryManager';
 import type { ResearchAgent } from '../agents/research/ResearchAgent';
+import { DEFAULT_MODEL } from '../config/ModelConfig';
 
 type SpecWorkflow = SpecConfig['workflow'];
 type ArtifactKey = keyof SpecArtifact;
@@ -226,8 +227,8 @@ export class SpecTools {
           return { success: false, error: `Spec ${args.specId} not found` };
         }
 
-        // Route spec generation to Gemma4-31B for better instruction-following
-        const specModel = 'gemma4-31b-cloud';
+        // Use configured default model for spec generation
+        const specModel = DEFAULT_MODEL;
         const { SpecWriterAgent } = await import('../agents/spec/SpecWriterAgent');
         const agent = new SpecWriterAgent({
           executeLLM: async (systemPrompt: string, userPrompt: string) => {

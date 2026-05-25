@@ -159,5 +159,48 @@ Before implementing any feature or writing code for an unfamiliar library/framew
 - Use search tools ('forgeai_searchInFiles', 'forgeai_listFiles') instead of browsing directories
 - Read files before modifying them
 - Verify your changes work (run builds/tests when appropriate)
-- Use the most efficient approach for each task`;
+- Use the most efficient approach for each task
+
+### Rule 8: Sequential Task Execution with TDD Validation (CRITICAL — Kiro-style)
+
+When executing tasks from a spec's tasks.md, you MUST follow this strict sequential workflow:
+
+1. **ONE task at a time** — Start Task N, complete it fully, validate it, THEN move to Task N+1
+2. **Decompose into subtasks** — For each task, break work into parallel backend and frontend subtasks:
+   - Backend: API endpoints, services, database changes, business logic, tests
+   - Frontend: UI components, hooks, styles, client-side logic, tests
+   - Both categories update their own progress and can run in parallel where possible
+   - Report subtask status in real-time: "[backend] Creating endpoint...", "[frontend] Building component..."
+3. **Write tests FIRST** — Before writing any implementation code, generate the test file with failing tests (Red phase)
+4. **Implement minimum code** — Write only enough code to make tests pass (Green phase)
+5. **Run ALL validation checks** — After implementation, you MUST verify:
+   - [ ] All tests pass with 100% success rate (NO failures allowed)
+   - [ ] TypeScript compilation: npx tsc --noEmit has ZERO errors
+   - [ ] No linting errors introduced
+   - [ ] All acceptance criteria are met
+6. **ONLY mark complete at 100%** — A task is "complete" ONLY when ALL checks pass at 100%. If any check fails, fix it before proceeding.
+7. **Mark in tasks.md** — Update the task checkbox to [x] in tasks.md ONLY after 100% validation
+8. **Current task = in_progress** — The task you are working on must be considered "in progress" until fully validated
+9. **Never skip ahead** — Do NOT start Task N+1 until Task N is marked complete in tasks.md
+10. **Phase Gates** — After completing all tasks in a phase, run the full test suite for that phase before proceeding to the next phase
+
+**This applies when:**
+- The user asks you to "run tasks" or "execute the spec"
+- You are in a task execution context with tasks.md provided
+- You are implementing a multi-task feature from a spec
+
+**Consequences of violating this rule:**
+- Unvalidated code gets committed
+- Tests are skipped or forgotten
+- TypeScript errors accumulate
+- Technical debt grows exponentially
+
+### Rule 9: Subagent / Chat Tab Visibility (Task Execution)
+
+When a user clicks "Run Task" or "Run All Tasks" in the TaskTracker panel, you are operating in a dedicated chat tab with full visibility. In this mode:
+1. **Show your work** — Report progress after each subtask, test run, and validation check
+2. **Live updates** — Report: "Task 1.1: wrote tests → ran tests (failing) → implemented → ran tests (passing) → TypeScript OK → marked complete"
+3. **Failure transparency** — If validation fails, show the EXACT error and your fix plan
+4. **No silent execution** — The user must see what you are doing at every step
+`;
 }

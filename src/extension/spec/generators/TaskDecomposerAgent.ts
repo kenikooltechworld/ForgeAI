@@ -29,11 +29,7 @@ export class TaskDecomposerAgent {
     const constitution = await this.deps.readConstitution();
 
     const systemPrompt = this.buildSystemPrompt();
-    const userPrompt = this.buildUserPrompt(
-      requirementsContent,
-      planContent,
-      constitution
-    );
+    const userPrompt = this.buildUserPrompt(requirementsContent, planContent, constitution);
 
     try {
       const content = await this.deps.executeLLM(systemPrompt, userPrompt);
@@ -54,20 +50,25 @@ export class TaskDecomposerAgent {
 
 Your job is to break a technical plan into atomic tasks that a junior engineer could execute. Each task must have:
 - A single clear objective
-- Specific instructions
+- Specific instructions with file paths and function/class names
 - Expected artifacts (files to create/modify)
-- Acceptance criteria
+- Acceptance criteria linking to requirements
+- **Test Specification** — REQUIRED for every task:
+  - Test Type: unit | integration | e2e | static
+  - Test Files: specific file paths (e.g., "src/feature/__tests__/Component.test.ts")
+  - Test Cases: specific test cases as bullet points
+  - Coverage Target: minimum % (default 70%)
+- Verification steps including: tests pass, TypeScript compiles, no lint errors
 - Requirement traceability (which requirements this task implements)
 
 ## Task Format Rules
 - Number tasks as N.M (e.g., 1.1, 1.2, 2.1)
 - Group tasks into phases (Phase 1: Setup, Phase 2: Core, etc.)
-- Mark property tests with an asterisk: - [ ]* 1.2 Property test name
-- Mark checkpoints as: - [ ] N. Checkpoint - Title
 - Order tasks by dependency (earliest first)
 - Each task should take 15-60 minutes to complete
-- Include "Checkpoint" tasks after each phase to verify progress
+- Include "Phase Gate" tasks after each phase to validate all previous tasks pass 100%
 - Link each task to requirement IDs: _Requirements: 1.1, 1.3_
+- **CRITICAL: Write tests FIRST, then implement, then verify — for every task**
 
 ## Output Format
 \`\`\`markdown
@@ -76,38 +77,82 @@ Your job is to break a technical plan into atomic tasks that a junior engineer c
 ## Overview
 [Brief summary]
 
-## Tasks
+**Estimated Total Duration**: {N} {weeks/days}
 
-### Phase 1: [Phase Title]
+---
 
-- [ ] 1.1 [Task description]
-  - [Instruction 1]
-  - [Instruction 2]
-  - _Requirements: X.Y, X.Z_
+## Phase 1: [Phase Title] ({Timeframe})
 
-- [ ]* 1.2 [Property test task]
-  - **Property N: [Name]**
-  - **Validates: Requirements X.Y**
+### Task 1.1: [Task Title]
+**Priority**: Critical
+**Estimate**: {N} {hours}
+**Dependencies**: None
 
-- [ ] 2. Checkpoint - [Title]
-  - [Verification steps]
+**Description**: [What this task accomplishes — be specific and comprehensive]
+
+**Subtasks**:
+- [ ] [Subtask 1]
+- [ ] [Subtask 2]
+
+**Acceptance Criteria**:
+- [ ] [Criterion linking to requirement]
+- [ ] [Criterion linking to requirement]
+
+**Test Specification** (generate REAL tests, not placeholders):
+- **Test Type**: unit | integration | e2e | static
+- **Test Files**: [src/feature/__tests__/Component.test.ts]
+- **Test Cases** (specific assertion names and expected results):
+  - \`should [exact behavior when exact condition]\` -> expects [exact result]
+  - \`should [exact behavior when exact condition]\` -> expects [exact result]
+  - \`should handle [edge case]\` -> expects [exact error/result]
+  - Minimum 3 test cases per task; more for complex logic
+- **Coverage Target**: 70% minimum, 100% for critical paths
+
+**Verification Steps**:
+- [ ] All tests pass with 100% success rate
+- [ ] TypeScript compilation succeeds with zero errors
+- [ ] No linting errors introduced
+
+**Implements**: Requirement {X.Y}, {X.Y}
+
+---
+
+### Task 1.2: [Task Title]
+...
+
+### Task X. Phase Gate - [Phase Title] Validation
+**Priority**: Critical
+**Estimate**: 15 minutes
+**Dependencies**: Task {last task of phase}
+
+**Description**: Validate all tasks in Phase {N} pass 100% before proceeding
+
+**Subtasks**:
+- [ ] Run all tests for Phase {N} tasks
+- [ ] Verify TypeScript compilation has zero errors
+- [ ] Verify no linting errors
+- [ ] Verify all acceptance criteria are met
+
+**Verification Steps**:
+- [ ] All Phase {N} tests pass with 100% success rate
+- [ ] TypeScript compilation succeeds with zero errors
+
+**Implements**: All Phase {N} requirements
 
 [... phases 2-N ...]
 \`\`\`
 
 ## Quality Checklist
-- Every task has clear instructions
+- Every task has clear instructions with specific file paths
 - Every task links to at least one requirement
+- Every task has a Test Specification section
 - Dependencies are explicit (task N.M depends on task X.Y)
-- Property tests are marked with [ ]*
-- Checkpoints exist after each major phase`;
+- Phase Gate tasks exist after each major phase
+- Verification steps include: tests pass 100%, TypeScript compiles, no lint errors
+- Test cases are specific, not vague ("should work" is NOT acceptable)`;
   }
 
-  private buildUserPrompt(
-    requirements: string,
-    plan: string,
-    constitution: string
-  ): string {
+  private buildUserPrompt(requirements: string, plan: string, constitution: string): string {
     return `## Requirements
 ${requirements}
 

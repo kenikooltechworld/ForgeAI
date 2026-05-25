@@ -102,7 +102,7 @@ describe('SpecReader', () => {
 - [x] 2.2 Add export progress bar
   _Requirements: 2_
 `;
-      const tasks = reader.parseTasks(content);
+      const { tasks } = reader.parseTasks(content);
       expect(tasks).toHaveLength(4);
 
       // Task 1.1
@@ -125,7 +125,7 @@ describe('SpecReader', () => {
 - [ ] 1.1 Checkpoint - Review auth module
   - Verify login works
 `;
-      const tasks = reader.parseTasks(content);
+      const { tasks } = reader.parseTasks(content);
       expect(tasks[0].isCheckpoint).toBe(true);
     });
 
@@ -137,7 +137,7 @@ describe('SpecReader', () => {
 ### Phase 2: Build
 - [ ] 2.1 Third task
 `;
-      const tasks = reader.parseTasks(content);
+      const { tasks } = reader.parseTasks(content);
       const t12 = tasks.find((t) => t.id === '1.2');
       const t21 = tasks.find((t) => t.id === '2.1');
 

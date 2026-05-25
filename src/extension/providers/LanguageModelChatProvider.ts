@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
+import { OllamaClient, OllamaMessage, OllamaStreamChunk } from '../ollama/OllamaClient';
 import { Logger } from '../utils/Logger';
+import { DEFAULT_MODEL } from '../config/ModelConfig';
 
 /**
  * Language Model Chat Provider for ForgeAI
@@ -76,13 +77,13 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
       this.logger.info(`Using ${tools.length} tools from ToolRegistry`);
 
       // Stream response from Ollama
-      const stream = await this.ollamaClient.chat({
+      const stream = (await this.ollamaClient.chat({
         model: model.id,
         messages: ollamaMessages,
         stream: true,
         think: true, // Enable thinking mode (Requirement 4.3)
         tools: tools, // Use tools from ToolRegistry
-      });
+      })) as AsyncGenerator<OllamaStreamChunk>;
 
       // Forward chunks to VS Code
       for await (const chunk of stream) {
@@ -101,7 +102,7 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
           for (const toolCall of chunk.message.tool_calls) {
             progress.report(
               new vscode.LanguageModelToolCallPart(
-                toolCall.id,
+                toolCall.id ?? '',
                 toolCall.function.name,
                 toolCall.function.arguments
               )
@@ -160,7 +161,7 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
       }
 
       // Always include default model if not present
-      if (!models.find((m) => m.id === 'gpt-oss:120b-cloud')) {
+      if (!models.find((m) => m.id === DEFAULT_MODEL)) {
         models.unshift(this.getDefaultModels()[0]);
       }
 
@@ -202,15 +203,16 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
 
   /**
    * Get default models (fallback when Ollama is not available)
-   * Requirement 2.2: Provide gpt-oss:120b-cloud with correct specifications
+   * Requirement 2.2: Provide default model with correct specifications
    */
   private getDefaultModels(): vscode.LanguageModelChatInformation[] {
+    const [family, version] = DEFAULT_MODEL.split(':');
     return [
       {
-        id: 'gpt-oss:120b-cloud',
-        name: 'GPT-OSS 120B (Cloud)',
-        family: 'gpt-oss',
-        version: '120b-cloud',
+        id: DEFAULT_MODEL,
+        name: this.formatModelName(DEFAULT_MODEL),
+        family: family || 'unknown',
+        version: version || 'latest',
         maxInputTokens: 128000, // Requirement 2.2
         maxOutputTokens: 8192, // Requirement 2.2
         tooltip: 'Main coding model with tool calling support',
@@ -250,7 +252,7 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
     // Extract text from message content parts
     const textParts = msg.content
       .filter((part) => part instanceof vscode.LanguageModelTextPart)
-      .map((part) => (part as vscode.LanguageModelTextPart).value);
+      .map((part) => part.value);
 
     return textParts.join('');
   }

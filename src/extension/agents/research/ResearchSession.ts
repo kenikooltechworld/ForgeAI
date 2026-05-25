@@ -4,7 +4,7 @@ import { DiscoverySession } from '../discovery/DiscoverySession';
  * Research finding from a single source
  */
 export interface ResearchFinding {
-  source: 'rag' | 'web' | 'learning-store';
+  source: 'rag' | 'web' | 'web-page' | 'learning-store';
   collection?: string; // RAG collection name
   query: string;
   text: string;

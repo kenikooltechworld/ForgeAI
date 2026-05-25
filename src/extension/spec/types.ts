@@ -161,6 +161,9 @@ export interface ParsedSpec {
   /** Task dependency graph */
   dependencyGraph: Map<string, string[]>;
 
+  /** Phase number → title map (from tasks.md headers) */
+  phaseTitles: Map<number, string>;
+
   /** Overall progress (0-100) */
   progress: number;
 
@@ -269,6 +272,9 @@ export interface SpecExecutionOptions {
 
   /** Callback for checkpoint reached */
   onCheckpoint?: (phase: TaskPhase) => Promise<boolean>; // return true to continue, false to pause
+
+  /** Callback for phase gate validation result */
+  onPhaseGate?: (phase: TaskPhase, passed: boolean, output: string) => void;
 }
 
 /**

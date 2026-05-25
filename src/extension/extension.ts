@@ -6,6 +6,7 @@ import { WebviewManager } from './utils/WebviewManager';
 import type { RagService } from './rag/RagService';
 import { SpecReader } from './spec/SpecReader';
 import { SpecTaskExecutor } from './spec/SpecTaskExecutor';
+import { DEFAULT_MODEL } from './config/ModelConfig';
 
 /**
  * ForgeAI Extension - Production-ready OOP architecture
@@ -87,11 +88,29 @@ export class ForgeAIExtension {
           },
         },
         webSearch: {
-          performSearch: async () => ({ results: [], totalResults: 0, source: 'none' }),
+          performSearch: async (query: string) => {
+            try {
+              const { WebSearchTools } = await import('./tools/WebSearchTools');
+              const webSearch = new WebSearchTools();
+              const result = await webSearch['performSearch'](query);
+              return {
+                results: result.results.map((r) => ({
+                  title: r.title,
+                  url: r.url,
+                  snippet: r.snippet,
+                })),
+                totalResults: result.totalResults,
+                source: result.source,
+              };
+            } catch (err) {
+              logger.warn('Web search failed, returning empty results:', err);
+              return { results: [], totalResults: 0, source: 'none' };
+            }
+          },
         },
         executeLLM: async (systemPrompt: string, userPrompt: string) => {
           const response = await ollama.chat({
-            model: 'gemma4-31b-cloud',
+            model: DEFAULT_MODEL,
             messages: [
               { role: 'system', content: systemPrompt },
               { role: 'user', content: userPrompt },
@@ -100,6 +119,11 @@ export class ForgeAIExtension {
           });
           const chatResponse = response as { message: { content: string } };
           return chatResponse.message.content;
+        },
+        fetchPage: async (url: string) => {
+          const { WebSearchTools } = await import('./tools/WebSearchTools');
+          const webSearch = new WebSearchTools();
+          return webSearch.fetchPageContent(url, 8000);
         },
         workspaceRoot,
       });
@@ -677,9 +701,28 @@ export class ForgeAIExtension {
             logger.warn(`Task ${task.id} failed: ${error}`);
             void this.webviewManager?.updateTaskInPanel(task);
           },
+          onPhaseGate: (phase, passed, output) => {
+            if (passed) {
+              logger.info(`Phase ${phase.number} gate PASSED: all tests at 100%`);
+              void this.webviewManager?.postMessage({
+                type: 'showTerminal',
+                data: { output: `Phase ${phase.number} Gate: PASSED\n${output}` },
+              });
+            } else {
+              logger.error(`Phase ${phase.number} gate FAILED:\n${output}`);
+              void vscode.window.showErrorMessage(
+                `Phase ${phase.number} gate FAILED. Fix tests before proceeding.`,
+                'View Output'
+              );
+              void this.webviewManager?.postMessage({
+                type: 'showTerminal',
+                data: { output: `Phase ${phase.number} Gate: FAILED\n${output}` },
+              });
+            }
+          },
           onCheckpoint: async (phase) => {
             const choice = await vscode.window.showInformationMessage(
-              `Checkpoint reached: Phase ${phase.number} — ${phase.title}`,
+              `Checkpoint reached: Phase ${phase.number} — ${phase.title}. All tests passed at 100%.`,
               'Continue',
               'Pause'
             );

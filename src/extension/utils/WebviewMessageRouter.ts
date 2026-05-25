@@ -438,8 +438,8 @@ export class WebviewMessageRouter {
           const gDesc = typeof msg.description === 'string' ? msg.description : '';
           const gMode = (msg.mode as string) === 'quick' ? 'quick' : 'full';
           if (this.forgeaiWorkspace && gTitle) {
-            // Route spec generation to Gemma4-31B for better instruction-following
-            const specModel = 'gemma4-31b-cloud';
+            // Use configured default model for spec generation
+            const specModel = DEFAULT_MODEL;
             const agent = new SpecWriterAgent({
               executeLLM: async (systemPrompt, userPrompt) => {
                 const response = await this.ollamaClient.chat({
