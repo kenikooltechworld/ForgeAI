@@ -9,7 +9,7 @@ import type { StorageManager } from '../storage/StorageManager';
 import type { ProductManager } from '../forgeaiWorkspace/ProductManager';
 import type { MemoryManager } from '../forgeaiWorkspace/MemoryManager';
 import type { ResearchAgent } from '../agents/research/ResearchAgent';
-import { DEFAULT_MODEL } from '../config/ModelConfig';
+import { getConfiguredModel } from '../config/ModelConfig';
 
 type SpecWorkflow = SpecConfig['workflow'];
 type ArtifactKey = keyof SpecArtifact;
@@ -34,7 +34,9 @@ export class SpecTools {
     return {
       name: 'forgeai_createSpec',
       description:
-        'Create a new ForgeAI spec. ONLY call this AFTER researching (RAG + webResearch) and AFTER the user explicitly agrees to create a spec. ' +
+        'Create a new ForgeAI spec. BEFORE calling this, check if a spec for this topic already exists using forgeai_listSpecs(). ' +
+        'If an existing spec has the same or similar title, ask the user if they want to continue that spec instead of creating a duplicate. ' +
+        'ONLY call this AFTER researching (RAG + webResearch) and AFTER the user explicitly agrees to create a spec. ' +
         'If the user asked for a plan or recommendations, do research first and present findings in chat BEFORE calling this tool. ' +
         'Creates .forgeai/specs/<id>/ directory with requirements.md, design.md, tasks.md. Returns the spec ID.',
       inputSchema: {
@@ -62,6 +64,26 @@ export class SpecTools {
         if (!specManager) {
           return Promise.resolve({ success: false, error: 'SpecManager not available' });
         }
+
+        // Check for existing specs with same/similar title (case-insensitive)
+        const existingSpecs = specManager.listSpecs();
+        const normalizedTitle = args.title.toLowerCase().trim();
+        const duplicate = existingSpecs.find(
+          (s) =>
+            s.title.toLowerCase().trim() === normalizedTitle ||
+            s.title.toLowerCase().includes(normalizedTitle) ||
+            normalizedTitle.includes(s.title.toLowerCase())
+        );
+        if (duplicate) {
+          return Promise.resolve({
+            success: false,
+            duplicate: true,
+            existingSpecId: duplicate.id,
+            existingTitle: duplicate.title,
+            error: `A spec "${duplicate.title}" (${duplicate.id}) already exists for this topic. Use forgeai_continueSpec("${duplicate.id}") to continue it, or ask the user if they want a new spec.`,
+          });
+        }
+
         const id = specManager.nextSpecId(args.title);
         const workflow = (args.workflow as SpecWorkflow) || 'requirements-first';
         const config = specManager.createSpec(id, args.title, workflow);
@@ -227,8 +249,8 @@ export class SpecTools {
           return { success: false, error: `Spec ${args.specId} not found` };
         }
 
-        // Use configured default model for spec generation
-        const specModel = DEFAULT_MODEL;
+        // Use configured model for spec generation
+        const specModel = getConfiguredModel();
         const { SpecWriterAgent } = await import('../agents/spec/SpecWriterAgent');
         const agent = new SpecWriterAgent({
           executeLLM: async (systemPrompt: string, userPrompt: string) => {

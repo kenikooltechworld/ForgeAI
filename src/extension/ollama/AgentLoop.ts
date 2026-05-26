@@ -7,7 +7,7 @@ import { generateSystemPrompt, getWorkspaceContext } from './SystemPrompt';
 import { MessageRouter, RoutingContext, RoutingResult } from '../classification/MessageRouter';
 import type { RagService } from '../rag/RagService';
 import type { SpecContext } from '../spec/types';
-import { DEFAULT_MODEL } from '../config/ModelConfig';
+import { getConfiguredModel } from '../config/ModelConfig';
 
 /**
  * Agent Loop Update Types
@@ -72,6 +72,11 @@ export class AgentLoop {
   private toolFailureCounts = new Map<string, number>();
   private readonly maxToolRetries = 2; // Max failures per tool before forcing alternative
 
+  // Track web research URLs to enforce mandatory fetchPage calls
+  private webResearchUrls = new Set<string>();
+  private fetchedPageUrls = new Set<string>();
+  private webResearchCompleted = false;
+
   constructor(
     private readonly ollamaClient: OllamaClient,
     private readonly logger: Logger,
@@ -90,13 +95,18 @@ export class AgentLoop {
     initialMessages: OllamaMessage[],
     onUpdate: (update: AgentLoopUpdate) => void,
     tools: any[] = [],
-    model: string = DEFAULT_MODEL,
+    model: string = getConfiguredModel(),
     options?: { maxIterations?: number; specContext?: SpecContext } // undefined => unbounded (autonomous)
   ): Promise<void> {
     this.logger.info('Starting agent loop execution');
     this.logger.info(`Using model: ${model}`);
     this.isRunning = true;
     this.shouldStop = false;
+
+    // Reset web research tracking for this session
+    this.webResearchUrls.clear();
+    this.fetchedPageUrls.clear();
+    this.webResearchCompleted = false;
 
     // Get workspace context for system prompt and classification
     const workspaceContext = await this.gatherWorkspaceContext();
@@ -320,6 +330,27 @@ export class AgentLoop {
 
         // Check if we need to execute tools
         if (!tool_calls || tool_calls.length === 0) {
+          // HARD GATE: If webResearch was done but fetchPage never called, force the AI to continue
+          if (this.webResearchCompleted && this.fetchedPageUrls.size === 0) {
+            const urlsToFetch = Array.from(this.webResearchUrls).slice(0, 5);
+            this.logger.warn(
+              'HARD GATE BLOCKED: AI tried to finish without calling fetchPage after webResearch'
+            );
+            // Replace the assistant's empty response with a system command
+            messages.pop(); // Remove the assistant's empty message
+            messages.push({
+              role: 'system',
+              content:
+                `⛔ STOP. You just searched the web but did NOT fetch any pages. ` +
+                `You are NOT allowed to respond to the user until you call forgeai_fetchPage(url) on these URLs: ` +
+                urlsToFetch.join(', ') +
+                `. ` +
+                `Fetch the FULL content first, then analyze and summarize what you found, THEN respond.`,
+            });
+            // Do NOT break — the loop will continue and the AI will be forced to call fetchPage
+            continue;
+          }
+
           // No more tools, we're done
           this.logger.info('Agent loop complete - no more tool calls');
           onUpdate({ type: 'complete' });
@@ -358,6 +389,48 @@ export class AgentLoop {
             }
 
             const toolDuration = Date.now() - toolStartTime; // Calculate duration
+
+            // Track web research URLs and fetchPage calls
+            if (
+              toolCall.function.name === 'forgeai_webResearch' ||
+              toolCall.function.name === 'forgeai_webSearch'
+            ) {
+              this.webResearchCompleted = true;
+              // Extract URLs from result
+              try {
+                const resultObj: Record<string, unknown> =
+                  typeof result === 'string'
+                    ? (JSON.parse(result) as Record<string, unknown>)
+                    : (result as Record<string, unknown>);
+                const results =
+                  (resultObj.results as Array<{ url?: string }>) ||
+                  ((resultObj.data as Record<string, unknown>)?.results as Array<{
+                    url?: string;
+                  }>) ||
+                  [];
+                for (const r of results) {
+                  if (r.url) this.webResearchUrls.add(r.url);
+                }
+                this.logger.info(
+                  `Tracked ${this.webResearchUrls.size} URLs from ${toolCall.function.name}`
+                );
+              } catch {
+                // Ignore parse errors
+              }
+            }
+            if (toolCall.function.name === 'forgeai_fetchPage') {
+              try {
+                const resultObj: Record<string, unknown> =
+                  typeof result === 'string'
+                    ? (JSON.parse(result) as Record<string, unknown>)
+                    : (result as Record<string, unknown>);
+                const url = resultObj.url as string | undefined;
+                if (url) this.fetchedPageUrls.add(url);
+                this.logger.info(`Tracked fetchPage for ${url || 'unknown'}`);
+              } catch {
+                // Ignore parse errors
+              }
+            }
 
             // Check if this is a terminal command execution (Task 4.9)
             if (toolCall.function.name === 'forgeai_runCommand' && result) {
@@ -446,6 +519,42 @@ export class AgentLoop {
               duration: toolDuration,
               toolExecutionId,
             });
+          }
+        }
+
+        // Enforce fetchPage after webResearch: if webResearch was done but no fetchPage
+        // has been called yet, inject a system reminder before the next LLM call
+        if (
+          this.webResearchCompleted &&
+          this.fetchedPageUrls.size === 0 &&
+          effectiveTools.length > 0
+        ) {
+          const urlsToFetch = Array.from(this.webResearchUrls).slice(0, 5);
+          if (urlsToFetch.length > 0) {
+            const reminder =
+              `⚠️ CRITICAL REMINDER: You called webResearch/webSearch but have NOT called forgeai_fetchPage yet. ` +
+              `You MUST call forgeai_fetchPage(url) on these critical URLs BEFORE responding to the user: ` +
+              urlsToFetch.join(', ') +
+              `. The search snippets are NOT enough — you need the FULL page content for accurate specs and plans.`;
+            messages.push({ role: 'system', content: reminder });
+            this.logger.info('Injected fetchPage enforcement reminder');
+          }
+        }
+
+        // Prevent duplicate web searches: if webResearch was already done,
+        // temporarily disable webSearch/webResearch tools until fetchPage is used
+        if (
+          this.webResearchCompleted &&
+          this.fetchedPageUrls.size === 0 &&
+          effectiveTools.length > 0
+        ) {
+          const before = effectiveTools.length;
+          effectiveTools = effectiveTools.filter(
+            (t: { function?: { name?: string } }) =>
+              t.function?.name !== 'forgeai_webSearch' && t.function?.name !== 'forgeai_webResearch'
+          );
+          if (effectiveTools.length < before) {
+            this.logger.info('Disabled webSearch/webResearch tools to prevent duplicate searches');
           }
         }
 

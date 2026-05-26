@@ -13,7 +13,7 @@ import { ConversationMemory } from './ConversationMemory';
 import { AgentLoopRunner } from './AgentLoopRunner';
 import { FileOperationHandler } from './FileOperationHandler';
 import { categorizeOllamaFetchError } from './ErrorCategorizer';
-import { DEFAULT_MODEL } from '../config/ModelConfig';
+import { getConfiguredModel } from '../config/ModelConfig';
 import type { ForgeAIWorkspace } from '../forgeaiWorkspace/ForgeAIWorkspace';
 import { SpecWriterAgent } from '../agents/spec/SpecWriterAgent';
 import type { ResearchAgent } from '../agents/research/ResearchAgent';
@@ -136,7 +136,7 @@ export class WebviewMessageRouter {
         case 'getSelectedModel': {
           const model = this.storageManager.getGlobalValue<string>(
             'forgeai.selectedModel',
-            DEFAULT_MODEL
+            getConfiguredModel()
           );
           this.view?.webview.postMessage({ type: 'selectedModel', model });
           break;
@@ -206,7 +206,7 @@ export class WebviewMessageRouter {
           break;
         }
         case 'setSelectedModel': {
-          const selModel = typeof msg.model === 'string' ? msg.model : DEFAULT_MODEL;
+          const selModel = typeof msg.model === 'string' ? msg.model : getConfiguredModel();
           await this.storageManager.setGlobalValue('forgeai.selectedModel', selModel);
           break;
         }
@@ -438,8 +438,8 @@ export class WebviewMessageRouter {
           const gDesc = typeof msg.description === 'string' ? msg.description : '';
           const gMode = (msg.mode as string) === 'quick' ? 'quick' : 'full';
           if (this.forgeaiWorkspace && gTitle) {
-            // Use configured default model for spec generation
-            const specModel = DEFAULT_MODEL;
+            // Use configured model for spec generation
+            const specModel = getConfiguredModel();
             const agent = new SpecWriterAgent({
               executeLLM: async (systemPrompt, userPrompt) => {
                 const response = await this.ollamaClient.chat({
@@ -589,7 +589,8 @@ export class WebviewMessageRouter {
     const autonomyLevel =
       typeof message.autonomyLevel === 'string' ? message.autonomyLevel : undefined;
     const selectedModel =
-      model || this.storageManager.getGlobalValue<string>('forgeai.selectedModel', DEFAULT_MODEL);
+      model ||
+      this.storageManager.getGlobalValue<string>('forgeai.selectedModel', getConfiguredModel());
     const selectedAutonomy =
       autonomyLevel ||
       this.storageManager.getGlobalValue<string>('forgeai.autonomyLevel', 'semi-autonomous');
@@ -633,7 +634,8 @@ export class WebviewMessageRouter {
       : [];
     const model = typeof message.model === 'string' ? message.model : undefined;
     const selectedModel =
-      model || this.storageManager.getGlobalValue<string>('forgeai.selectedModel', DEFAULT_MODEL);
+      model ||
+      this.storageManager.getGlobalValue<string>('forgeai.selectedModel', getConfiguredModel());
 
     this.logger.info(`Retrying after error for conversation ${conversationId}`);
 

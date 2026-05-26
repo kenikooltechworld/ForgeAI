@@ -4,7 +4,7 @@ import { AgentLoop, AgentLoopUpdate } from '../ollama/AgentLoop';
 import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import type { RagService } from '../rag/RagService';
-import { DEFAULT_MODEL } from '../config/ModelConfig';
+import { getConfiguredModel } from '../config/ModelConfig';
 
 /**
  * Chat Participant for ForgeAI
@@ -161,7 +161,7 @@ export class ChatParticipant {
           }
         },
         tools,
-        String(request.model ?? DEFAULT_MODEL)
+        typeof request.model === 'string' ? request.model : getConfiguredModel()
       );
 
       stream.button({

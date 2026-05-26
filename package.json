@@ -629,6 +629,11 @@
             "default": "http://localhost:11434",
             "description": "Ollama server base URL"
           },
+          "forgeai.model": {
+            "type": "string",
+            "default": "gpt-oss:120b-cloud",
+            "description": "Ollama model to use for AI responses. Must match an installed Ollama model name (e.g., 'llama3.2', 'gemma4:27b', 'gpt-oss:120b-cloud')."
+          },
           "forgeai.enableRagBootstrap": {
             "type": "boolean",
             "default": false,

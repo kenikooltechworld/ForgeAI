@@ -195,15 +195,10 @@ export class WebSearchTools {
     return {
       name: 'forgeai_webSearch',
       description:
-        'MANDATORY fallback when RAG documentation is insufficient. ' +
-        'Search the web using cloud APIs (SerpAPI/SerpStack) and auto-fetch content from top results. ' +
-        'NO local browser needed. ' +
-        'Call this tool WHENEVER: ' +
-        '(1) The RAG context in your system prompt does not contain the information you need, ' +
-        '(2) You need current best practices, latest versions, or 2026 documentation, ' +
-        '(3) You are planning a feature and need to verify technology choices. ' +
-        'Returns search results PLUS automatically fetched page content from the top 3 URLs. ' +
-        'Use forgeai_fetchPage(url) ONLY if you need deeper content from a specific URL beyond what was auto-fetched.',
+        'Search the web and return result URLs with snippets. ' +
+        'After this tool returns, you MUST call forgeai_fetchPage(url) on EVERY URL from the results ' +
+        'to get the FULL page content before responding to the user. ' +
+        'You are NOT allowed to summarize search snippets — only fetched page content.',
       inputSchema: {
         type: 'object',
         required: ['query'],
@@ -308,7 +303,16 @@ export class WebSearchTools {
                 (p) =>
                   `### ${p.title} (${p.method})\nURL: ${p.url}\n\n${p.content.slice(0, 3000)}${p.content.length > 3000 ? '\n\n... [truncated in summary]' : ''}`
               )
-              .join('\n\n---\n\n'),
+              .join('\n\n---\n\n') +
+            `\n\n---\n\n` +
+            `⚠️ MANDATORY NEXT STEP: The above auto-fetched content is ONLY a preview/summary. ` +
+            `You MUST now call forgeai_fetchPage(url) on EVERY critical URL from the search results ` +
+            `to get the FULL documentation, complete API references, code examples, and version numbers. ` +
+            `Do NOT respond to the user until you have fetched the critical pages. ` +
+            `Critical URLs to fetch: ${result.results
+              .slice(0, 5)
+              .map((r) => r.url)
+              .join(', ')}`,
         };
       },
     };
@@ -322,17 +326,10 @@ export class WebSearchTools {
     return {
       name: 'forgeai_webResearch',
       description:
-        'MANDATORY deep research before creating any spec or plan. ' +
-        'Runs multiple related queries, aggregates results, and auto-fetches content from top URLs. ' +
-        'Call this tool WHENEVER: ' +
-        '(1) The user asks you to plan, design, or architect a feature, ' +
-        '(2) You need comprehensive context on a technology (Python, React, database, etc.), ' +
-        '(3) RAG documentation is missing or insufficient for the topic. ' +
-        'This tool finds current best practices, latest versions, security recommendations, and architecture patterns. ' +
-        'Always call this BEFORE forgeai_createSpec. ' +
-        'Returns aggregated search results PLUS automatically fetched page content from the top 5 URLs. ' +
-        'Findings are AUTOMATICALLY SAVED to the research cache for reuse during spec generation. ' +
-        'Use forgeai_fetchPage(url) ONLY if you need deeper content from a specific URL beyond what was auto-fetched.',
+        'DISCOVERY phase — finds URLs and gets surface-level snippets. ' +
+        'After this tool returns, you MUST call forgeai_fetchPage(url) on EVERY URL from the results ' +
+        'to get the FULL page content before responding to the user. ' +
+        'You are NOT allowed to summarize search snippets — only fetched page content.',
       inputSchema: {
         type: 'object',
         required: ['topic'],
@@ -465,7 +462,16 @@ export class WebSearchTools {
                 (p) =>
                   `### ${p.title} (${p.method})\nURL: ${p.url}\n\n${p.content.slice(0, 3000)}${p.content.length > 3000 ? '\n\n... [truncated in summary]' : ''}`
               )
-              .join('\n\n---\n\n'),
+              .join('\n\n---\n\n') +
+            `\n\n---\n\n` +
+            `⚠️ MANDATORY NEXT STEP: The above auto-fetched content is ONLY a preview/summary. ` +
+            `You MUST now call forgeai_fetchPage(url) on EVERY critical URL from the search results ` +
+            `to get the FULL documentation, complete API references, code examples, and version numbers. ` +
+            `Do NOT respond to the user until you have fetched the critical pages. ` +
+            `Critical URLs to fetch: ${allResults
+              .slice(0, 5)
+              .map((r) => r.url)
+              .join(', ')}`,
         };
       },
     };
@@ -531,9 +537,10 @@ export class WebSearchTools {
       name: 'forgeai_fetchPage',
       description:
         'MANDATORY follow-up after webSearch/webResearch. ' +
-        'Fetches the actual HTML content of a URL and extracts readable text. ' +
+        'Fetches the FULL HTML content of a URL, extracts readable text, and returns it in chunks. ' +
         'Call this tool for EVERY relevant URL you find to get REAL documentation, ' +
         'best practices, GitHub READMEs, API references — not just search snippets. ' +
+        'If the page has more content, use the offset parameter to fetch the next chunk. ' +
         'NO local browser needed. Works immediately.',
       inputSchema: {
         type: 'object',
@@ -545,23 +552,38 @@ export class WebSearchTools {
           },
           maxLength: {
             type: 'number',
-            description: 'Maximum characters to return (default: 8000)',
+            description: 'Characters per chunk (default: 15000, max: 25000)',
+          },
+          offset: {
+            type: 'number',
+            description:
+              'Character offset for pagination. Start at 0, then use nextOffset from the previous response to get the next chunk.',
           },
         },
       },
-      execute: async (args: { url: string; maxLength?: number }) => {
-        const maxLen = args.maxLength ?? 8000;
+      execute: async (args: { url: string; maxLength?: number; offset?: number }) => {
+        const maxLen = Math.min(args.maxLength ?? 15000, 25000);
+        const offset = args.offset ?? 0;
 
-        // Use the robust fetchPageContent with Playwright fallback
-        const page = await this.fetchPageContent(args.url, maxLen);
+        // Fetch the FULL page content (no internal truncation)
+        const page = await this.fetchPageContent(args.url, Number.MAX_SAFE_INTEGER);
+
+        const totalLength = page.content.length;
+        const chunk = page.content.slice(offset, offset + maxLen);
+        const hasMore = offset + maxLen < totalLength;
+        const nextOffset = hasMore ? offset + maxLen : null;
 
         return {
           success: true,
           url: page.url,
           title: page.title,
-          content: page.content,
-          length: page.content.length,
-          truncated: page.truncated,
+          content: chunk,
+          offset,
+          length: chunk.length,
+          totalLength,
+          hasMore,
+          nextOffset,
+          truncated: hasMore,
           method: page.method,
         };
       },

@@ -114,7 +114,6 @@ export interface OllamaListResponse {
 export class OllamaClient {
   private readonly baseUrl: string;
   private readonly logger: Logger;
-  private readonly timeout: number = 30000; // 30 seconds
 
   constructor(baseUrl: string = 'http://localhost:11434', logger: Logger) {
     this.baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
@@ -195,47 +194,36 @@ export class OllamaClient {
   private async nonStreamChat(request: OllamaChatRequest): Promise<OllamaChatResponse> {
     const url = `${this.baseUrl}/api/chat`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: request.model,
+        messages: request.messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+          thinking: msg.thinking,
+          tool_calls: msg.tool_calls,
+          name: msg.name,
+          images: msg.images, // Include images for vision models
+        })),
+        stream: false,
+        think: request.think ?? false,
+        tools: request.tools,
+        options: request.options,
+      }),
+    });
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: request.model,
-          messages: request.messages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-            thinking: msg.thinking,
-            tool_calls: msg.tool_calls,
-            name: msg.name,
-            images: msg.images, // Include images for vision models
-          })),
-          stream: false,
-          think: request.think ?? false,
-          tools: request.tools,
-          options: request.options,
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data: OllamaChatResponse = await response.json();
-      this.logger.info(`Received non-streaming response from Ollama: done=${data.done}`);
-
-      return data;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
+
+    const data: OllamaChatResponse = await response.json();
+    this.logger.info(`Received non-streaming response from Ollama: done=${data.done}`);
+
+    return data;
   }
 
   /**
@@ -244,84 +232,73 @@ export class OllamaClient {
   private async *streamChat(request: OllamaChatRequest): AsyncGenerator<OllamaStreamChunk> {
     const url = `${this.baseUrl}/api/chat`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: request.model,
+        messages: request.messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+          thinking: msg.thinking,
+          tool_calls: msg.tool_calls,
+          name: msg.name,
+          images: msg.images, // Include images for vision models
+        })),
+        stream: true,
+        think: request.think ?? false,
+        tools: request.tools,
+        options: request.options,
+      }),
+    });
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: request.model,
-          messages: request.messages.map((msg) => ({
-            role: msg.role,
-            content: msg.content,
-            thinking: msg.thinking,
-            tool_calls: msg.tool_calls,
-            name: msg.name,
-            images: msg.images, // Include images for vision models
-          })),
-          stream: true,
-          think: request.think ?? false,
-          tools: request.tools,
-          options: request.options,
-        }),
-        signal: controller.signal,
-      });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
-      clearTimeout(timeoutId);
+    if (!response.body) {
+      throw new Error('Response body is null');
+    }
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    this.logger.info('Started streaming response from Ollama');
+
+    // Read the stream
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        this.logger.info('Streaming completed');
+        break;
       }
 
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
+      // Decode the chunk and add to buffer
+      buffer += decoder.decode(value, { stream: true });
 
-      this.logger.info('Started streaming response from Ollama');
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-      // Read the stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      for (const line of lines) {
+        if (line.trim() === '') continue;
 
-      while (true) {
-        const { done, value } = await reader.read();
+        try {
+          const chunk: OllamaStreamChunk = JSON.parse(line);
+          yield chunk;
 
-        if (done) {
-          this.logger.info('Streaming completed');
-          break;
-        }
-
-        // Decode the chunk and add to buffer
-        buffer += decoder.decode(value, { stream: true });
-
-        // Process complete lines
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (line.trim() === '') continue;
-
-          try {
-            const chunk: OllamaStreamChunk = JSON.parse(line);
-            yield chunk;
-
-            if (chunk.done) {
-              this.logger.info('Received done signal from Ollama');
-              return;
-            }
-          } catch (parseError) {
-            this.logger.warn(`Failed to parse streaming chunk: ${line}`, parseError);
+          if (chunk.done) {
+            this.logger.info('Received done signal from Ollama');
+            return;
           }
+        } catch (parseError) {
+          this.logger.warn(`Failed to parse streaming chunk: ${line}`, parseError);
         }
       }
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
     }
   }
 
@@ -334,19 +311,13 @@ export class OllamaClient {
 
     const url = `${this.baseUrl}/api/tags`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
     try {
       const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -357,7 +328,6 @@ export class OllamaClient {
 
       return data.models;
     } catch (error) {
-      clearTimeout(timeoutId);
       this.handleError(error);
       throw error; // TypeScript requires this after handleError
     }
@@ -369,15 +339,9 @@ export class OllamaClient {
    */
   public async isAvailable(): Promise<boolean> {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
       const response = await fetch(`${this.baseUrl}/api/tags`, {
         method: 'GET',
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       return response.ok;
     } catch (error) {
@@ -398,9 +362,9 @@ export class OllamaClient {
         throw new OllamaConnectionError(message, this.baseUrl, error);
       }
 
-      // Timeout
+      // Abort (user cancelled or connection dropped)
       if (error.name === 'AbortError') {
-        const message = `Request to Ollama timed out after ${this.timeout}ms`;
+        const message = 'Request to Ollama was aborted';
         this.logger.error(message, error);
         throw new OllamaConnectionError(message, this.baseUrl, error);
       }

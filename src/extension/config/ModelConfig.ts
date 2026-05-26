@@ -1,22 +1,31 @@
+import * as vscode from 'vscode';
+
 /**
  * Central model configuration for ForgeAI.
  *
- * The default model is defined in ONE place. All extension code that needs
- * a fallback should import DEFAULT_MODEL from here instead of hard-coding
- * a model name.
+ * The default model is read from VS Code settings (forgeai.selectedModel
+ * set by the webview settings panel). All extension code that needs
+ * the current model should call getConfiguredModel() instead of using
+ * a hard-coded fallback.
  */
 
-/** Default model used when the user has not selected one. */
-export const DEFAULT_MODEL = 'gpt-oss:120b-cloud';
+/** Fallback model only used when no setting exists. */
+const FALLBACK_MODEL = 'gpt-oss:120b-cloud';
+
+/** Read the user's selected model from VS Code settings. */
+export function getConfiguredModel(): string {
+  const config = vscode.workspace.getConfiguration('forgeai');
+  const model = config.get<string>('model', '');
+  if (model) return model;
+
+  return FALLBACK_MODEL;
+}
+
+/** @deprecated Use getConfiguredModel() instead. Kept for backwards compatibility. */
+export const DEFAULT_MODEL = FALLBACK_MODEL;
 
 /** List of vision-model name fragments for quick detection. */
-export const VISION_MODEL_FRAGMENTS = [
-  'llava',
-  'vision',
-  'bakllava',
-  'moondream',
-  'gemma4',
-];
+export const VISION_MODEL_FRAGMENTS = ['llava', 'vision', 'bakllava', 'moondream', 'gemma4'];
 
 /**
  * Check whether a model identifier supports image/vision input.

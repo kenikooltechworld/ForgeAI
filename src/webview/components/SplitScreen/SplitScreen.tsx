@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import ActivityStream from '../ActivityStream/ActivityStream';
 import LivePreview from '../LivePreview/LivePreview';
 import { useConversationStore } from '../../store/conversationStore';
@@ -22,6 +23,8 @@ import { useConversationStore } from '../../store/conversationStore';
 function SplitScreen() {
   const [leftWidth, setLeftWidth] = useState(50); // percentage
   const [isDragging, setIsDragging] = useState(false);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
+  const [prevLeftWidth, setPrevLeftWidth] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Responsive behavior - but ALWAYS show split-screen
@@ -86,6 +89,17 @@ function SplitScreen() {
     }
   }, [isDragging, leftWidth, persistWidth]);
 
+  const toggleRightPanel = useCallback(() => {
+    if (isRightCollapsed) {
+      setIsRightCollapsed(false);
+      setLeftWidth(prevLeftWidth);
+    } else {
+      setPrevLeftWidth(leftWidth);
+      setIsRightCollapsed(true);
+      setLeftWidth(100);
+    }
+  }, [isRightCollapsed, leftWidth, prevLeftWidth]);
+
   useEffect(() => {
     if (isDragging) {
       document.addEventListener('mousemove', handleMouseMove);
@@ -125,35 +139,45 @@ function SplitScreen() {
 
   return (
     <div ref={containerRef} className="flex h-full w-full">
-      {/* Activity Stream (Left Panel) - ALWAYS VISIBLE */}
+      {/* Activity Stream (Left Panel) */}
       <div className="h-full overflow-hidden" style={{ width: `${leftWidth}%` }}>
         <ActivityStream />
       </div>
 
-      {/* Draggable Divider - ALWAYS VISIBLE */}
+      {/* Divider with collapse/expand toggle */}
       <div
-        className="h-full cursor-col-resize transition"
+        className="relative flex items-center justify-center transition"
         style={{
           width: '4px',
-          backgroundColor: 'var(--vscode-panel-border)',
+          backgroundColor: isDragging ? 'var(--vscode-focusBorder)' : 'var(--vscode-panel-border)',
+          cursor: isRightCollapsed ? 'pointer' : 'col-resize',
         }}
-        onMouseDown={handleMouseDown}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = 'var(--vscode-focusBorder)';
-        }}
-        onMouseLeave={(e) => {
-          if (!isDragging) {
-            e.currentTarget.style.backgroundColor = 'var(--vscode-panel-border)';
-          }
-        }}
-        aria-label="Resize panels"
-        role="separator"
-      />
-
-      {/* Live Preview (Right Panel) - ALWAYS VISIBLE */}
-      <div className="h-full overflow-hidden" style={{ width: `${100 - leftWidth}%` }}>
-        <LivePreview type={previewType} data={previewData} />
+        onMouseDown={isRightCollapsed ? undefined : handleMouseDown}
+      >
+        <button
+          onClick={toggleRightPanel}
+          title={isRightCollapsed ? 'Expand live preview' : 'Collapse live preview'}
+          className="absolute flex items-center justify-center rounded-full border"
+          style={{
+            width: '20px',
+            height: '20px',
+            backgroundColor: 'var(--vscode-editor-background)',
+            borderColor: 'var(--vscode-panel-border)',
+            color: 'var(--vscode-foreground)',
+            cursor: 'pointer',
+            zIndex: 10,
+          }}
+        >
+          {isRightCollapsed ? <PanelRightOpen size={12} /> : <PanelRightClose size={12} />}
+        </button>
       </div>
+
+      {/* Live Preview (Right Panel) */}
+      {!isRightCollapsed && (
+        <div className="h-full overflow-hidden" style={{ width: `${100 - leftWidth}%` }}>
+          <LivePreview type={previewType} data={previewData} />
+        </div>
+      )}
     </div>
   );
 }

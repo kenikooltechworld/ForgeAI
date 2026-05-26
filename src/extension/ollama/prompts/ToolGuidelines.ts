@@ -38,9 +38,9 @@ You have access to comprehensive file system, terminal, git, and diagnostic tool
 
 ### Web Search & Content Fetching (CRITICAL — Call these when RAG is insufficient)
 
-**forgeai_webSearch(query)** — MANDATORY when RAG docs are missing info. Searches the web AND auto-fetches content from the top 3 result URLs. Returns both snippets and real page content. NO separate fetchPage needed unless you need deeper content from a specific URL.
-**forgeai_webResearch(topic, subQueries)** — MANDATORY before creating ANY spec or plan. Runs multiple related queries AND auto-fetches content from the top 5 result URLs. Call this FIRST when the user asks you to plan, design, or architect a feature. Returns aggregated results with real page content — not just snippets.
-**forgeai_fetchPage(url)** — Fetches the ACTUAL HTML content of a specific URL with Playwright fallback for bot protection. Use this ONLY when you need content from a specific URL that was not auto-fetched by webSearch/webResearch, or when you need more than the auto-fetched summary.
+**forgeai_webSearch(query)** — Searches the web and returns URLs with snippets. After calling this, you MUST call forgeai_fetchPage(url) on EVERY URL from the results before responding. You are NOT allowed to summarize search snippets.
+**forgeai_webResearch(topic, subQueries)** — Runs multiple related queries and returns aggregated URLs with snippets. After calling this, you MUST call forgeai_fetchPage(url) on EVERY URL from the results before responding. You are NOT allowed to summarize search snippets.
+**forgeai_fetchPage(url)** — Fetches the FULL HTML content of a specific URL with Playwright fallback. This is the ONLY way you are allowed to get documentation content, API references, GitHub repos, and tutorials. After any webSearch or webResearch, you MUST call this on EVERY URL before responding to the user.
 **forgeai_searchDocs(library, topic)** — Find official documentation for a specific library or framework.
 
 ### Diagnostics Tools
