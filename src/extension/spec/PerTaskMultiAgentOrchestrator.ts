@@ -188,51 +188,6 @@ export class PerTaskMultiAgentOrchestrator {
       totalDurationMs: Date.now() - startTime,
     };
   }
-      task,
-      specContext,
-      agentLoop,
-      implementerResult
-    );
-    results.push(verifierResult);
-
-    if (!verifierResult.success) {
-      return {
-        taskId: task.id,
-        taskDescription: task.description,
-        results,
-        finalStatus: 'failed',
-        totalDurationMs: Date.now() - startTime,
-      };
-    }
-
-    // Phase 4: Tester Agent
-    const testerResult = await this.runTesterAgent(task, specContext, agentLoop, verifierResult);
-    results.push(testerResult);
-
-    if (!testerResult.success) {
-      return {
-        taskId: task.id,
-        taskDescription: task.description,
-        results,
-        finalStatus: 'failed',
-        totalDurationMs: Date.now() - startTime,
-      };
-    }
-
-    // Phase 5: Reviewer Agent
-    const reviewerResult = await this.runReviewerAgent(task, specContext, agentLoop, testerResult);
-    results.push(reviewerResult);
-
-    const finalStatus = reviewerResult.success ? 'success' : 'failed';
-
-    return {
-      taskId: task.id,
-      taskDescription: task.description,
-      results,
-      finalStatus,
-      totalDurationMs: Date.now() - startTime,
-    };
-  }
 
   /**
    * Phase 1: Explorer Agent
@@ -302,6 +257,7 @@ Provide a JSON response with:
   /**
    * Phase 2: Implementer Agent
    * Writes/modifies code based on Explorer findings
+   * MUST verify no errors are introduced
    */
   private async runImplementerAgent(
     task: ExecutableTask,
@@ -312,7 +268,7 @@ Provide a JSON response with:
     const prompt = `
 # IMPLEMENTER AGENT - Task ${task.id}
 
-Your job: Write/modify code to implement this task.
+Your job: Write/modify code to implement this task. VERIFY no errors are introduced.
 
 ## Task
 ${task.description}
@@ -335,20 +291,43 @@ ${task.instructions.map((i) => `- ${i}`).join('\n')}
 ## Expected artifacts:
 ${task.expectedArtifacts.join('\n')}
 
+## 🚨 ERROR PREVENTION PROTOCOL 🚨
+
+After writing/modifying code:
+1. **VERIFY** TypeScript compilation: npx tsc --noEmit
+   - If errors: FIX them immediately
+   - Do NOT move forward with TypeScript errors
+   
+2. **VERIFY** ESLint: npx eslint --ext .ts,.tsx src/ --max-warnings=0
+   - If errors: FIX them immediately
+   - Do NOT move forward with linting errors
+
+3. **VERIFY** imports and exports are correct
+   - Check all imports resolve
+   - Check all exports are used
+
+If ANY errors are found, fix them BEFORE reporting success.
+
 ## Your job:
 1. Create/modify files as needed
 2. Follow the design and requirements
 3. Write clean, well-documented code
 4. Include error handling
 5. Add JSDoc comments for public APIs
+6. RUN TypeScript compilation to verify no errors
+7. RUN ESLint to verify no linting errors
+8. FIX any errors found
+9. ONLY THEN report success
 
 ## Output format:
 Provide a JSON response with:
 {
   "filesCreated": ["path/to/file1.ts"],
   "filesModified": ["path/to/file2.ts"],
-  "summary": "Brief summary of implementation",
-  "issues": ["issue1", "issue2"]
+  "compilationPassed": true/false,
+  "lintPassed": true/false,
+  "errors": ["error1", "error2"],
+  "summary": "Implementation complete with verification"
 }
 `;
 
@@ -359,10 +338,27 @@ Provide a JSON response with:
         'Implementer',
         explorerResult.summary
       );
+      
+      // Check if compilation and linting passed
+      const compilationOK = result.compilationPassed !== false;
+      const lintOK = result.lintPassed !== false;
+      const success = compilationOK && lintOK && result.success !== false;
+      
+      if (!success) {
+        const errors = result.errors || [];
+        return {
+          agentName: 'Implementer',
+          success: false,
+          summary: `Implementation has errors: ${errors.join('; ')}`,
+          errors,
+          artifacts: result.artifacts || [],
+        };
+      }
+      
       return {
         agentName: 'Implementer',
         success: true,
-        summary: result.summary || 'Implementation complete',
+        summary: result.summary || 'Implementation complete - no errors',
         artifacts: result.artifacts || [],
         nextAgentPrompt: prompt,
       };
@@ -452,7 +448,7 @@ Provide a JSON response with:
 
   /**
    * Phase 4: Tester Agent
-   * Runs tests, diagnoses errors
+   * Runs tests, diagnoses errors - MANDATORY error resolution
    */
   private async runTesterAgent(
     task: ExecutableTask,
@@ -463,7 +459,7 @@ Provide a JSON response with:
     const prompt = `
 # TESTER AGENT - Task ${task.id}
 
-Your job: Run tests and diagnose any errors.
+Your job: Run tests and DIAGNOSE ALL ERRORS. Errors are #1 priority.
 
 ## Task
 ${task.description}
@@ -474,33 +470,80 @@ ${verifierResult.summary}
 ## Test files to run:
 ${task.expectedArtifacts.filter((a) => a.includes('.test.')).join('\n') || 'No specific test files'}
 
+## 🚨 ERROR RESOLUTION PROTOCOL 🚨
+
+When you encounter ANY error:
+1. **READ** the error message completely
+2. **UNDERSTAND** what went wrong and where (file, line, function)
+3. **ANALYZE** the root cause
+4. **FIND** the solution
+5. **APPLY** the fix to the code
+6. **VERIFY** by running the test again
+7. **REPEAT** until all errors are resolved
+
+NEVER move forward with unresolved errors.
+NEVER ignore error messages.
+NEVER run the same command twice without fixing the problem.
+
 ## Your job:
 1. Run TypeScript compilation: npx tsc --noEmit
+   - If errors: STOP and diagnose each one
+   - Fix the TypeScript errors
+   - Re-run until zero errors
+   
 2. Run ESLint: npx eslint --ext .ts,.tsx src/ --max-warnings=0
+   - If errors: STOP and diagnose each one
+   - Fix the linting errors
+   - Re-run until zero errors
+   
 3. Run tests: npx jest --passWithNoTests
-4. Diagnose any failures
-5. Provide clear error messages
+   - If failures: STOP and diagnose each one
+   - Fix the failing tests
+   - Re-run until all pass
 
 ## Output format:
 Provide a JSON response with:
 {
   "compilationPassed": true/false,
+  "compilationErrors": ["error1", "error2"],
   "lintPassed": true/false,
+  "lintErrors": ["error1", "error2"],
   "testsPassed": true/false,
-  "errors": ["error1", "error2"],
-  "summary": "Test result"
+  "testFailures": ["failure1", "failure2"],
+  "allErrorsResolved": true/false,
+  "summary": "Detailed summary of all errors found and how they were fixed"
 }
 `;
 
     try {
       const result = await this.executeAgent(agentLoop, prompt, 'Tester');
-      const success = result.success !== false;
+      
+      // Check if all errors were resolved
+      const allErrorsResolved = result.allErrorsResolved !== false && result.success !== false;
+      
+      if (!allErrorsResolved) {
+        // If errors remain, mark as failed with detailed error list
+        const errors = [
+          ...(result.compilationErrors || []),
+          ...(result.lintErrors || []),
+          ...(result.testFailures || []),
+        ];
+        
+        return {
+          agentName: 'Tester',
+          success: false,
+          summary: `Testing found unresolved errors: ${errors.join('; ')}`,
+          errors,
+          findings: result.findings || [],
+        };
+      }
+      
       return {
         agentName: 'Tester',
-        success,
-        summary: result.summary || 'Testing complete',
+        success: true,
+        summary: result.summary || 'All tests passed - no errors',
         findings: result.findings || [],
-        errors: result.errors || [],
+        errors: [],
         nextAgentPrompt: prompt,
       };
     } catch (err) {
@@ -594,7 +637,22 @@ Provide a JSON response with:
     prompt: string,
     agentName: string,
     previousAgentSummary?: string
-  ): Promise<{ success?: boolean; summary?: string; findings?: string[]; errors?: string[] }> {
+  ): Promise<{
+    success?: boolean;
+    summary?: string;
+    findings?: string[];
+    errors?: string[];
+    contextLimitReached?: boolean;
+    contextSummary?: string;
+    lastThreeMessages?: any[];
+    compilationPassed?: boolean;
+    lintPassed?: boolean;
+    artifacts?: string[];
+    compilationErrors?: string[];
+    lintErrors?: string[];
+    testFailures?: string[];
+    allErrorsResolved?: boolean;
+  }> {
     // If previous agent hit context limit, use handoff
     let systemPrompt = `You are a ${agentName} agent. Respond with valid JSON only. No markdown, no explanations, just JSON.`;
 
@@ -611,7 +669,22 @@ Provide a JSON response with:
     ];
 
     let finalContent = '';
-    let result: { success?: boolean; summary?: string; findings?: string[]; errors?: string[] } = {
+    let result: {
+      success?: boolean;
+      summary?: string;
+      findings?: string[];
+      errors?: string[];
+      contextLimitReached?: boolean;
+      contextSummary?: string;
+      lastThreeMessages?: any[];
+      compilationPassed?: boolean;
+      lintPassed?: boolean;
+      artifacts?: string[];
+      compilationErrors?: string[];
+      lintErrors?: string[];
+      testFailures?: string[];
+      allErrorsResolved?: boolean;
+    } = {
       success: true,
       summary: `${agentName} completed`,
     };
@@ -636,9 +709,10 @@ Provide a JSON response with:
           if (u.type === 'complete') {
             if (finalContent.trim().length > 0) {
               try {
-                result = JSON.parse(finalContent);
+                const parsed = JSON.parse(finalContent);
+                result = { ...result, ...parsed };
               } catch {
-                result = { success: true, summary: finalContent };
+                result = { ...result, success: true, summary: finalContent };
               }
             }
           }

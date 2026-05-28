@@ -10,6 +10,10 @@ import type { ResearchAgent } from '../agents/research/ResearchAgent';
 import type { RagService } from '../rag/RagService';
 import { SpecWriterAgent } from '../agents/spec/SpecWriterAgent';
 import { DEFAULT_MODEL } from '../config/ModelConfig';
+import { ContextManager } from '../spec/ContextManager';
+import { SessionMemory } from './SessionMemory';
+import { SessionContextInjector } from '../ollama/SessionContextInjector';
+import { ConversationMemory } from './ConversationMemory';
 
 /**
  * Production-ready Webview Manager for ForgeAI extension
@@ -19,6 +23,10 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
   private view?: vscode.WebviewView;
   private readonly disposables: vscode.Disposable[] = [];
   private currentAgentLoop?: any;
+  private readonly contextManager: ContextManager;
+  private readonly sessionMemory: SessionMemory;
+  private readonly sessionContextInjector: SessionContextInjector;
+  private readonly conversationMemory: ConversationMemory;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -34,8 +42,16 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       'WebviewManager initialized' +
         (toolRegistry ? ' with ToolRegistry support' : '') +
         (forgeaiWorkspace ? ' and ForgeAIWorkspace' : '') +
-        (ragService ? ' and RAG' : '')
+        (ragService ? ' and RAG' : '') +
+        ' and context management'
     );
+
+    // Initialize context management components
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+    this.contextManager = new ContextManager(workspaceRoot);
+    this.sessionMemory = new SessionMemory(workspaceRoot, this.logger);
+    this.sessionContextInjector = new SessionContextInjector(this.sessionMemory, this.logger);
+    this.conversationMemory = new ConversationMemory(this.storageManager);
   }
 
   public async reveal(): Promise<void> {
@@ -411,13 +427,16 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         this.logger.warn('NO TOOLS AVAILABLE - ToolRegistry might not be initialized!');
       }
 
-      // Use AgentLoop for autonomous tool execution
+      // Use AgentLoop for autonomous tool execution with full context management
       const { AgentLoop } = await import('../ollama/AgentLoop');
       const agentLoop = new AgentLoop(
         this.ollamaClient,
         this.logger,
         this.toolRegistry,
-        this.ragService
+        this.ragService,
+        this.conversationMemory,
+        this.sessionContextInjector,
+        this.contextManager
       );
 
       // Convert conversation history to Ollama message format
@@ -650,10 +669,13 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         this.ollamaClient,
         this.logger,
         this.toolRegistry,
-        this.ragService
+        this.ragService,
+        this.conversationMemory,
+        this.sessionContextInjector,
+        this.contextManager
       );
 
-      // Convert conversation history to Ollama message format
+      // Convert conversation history to Ollama message format (for continue after max iterations)
       const messages: OllamaMessage[] = conversationHistory.map((msg: any) => {
         const ollamaMsg: OllamaMessage = {
           role: msg.role,

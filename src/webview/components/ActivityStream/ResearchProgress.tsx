@@ -12,7 +12,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({ conversation
 
   if (!state || !state.active) return null;
 
-  const completedCount = state.topics.filter((t) => t.status === 'complete').length;
+  const completedCount = state.topics.filter((t: any) => t.status === 'complete').length;
   const progress = state.totalTopics > 0 ? (completedCount / state.totalTopics) * 100 : 0;
 
   return (
@@ -39,7 +39,7 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({ conversation
 
       {/* Topic list */}
       <div className="space-y-1 max-h-24 overflow-y-auto scrollable-modern">
-        {state.topics.map((topic, idx) => (
+        {state.topics.map((topic: any, idx: number) => (
           <div
             key={topic.slug}
             className="flex items-center gap-2 text-xs"
@@ -69,10 +69,14 @@ export const ResearchProgress: React.FC<ResearchProgressProps> = ({ conversation
             {topic.sourceTypes && topic.sourceTypes.length > 0 && (
               <span className="flex gap-1 shrink-0">
                 {topic.sourceTypes.includes('rag') && (
-                  <Database size={10} className="text-(--vscode-button-background)" title="RAG" />
+                  <span title="RAG">
+                    <Database size={10} className="text-(--vscode-button-background)" />
+                  </span>
                 )}
                 {topic.sourceTypes.includes('web') && (
-                  <Globe size={10} className="text-blue-400" title="Web" />
+                  <span title="Web">
+                    <Globe size={10} className="text-blue-400" />
+                  </span>
                 )}
               </span>
             )}

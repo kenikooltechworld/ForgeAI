@@ -20,6 +20,8 @@ import {
   AlertTriangle,
   ChevronUp,
   ChevronDown,
+  Regex,
+  Replace,
 } from 'lucide-react';
 
 /**
@@ -112,6 +114,8 @@ function ToolCard({
     // File operations
     if (name.includes('readFile') || name.includes('Read')) return <BookOpen {...iconProps} />;
     if (name.includes('writeFile') || name.includes('Write')) return <Edit {...iconProps} />;
+    if (name.includes('replaceText') || name.includes('Replace')) return <Replace {...iconProps} />;
+    if (name.includes('replaceRegex') || name.includes('Regex')) return <Regex {...iconProps} />;
     if (name.includes('listFiles') || name.includes('listDirectory'))
       return <Folder {...iconProps} />;
     if (name.includes('createDirectory')) return <FolderPlus {...iconProps} />;

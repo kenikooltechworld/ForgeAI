@@ -27,7 +27,6 @@ export function basicClassificationExample() {
     console.log(`Category: ${result.classification.category}`);
     console.log(`Confidence: ${result.classification.confidence.toFixed(2)}`);
     console.log(`Should use tools: ${result.shouldUseTool}`);
-    console.log(`Max tool calls: ${result.maxToolCalls}`);
     console.log(`Reasoning: ${result.classification.reasoning}`);
     console.log('---');
   });

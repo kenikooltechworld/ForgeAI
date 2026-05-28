@@ -161,7 +161,7 @@ ${handler.systemPrompt}
 - Use tools as many times as needed — there is no limit`;
   }
 
-  /**
+/**
    * Check if tools should be used for this category
    */
   shouldUseTool(category: MessageCategory): boolean {

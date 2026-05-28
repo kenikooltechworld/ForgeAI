@@ -24,7 +24,8 @@ export interface AgentLoopUpdate {
     | 'toolError'
     | 'complete'
     | 'terminalOutput'
-    | 'classification';
+    | 'classification'
+    | 'maxIterations';
   iteration?: number;
   thinking?: string;
   content?: string;
@@ -302,43 +303,11 @@ Remember: Wasting time on unresolved errors costs credits. Solve them right the 
           tool_calls,
         });
 
-        // Apply context management: sliding window + compression
-        if (this.contextManager) {
-          // Apply sliding window to prevent context overflow
-          const windowedMessages = this.contextManager.applySlidingWindow(messages);
-
-          // Compress large messages
-          const compressedMessages = windowedMessages.map((m) =>
-            this.contextManager!.compressMessage(m)
-          );
-
-          // Replace messages with managed version
-          messages.length = 0;
-          messages.push(...compressedMessages);
-        }
-
         // Track last 3 messages for context limit handoff
         this.lastThreeMessages = messages.slice(-3);
 
-        // Check if context limit is being reached (85% of effective limit)
-        const totalTokens = messages.reduce((sum, m) => sum + this.estimateTokens(m.content), 0);
-        const contextWindow = this.getContextWindowSize(model);
-        const safeLimit = Math.floor(contextWindow * 0.95);
-        const effectiveLimit = safeLimit - 2000;
-
-        if (totalTokens > effectiveLimit * 0.85) {
-          // Context limit approaching - prepare handoff
-          this.contextLimitReached = true;
-          this.contextSummary = await this.generateContextSummary(messages, content);
-
-          // Notify about context limit
-          onUpdate({
-            type: 'complete',
-            message: `Context limit approaching. Preparing handoff to next agent with summary and last 3 messages.`,
-          });
-
-          break; // Stop this agent loop
-        }
+        // OllamaClient already handles context management via sliding window.
+        // The context limit check below is intentionally disabled to avoid duplicate logic.
 
         // Check if we need to execute tools
         if (!tool_calls || tool_calls.length === 0) {
@@ -806,48 +775,7 @@ ${userMessages
 **Continue with:** The next agent should continue from where this agent left off using the last 3 messages below.
 `;
 
-    return summary;
-  }
-
-  /**
-   * Estimate token count for text
-   */
-  private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
-  }
-
-  /**
-   * Get context window size for model
-   */
-  private getContextWindowSize(model: string): number {
-    const contextWindows: Record<string, number> = {
-      'gpt-oss-120b-cloud': 131_072,
-      'gemma4-31b-cloud': 256_000,
-      'qwen3.5-397b-cloud': 128_000,
-      'deepseek-v3.1-671b-cloud': 128_000,
-      'kimi-k2.5-cloud': 256_000,
-      'qwen3-vl-8b': 32_768,
-      'qwen3-coder-30b': 32_768,
-      'deepseek-r1-8b': 32_768,
-      'gemma4-e4b': 128_000,
-      'qwen3.5-9b': 32_768,
-      'llava-7b': 4_096,
-      'llava-13b': 8_192,
-    };
-
-    const lower = model.toLowerCase().replace(/:/g, '-');
-    if (contextWindows[model]) return contextWindows[model];
-
-    for (const [key, value] of Object.entries(contextWindows)) {
-      if (key.toLowerCase() === lower) return value;
-    }
-
-    for (const [key, value] of Object.entries(contextWindows)) {
-      const normKey = key.toLowerCase().replace(/:/g, '-');
-      if (lower.includes(normKey) || normKey.includes(lower)) return value;
-    }
-
-    return 32_768;
+return summary;
   }
 
   /**

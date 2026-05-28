@@ -150,7 +150,7 @@ ${errorMessage}
 ---
 
 **Proposed Solutions:**
-${solutions.map((s) => `\n${s.id}. **${s.title}** (Risk: ${s.severity}, Time: ${s.estimatedTime})\n   ${s.description}`).join('\n')}
+${solutions.map((s) => `\n${s.id}. **${s.title}** (Risk: ${s.riskLevel}, Time: ${s.estimatedTime})\n   ${s.description}`).join('\n')}
 
 ---
 

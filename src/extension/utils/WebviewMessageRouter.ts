@@ -17,8 +17,15 @@ import { getConfiguredModel } from '../config/ModelConfig';
 import type { ForgeAIWorkspace } from '../forgeaiWorkspace/ForgeAIWorkspace';
 import { SpecWriterAgent } from '../agents/spec/SpecWriterAgent';
 import type { ResearchAgent } from '../agents/research/ResearchAgent';
+import { ContextManager } from '../spec/ContextManager';
+import { SessionMemory } from './SessionMemory';
+import { SessionContextInjector } from '../ollama/SessionContextInjector';
 
 export class WebviewMessageRouter {
+  private contextManager: ContextManager;
+  private sessionMemory: SessionMemory;
+  private sessionContextInjector: SessionContextInjector;
+
   constructor(
     private view: vscode.WebviewView | undefined,
     private logger: Logger,
@@ -38,7 +45,12 @@ export class WebviewMessageRouter {
         source: string;
       }>;
     }
-  ) {}
+  ) {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
+    this.contextManager = new ContextManager(workspaceRoot);
+    this.sessionMemory = new SessionMemory(workspaceRoot, this.logger);
+    this.sessionContextInjector = new SessionContextInjector(this.sessionMemory, this.logger);
+  }
 
   setView(view: vscode.WebviewView | undefined): void {
     this.view = view;
@@ -602,7 +614,10 @@ export class WebviewMessageRouter {
       this.ollamaClient,
       this.logger,
       this.toolRegistry,
-      this.ragService
+      this.ragService,
+      this.conversationMemory,
+      this.sessionContextInjector,
+      this.contextManager
     );
 
     const messages: OllamaMessage[] = [];
@@ -643,7 +658,10 @@ export class WebviewMessageRouter {
       this.ollamaClient,
       this.logger,
       this.toolRegistry,
-      this.ragService
+      this.ragService,
+      this.conversationMemory,
+      this.sessionContextInjector,
+      this.contextManager
     );
 
     const messages: OllamaMessage[] = [];

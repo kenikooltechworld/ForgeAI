@@ -42,7 +42,6 @@ interface CodeBlockProps {
   inline?: boolean;
   className?: string;
   children?: React.ReactNode;
-  [key: string]: unknown;
 }
 
 /**
@@ -55,11 +54,10 @@ interface CodeBlockProps {
  * - Inline code styling
  * - Fallback for unknown languages
  */
-export const CodeBlock = memo(function CodeBlock({
+export const CodeBlock: React.FC<CodeBlockProps> = memo(function CodeBlock({
   inline,
   className,
   children,
-  ...props
 }: CodeBlockProps) {
   const theme = useVSCodeTheme();
   const syntaxTheme = theme === 'dark' ? vscDarkPlus : vs;
@@ -71,7 +69,7 @@ export const CodeBlock = memo(function CodeBlock({
   // Inline code - styling handled by globals.css classes
   if (inline) {
     return (
-      <code className="markdown-code-inline" {...props}>
+      <code className="markdown-code-inline">
         {children}
       </code>
     );
@@ -85,7 +83,6 @@ export const CodeBlock = memo(function CodeBlock({
         style={syntaxTheme}
         showLineNumbers
         wrapLongLines
-        {...props}
       >
         {String(children).replace(/\n$/, '')}
       </SyntaxHighlighter>
@@ -93,9 +90,8 @@ export const CodeBlock = memo(function CodeBlock({
   }
 
   // Fallback for code blocks without language specification
-  // Fallback for code blocks without language specification
   return (
-    <code {...props}>
+    <code>
       {children}
     </code>
   );

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { WebviewMessage } from '@types';
+import type { WebviewMessage } from '../types';
 
 export function useVSCodeMessage(onMessage: (message: WebviewMessage) => void) {
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Conversation, Message } from '@types';
+import type { Conversation, Message } from '../types';
 
 interface OnboardingState {
   hasSeenThinkingTooltip: boolean;
@@ -37,6 +37,15 @@ interface ConversationState {
     message: string | null;
     context: any | null;
   };
+
+  // Research mode state per conversation
+  researchMode: Record<string, {
+    active: boolean;
+    topics: { slug: string; status: string; query: string; findingsCount?: number; sourceTypes?: string[] }[];
+    totalTopics: number;
+    status: string;
+    totalFindings?: number;
+  }>;
 
   // Conversation actions
   addConversation: (conversation: Conversation) => void;
@@ -192,6 +201,9 @@ export const useConversationStore = create<ConversationState>()(
         context: null,
       },
 
+      // Research mode state per conversation
+      researchMode: {},
+
       // Conversation actions
       addConversation: (conversation) =>
         set((state) => ({
@@ -199,7 +211,7 @@ export const useConversationStore = create<ConversationState>()(
           activeConversationId: conversation.id,
         })),
 
-      addMessage: (conversationId, message) =>
+      addMessage: (conversationId: string, message: Message) =>
         set((state) => ({
           conversations: state.conversations.map((conversation) =>
             conversation.id === conversationId
@@ -208,7 +220,7 @@ export const useConversationStore = create<ConversationState>()(
           ),
         })),
 
-      updateMessage: (conversationId, messageId, updates) =>
+      updateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) =>
         set((state) => ({
           conversations: state.conversations.map((conversation) =>
             conversation.id === conversationId
@@ -222,7 +234,7 @@ export const useConversationStore = create<ConversationState>()(
           ),
         })),
 
-      removeMessage: (conversationId, messageId) =>
+      removeMessage: (conversationId: string, messageId: string) =>
         set((state) => ({
           conversations: state.conversations.map((conversation) =>
             conversation.id === conversationId
@@ -234,14 +246,14 @@ export const useConversationStore = create<ConversationState>()(
           ),
         })),
 
-      setActiveConversationId: (id) => set({ activeConversationId: id }),
+      setActiveConversationId: (id: string) => set({ activeConversationId: id }),
 
-      removeConversation: (id) =>
+      removeConversation: (id: string) =>
         set((state) => ({
           conversations: state.conversations.filter((c) => c.id !== id),
         })),
 
-      clearConversation: (id) =>
+      clearConversation: (id: string) =>
         set((state) => ({
           conversations: state.conversations.map((c) => (c.id === id ? { ...c, messages: [] } : c)),
         })),

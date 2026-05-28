@@ -39,6 +39,29 @@ export interface Message {
     result?: any;
     arguments?: Record<string, any>;
   };
+  research?: {
+    active: boolean;
+    topics: { slug: string; status: string; query: string; findingsCount?: number; sourceTypes?: string[] }[];
+    totalTopics: number;
+    status: string;
+    totalFindings?: number;
+  };
+}
+
+export interface AgentActivityItem {
+  id: string;
+  type: 'start' | 'complete' | 'error';
+  text: string;
+  icon?: string;
+  timestamp: number;
+  metadata?: {
+    fileName?: string;
+    fileNames?: string[];
+    count?: number;
+    duration?: number;
+    url?: string;
+    query?: string;
+  };
 }
 
 declare global {

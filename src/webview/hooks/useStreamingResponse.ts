@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConversationStore } from '../store/conversationStore';
+import type { Message } from '../types';
 
 interface StreamChunkMessage {
   type: 'streamChunk';
@@ -99,7 +100,7 @@ export function useStreamingResponse() {
           });
 
           // Update store
-          useConversationStore.setState({ conversations: updatedConversations });
+          useConversationStore.setState({ conversations: updatedConversations } as any);
         }
 
         // If done, reset streaming state

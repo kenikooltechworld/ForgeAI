@@ -38,11 +38,12 @@ export function ErrorNotification({
   const [isPinned, setIsPinned] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(dismissTimeout);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number>(Date.now());
+  const startTimeRef = useRef<number>(0);
 
   // Auto-dismiss timer with countdown
   useEffect(() => {
-    if (!autoDismiss || isPinned) {
+    // Only auto-dismiss if explicitly enabled AND timeout > 0
+    if (!autoDismiss || dismissTimeout === 0 || isPinned) {
       return;
     }
 
@@ -262,7 +263,7 @@ export function ErrorNotification({
   };
 
   // Calculate progress percentage for countdown
-  const progressPercentage = autoDismiss && !isPinned ? (timeRemaining / dismissTimeout) * 100 : 0;
+  const progressPercentage = autoDismiss && dismissTimeout > 0 && !isPinned ? (timeRemaining / dismissTimeout) * 100 : 0;
 
   return (
     <div
@@ -270,10 +271,10 @@ export function ErrorNotification({
       role="alert"
       aria-live="assertive"
     >
-      {/* Progress bar for auto-dismiss countdown */}
-      {autoDismiss && !isPinned && (
+      {/* Progress bar for auto-dismiss countdown (only when auto-dismiss enabled) */}
+      {autoDismiss && dismissTimeout > 0 && !isPinned && (
         <div
-          className="absolute bottom-0 left-0 h-0.5 transition-all duration-100 bg-(--vscode-inputValidation-errorBorder)"
+          className="absolute bottom-0 left-0 h-1 transition-all duration-100 bg-(--vscode-inputValidation-errorBorder)"
           style={{ width: `${progressPercentage}%` }}
           aria-hidden="true"
         />

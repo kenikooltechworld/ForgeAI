@@ -747,4 +747,156 @@ export class FileSystemTools {
       },
     };
   }
+
+  /**
+   * Replace specific text in a file (targeted edit)
+   * More efficient than full file rewrite - only changes what's needed
+   */
+  replaceText(): Tool {
+    return {
+      name: 'forgeai_replaceText',
+      description: 'Replace specific text in a file. Use this to make targeted edits instead of rewriting entire files. More efficient and saves tokens.',
+      inputSchema: {
+        type: 'object',
+        required: ['path', 'oldText', 'newText'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the file',
+          },
+          oldText: {
+            type: 'string',
+            description: 'Exact text to replace (must match exactly including whitespace)',
+          },
+          newText: {
+            type: 'string',
+            description: 'New text to insert',
+          },
+        },
+      },
+      execute: async (
+        args: { path: string; oldText: string; newText: string },
+        token?: vscode.CancellationToken
+      ) => {
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        const content = await vscode.workspace.fs.readFile(uri);
+        const text = Buffer.from(content).toString('utf8');
+
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        if (!text.includes(args.oldText)) {
+          return {
+            path: args.path,
+            success: false,
+            error: 'Text not found. The oldText must match exactly including whitespace and indentation.',
+          };
+        }
+
+        const newContent = text.replace(args.oldText, args.newText);
+
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const buffer = Buffer.from(newContent, 'utf8');
+        await vscode.workspace.fs.writeFile(uri, buffer);
+
+        return {
+          path: args.path,
+          success: true,
+          replacements: text.split(args.oldText).length - 1,
+        };
+      },
+    };
+  }
+
+  /**
+   * Replace text using regex pattern
+   * Allows flexible pattern matching for code edits
+   */
+  replaceRegex(): Tool {
+    return {
+      name: 'forgeai_replaceRegex',
+      description: 'Replace text matching a regex pattern in a file. Use this for flexible code edits. More efficient than rewriting entire files.',
+      inputSchema: {
+        type: 'object',
+        required: ['path', 'pattern', 'replacement'],
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Absolute path to the file',
+          },
+          pattern: {
+            type: 'string',
+            description: 'Regular expression pattern to match (JavaScript regex syntax)',
+          },
+          replacement: {
+            type: 'string',
+            description: 'Replacement text. Use $1, $2, etc. for capture groups',
+          },
+          flags: {
+            type: 'string',
+            description: 'Regex flags (e.g., "g" for global, "i" for case-insensitive)',
+          },
+        },
+      },
+      execute: async (
+        args: { path: string; pattern: string; replacement: string; flags?: string },
+        token?: vscode.CancellationToken
+      ) => {
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const uri = vscode.Uri.file(args.path);
+        const content = await vscode.workspace.fs.readFile(uri);
+        const text = Buffer.from(content).toString('utf8');
+
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        let regex: RegExp;
+        try {
+          regex = new RegExp(args.pattern, args.flags || 'g');
+        } catch (e) {
+          return {
+            path: args.path,
+            success: false,
+            error: `Invalid regex pattern: ${args.pattern}`,
+          };
+        }
+
+        const matches = text.match(regex);
+        if (!matches || matches.length === 0) {
+          return {
+            path: args.path,
+            success: false,
+            error: 'No matches found for the pattern',
+          };
+        }
+
+        const newContent = text.replace(regex, args.replacement);
+
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const buffer = Buffer.from(newContent, 'utf8');
+        await vscode.workspace.fs.writeFile(uri, buffer);
+
+        return {
+          path: args.path,
+          success: true,
+          matches: matches.length,
+        };
+      },
+    };
+  }
 }

@@ -246,8 +246,8 @@ function MessageList({
             onRetry={() => handleErrorRetry(message)}
             onSkip={() => handleErrorSkip(message)}
             onDismiss={() => handleErrorDismiss(message.id)}
-            autoDismiss={true}
-            dismissTimeout={10000}
+            autoDismiss={false}
+            dismissTimeout={0}
           />
         )}
 

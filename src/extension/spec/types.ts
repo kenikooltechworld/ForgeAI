@@ -28,6 +28,9 @@ export interface SpecRequirement {
   /** Requirement title */
   title: string;
 
+  /** Full requirement description text */
+  description?: string;
+
   /** User story: "As a [role], I want [capability], so that [outcome]" */
   userStory?: string;
 
@@ -175,6 +178,9 @@ export interface ParsedSpec {
 
   /** Number of pending tasks */
   pendingCount: number;
+
+  /** Design document content (design.md) */
+  design?: string;
 }
 
 /**
