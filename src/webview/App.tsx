@@ -75,7 +75,6 @@ type OnboardingStatePayload = {
 };
 
 function App() {
-  console.log('[ForgeAI] App component mounting');
   const [showThinking, setShowThinking] = useState(true);
   const [isReady, setIsReady] = useState(false);
   const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
@@ -121,7 +120,6 @@ function App() {
   // Storage quota error handler (Task 15.2)
   useEffect(() => {
     const handleStorageQuotaExceeded = () => {
-      console.log('[ForgeAI] Storage quota exceeded - showing error dialog');
       setShowStorageQuotaError(true);
     };
 
@@ -130,84 +128,56 @@ function App() {
   }, []);
 
   useEffect(() => {
-    console.log('[ForgeAI] App useEffect - requesting settings and onboarding state');
     window.vscode?.postMessage({ type: 'getSettings' });
     window.vscode?.postMessage({ type: 'getOnboardingState' });
-
-    // Load language preference from VS Code settings
     window.vscode?.postMessage({ type: 'getLanguage' });
-
-    // Load selected model from globalState
     window.vscode?.postMessage({ type: 'getSelectedModel' });
-
-    // Load autonomy level from globalState
     window.vscode?.postMessage({ type: 'getAutonomyLevel' });
   }, []);
 
   // Wrap message handler in useCallback to prevent infinite re-renders
   const handleMessage = useCallback(
     (message: any) => {
-      console.log('[ForgeAI] Received message:', message);
       if (message.type === 'settings') {
         const payload = message.payload as SettingsPayload;
-        console.log('[ForgeAI] Settings received:', payload);
         setShowThinking(payload.showThinking);
         setIsReady(true);
       } else if (message.type === 'onboardingState') {
         const payload = message.payload as OnboardingStatePayload;
-        console.log('[ForgeAI] Onboarding state received:', payload);
         loadOnboardingState(payload);
-        // Check if user has seen welcome screen (stored in global state)
         setHasSeenWelcome(payload.hasSeenWelcomeScreen || false);
       } else if (message.type === 'language') {
-        console.log('[ForgeAI] Language setting received:', message.language);
         setLanguage(message.language || 'English');
       } else if (message.type === 'selectedModel') {
-        console.log('[ForgeAI] Selected model received:', message.model);
         if (message.model) {
           setSelectedModel(message.model);
         }
       } else if (message.type === 'autonomyLevel') {
-        console.log('[ForgeAI] Autonomy level received:', message.level);
         if (message.level) {
           setAutonomyLevel(message.level);
         }
       } else if (message.type === 'storageQuotaExceeded') {
-        // Handle storage quota exceeded error from extension (Task 15.2)
-        console.log('[ForgeAI] Storage quota exceeded error received from extension');
         setShowStorageQuotaError(true);
       } else if (message.type === 'themeChanged') {
-        // Handle theme change (Task 14.1)
-        console.log('[ForgeAI] Theme changed:', message.theme);
-        // Force re-render to pick up new CSS variables
-        // CSS variables are automatically updated by VS Code, we just need to trigger a re-render
         setIsReady(false);
         setTimeout(() => setIsReady(true), 0);
       } else if (message.type === 'showDiff') {
-        console.log('[ForgeAI] Show diff message received:', message.data);
         showDiff(message.data);
       } else if (message.type === 'showFile') {
-        console.log('[ForgeAI] Show file message received:', message.data);
         showFile(message.data);
       } else if (message.type === 'showTerminalOutput') {
-        console.log('[ForgeAI] Show terminal output message received:', message.data);
         showTerminal(message.data);
       } else if (message.type === 'showTestResults') {
-        console.log('[ForgeAI] Show test results message received:', message.data);
         showTest(message.data);
       } else if (message.type === 'openTaskTracker') {
-        console.log('[ForgeAI] Opening Task Tracker panel');
         showTaskTracker(message.spec || { tasks: [] });
       } else if (message.type === 'loadSpec') {
-        console.log('[ForgeAI] Loading spec into Task Tracker:', message.spec);
         showTaskTracker(message.spec || { tasks: [] });
       } else if (message.type === 'updateTask') {
-        console.log('[ForgeAI] Updating task in Task Tracker:', message.task);
         if (message.task?.id) {
           updateTaskTracker(message.task.id, message.task);
         }
       } else if (message.type === 'toolExecutionStart') {
-        console.log('[ForgeAI] Tool execution start:', message.data);
         if (activeConversationId) {
           const toolMessage: any = {
             id: message.data.messageId || crypto.randomUUID(),
@@ -224,7 +194,6 @@ function App() {
           addMessage(activeConversationId, toolMessage);
         }
       } else if (message.type === 'toolExecutionComplete') {
-        console.log('[ForgeAI] Tool execution complete:', message.data);
         if (activeConversationId) {
           updateMessage(activeConversationId, message.data.messageId, {
             toolExecution: {
@@ -238,7 +207,6 @@ function App() {
           });
         }
       } else if (message.type === 'toolExecutionError') {
-        console.log('[ForgeAI] Tool execution error:', message.data);
         if (activeConversationId) {
           updateMessage(activeConversationId, message.data.messageId, {
             toolExecution: {
@@ -252,16 +220,11 @@ function App() {
           });
         }
       } else if (message.type === 'maxIterationsWarning') {
-        console.log('[ForgeAI] ⚠️⚠️⚠️ MAX ITERATIONS WARNING RECEIVED');
-        console.log('[ForgeAI] Message data:', message.data);
-        console.log('[ForgeAI] Conversation ID:', message.conversationId);
-        console.log('[ForgeAI] Active conversation ID:', activeConversationId);
         showMaxIterationsWarning(
           message.conversationId,
           message.data.message,
           message.data.context
         );
-        console.log('[ForgeAI] showMaxIterationsWarning called');
       }
     },
     [
@@ -293,15 +256,6 @@ function App() {
       payload: { hasSeenWelcomeScreen: true },
     });
   }, []);
-
-  console.log(
-    '[ForgeAI] App render - isReady:',
-    isReady,
-    'conversations:',
-    conversations.length,
-    'hasSeenWelcome:',
-    hasSeenWelcome
-  );
 
   if (!isReady) {
     return (

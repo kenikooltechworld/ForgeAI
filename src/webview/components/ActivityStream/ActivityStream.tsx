@@ -161,17 +161,6 @@ function ActivityStream() {
         />
 
         {/* Max Iterations Warning */}
-        {(() => {
-          console.log('[ActivityStream] Checking max iterations warning:', {
-            conversationId: maxIterationsWarning.conversationId,
-            activeConversationId,
-            message: maxIterationsWarning.message,
-            shouldShow:
-              maxIterationsWarning.conversationId === activeConversationId &&
-              maxIterationsWarning.message,
-          });
-          return null;
-        })()}
         {maxIterationsWarning.conversationId === activeConversationId &&
           maxIterationsWarning.message && (
             <div className="px-4">

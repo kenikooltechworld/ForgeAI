@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { StorageManager } from './storage/StorageManager';
 import { Logger } from './utils/Logger';
 import { CommandManager } from './utils/CommandManager';
@@ -308,6 +309,15 @@ export class ForgeAIExtension {
     commandManager.registerCommand('forgeai.generateSpec', () => this.generateSpecCommand());
     commandManager.registerCommand('forgeai.loadSpec', () => this.loadSpec());
     commandManager.registerCommand('forgeai.runSpec', () => this.runSpec());
+
+    // Bug fix commands
+    commandManager.registerCommand('forgeai.fixBug', () => this.fixBugCommand());
+
+    // Spec task execution commands (called by SpecTools and TaskCodeLensProvider)
+    commandManager.registerCommand('forgeai.spec.runAllTasks', () => this.runSpec());
+    commandManager.registerCommand('forgeai.spec.startTask', (specId: string, taskId: string) =>
+      this.runSpecTask(specId, taskId)
+    );
 
     this.context.subscriptions.push(commandManager);
     logger.info('Commands registered');
@@ -742,6 +752,67 @@ export class ForgeAIExtension {
     }
   }
 
+  /**
+   * Run a single task from a spec by specId + taskId.
+   * Called by forgeai.spec.startTask command (used by SpecTools and TaskCodeLensProvider).
+   */
+  private async runSpecTask(specId: string, taskId: string): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const ollama = this.services.get('ollama');
+
+    if (!ollama) {
+      void vscode.window.showWarningMessage('Ollama client not available. Cannot run task.');
+      return;
+    }
+
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      void vscode.window.showWarningMessage('No workspace open.');
+      return;
+    }
+
+    logger.info(`Running task ${taskId} from spec ${specId}`);
+
+    try {
+      const specDir = path.join(workspaceRoot, '.forgeai', 'specs', specId);
+      const executor = new SpecTaskExecutor();
+
+      this.openTaskTracker();
+
+      const result = await executor.executeSpec(
+        specDir,
+        { execute: ollama.execute.bind(ollama) },
+        {
+          stopAtCheckpoints: false,
+          autoRetry: true,
+          maxRetries: 2,
+          continueOnFailure: false,
+          taskFilter: (task) => task.id === taskId,
+          onTaskProgress: (task, progress) => {
+            logger.info(`Task ${task.id} progress: ${progress}%`);
+            void this.webviewManager?.updateTaskInPanel(task);
+          },
+          onTaskComplete: (task, compliance) => {
+            logger.info(`Task ${task.id} completed with score ${compliance.score}`);
+            void this.webviewManager?.updateTaskInPanel(task);
+          },
+          onTaskFail: (task, error) => {
+            logger.warn(`Task ${task.id} failed: ${error}`);
+            void this.webviewManager?.updateTaskInPanel(task);
+          },
+        }
+      );
+
+      void vscode.window.showInformationMessage(
+        `Task ${taskId} complete: ${result.completed} done, ${result.failed} failed`
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to run task ${taskId}`, error);
+      void vscode.window.showErrorMessage(`Failed to run task ${taskId}: ${msg}`);
+    }
+  }
+
   private async generateSpecCommand(): Promise<void> {
     const logger = this.services.get('logger') as Logger;
 
@@ -795,6 +866,28 @@ export class ForgeAIExtension {
     if (this.webviewManager) {
       this.webviewManager.dispose();
       this.webviewManager = undefined;
+    }
+  }
+
+  // ─── Bug Fix Commands ────────────────────────────────────────────────
+
+  private async fixBugCommand(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const ollama = this.services.get('ollama');
+
+    if (!ollama) {
+      void vscode.window.showWarningMessage('Ollama client not available. Cannot fix bug.');
+      return;
+    }
+
+    try {
+      const { BugFixCommandHandler } = await import('./bugfix/BugFixCommandHandler');
+      const handler = new BugFixCommandHandler(logger);
+      await handler.handleFixBugCommand({ execute: ollama.execute.bind(ollama) });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Bug fix command failed', error);
+      void vscode.window.showErrorMessage(`Bug fix failed: ${msg}`);
     }
   }
 }

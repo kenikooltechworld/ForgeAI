@@ -9,6 +9,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { SpecReader } from './SpecReader';
+import { PerTaskMultiAgentOrchestrator } from './PerTaskMultiAgentOrchestrator';
+import { BugFixOrchestrator } from './BugFixOrchestrator';
 import {
   ParsedSpec,
   ExecutableTask,
@@ -17,7 +19,6 @@ import {
   SpecExecutionOptions,
   SPEC_DIR_LAYOUT,
 } from './types';
-import { DEFAULT_MODEL } from '../config/ModelConfig';
 
 /**
  * Simple internal logger
@@ -27,9 +28,9 @@ class TaskLogger {
   constructor(prefix: string) {
     this.prefix = prefix;
   }
-  info(msg: string) {
-    // eslint-disable-next-line no-console
-    console.log(`[${this.prefix}] ${msg}`);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  info(_msg: string) {
+    // Suppressed — only errors and warnings are logged in production
   }
   warn(msg: string) {
     // eslint-disable-next-line no-console
@@ -47,12 +48,16 @@ class TaskLogger {
 export class SpecTaskExecutor {
   private readonly logger: TaskLogger;
   private readonly specReader: SpecReader;
+  private readonly multiAgentOrchestrator: PerTaskMultiAgentOrchestrator;
+  private readonly bugFixOrchestrator: BugFixOrchestrator;
   private isRunning = false;
   private shouldStop = false;
 
   constructor() {
     this.logger = new TaskLogger('SpecTaskExecutor');
     this.specReader = new SpecReader();
+    this.multiAgentOrchestrator = new PerTaskMultiAgentOrchestrator();
+    this.bugFixOrchestrator = new BugFixOrchestrator();
   }
 
   /**
@@ -95,8 +100,14 @@ export class SpecTaskExecutor {
         // Get next ready task
         const nextTask = this.specReader.getNextTask(spec);
         if (!nextTask) {
-          this.logger.info('No more tasks ready for execution.');
           break;
+        }
+
+        // Apply taskFilter if provided — skip tasks that don't match
+        if (opts.taskFilter && !opts.taskFilter(nextTask)) {
+          // Mark as skipped so getNextTask doesn't return it again
+          nextTask.status = 'skipped';
+          continue;
         }
 
         // Check for checkpoint — Phase Gate: run ALL tests for the phase at 100%
@@ -137,7 +148,6 @@ export class SpecTaskExecutor {
             if (opts.onCheckpoint) {
               const shouldContinue = await opts.onCheckpoint(phase);
               if (!shouldContinue) {
-                this.logger.info('Paused at checkpoint.');
                 break;
               }
             }
@@ -156,8 +166,6 @@ export class SpecTaskExecutor {
           nextTask.status = 'complete';
           nextTask.completedAt = Date.now();
           completed++;
-          this.logger.info(`Task ${nextTask.id} completed: ${nextTask.description}`);
-
           // Add to completed tasks in context
           specContext.completedTasks.push({
             taskId: nextTask.id,
@@ -174,14 +182,12 @@ export class SpecTaskExecutor {
           nextTask.completedAt = Date.now();
           nextTask.error = result.correctionInstructions || 'Compliance check failed';
           failed++;
-          this.logger.warn(`Task ${nextTask.id} failed: ${nextTask.description}`);
 
           if (opts.onTaskFail) {
             opts.onTaskFail(nextTask, nextTask.error);
           }
 
           if (!opts.continueOnFailure) {
-            this.logger.error('Stopping on task failure (continueOnFailure=false)');
             break;
           }
         }
@@ -208,7 +214,8 @@ export class SpecTaskExecutor {
   }
 
   /**
-   * Execute a single task using the AgentLoop
+   * Execute a single task using the 5-agent pipeline
+   * If task fails, use BugFixOrchestrator to diagnose and fix
    *
    * @param task — The task to execute
    * @param specContext — Full spec context injected into system prompt
@@ -219,74 +226,131 @@ export class SpecTaskExecutor {
     task: ExecutableTask,
     specContext: SpecContext,
     agentLoop: { execute: (...args: unknown[]) => Promise<void> },
-    options: SpecExecutionOptions
+    _options: SpecExecutionOptions
   ): Promise<ComplianceResult> {
     this.logger.info(`Executing task ${task.id}: ${task.description}`);
     task.status = 'in_progress';
     task.startedAt = Date.now();
 
-    // Build the task prompt with full context
-    const taskPrompt = this.buildTaskPrompt(task, specContext);
+    try {
+      // Execute task using 5-agent pipeline
+      const pipelineResult = await this.multiAgentOrchestrator.executeTaskWithMultiAgents(
+        task,
+        specContext,
+        agentLoop
+      );
 
-    let attempts = 0;
-    let lastResult: ComplianceResult | null = null;
+      // Check if all agents succeeded
+      if (pipelineResult.finalStatus === 'success') {
+        // Verify compliance with tests/compilation
+        const complianceResult = this.verifyCompliance(task, pipelineResult, specContext);
 
-    while (attempts <= options.maxRetries) {
-      attempts++;
-      task.retryCount = attempts - 1;
-
-      try {
-        // Execute via AgentLoop
-        // TODO: Phase 1.4 will wire this properly
-        // For now, this is the interface contract
-        const executionResult = await this.runAgentLoop(agentLoop, taskPrompt, task, specContext);
-
-        // Verify compliance
-        lastResult = this.verifyCompliance(task, executionResult, specContext);
-
-        if (lastResult.passed) {
-          return lastResult;
-        }
-
-        // Failed — should we retry?
-        if (attempts <= options.maxRetries && options.autoRetry) {
+        // If compliance check fails, try to fix it
+        if (!complianceResult.passed && task.retryCount < task.maxRetries) {
           this.logger.warn(
-            `Task ${task.id} failed compliance, retrying (${attempts}/${options.maxRetries})`
+            `Task ${task.id} failed compliance check. Attempting bug fix (attempt ${task.retryCount + 1}/${task.maxRetries})`
           );
-          // Update prompt with correction instructions for next attempt
-          // The correction instructions will be included in the next prompt
-        } else {
-          // No more retries
-          break;
+
+          task.retryCount++;
+          const bugFixResult = await this.bugFixOrchestrator.fixFailedTask(
+            task,
+            complianceResult.correctionInstructions || 'Compliance check failed',
+            specContext,
+            agentLoop,
+            task.retryCount,
+            task.maxRetries
+          );
+
+          if (bugFixResult.success) {
+            this.logger.info(`Bug fix successful for task ${task.id}. Retrying compliance check.`);
+            // Re-verify after fix
+            return this.verifyCompliance(task, pipelineResult, specContext);
+          } else {
+            this.logger.error(`Bug fix failed for task ${task.id}: ${bugFixResult.diagnosis}`);
+            return complianceResult;
+          }
         }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Task ${task.id} execution error: ${errorMsg}`);
 
-        lastResult = {
+        return complianceResult;
+      } else {
+        // Pipeline failed — try bug fix
+        const failedAgent = pipelineResult.results.find((r) => !r.success);
+        const errorMsg = failedAgent
+          ? `${failedAgent.agentName} agent failed: ${failedAgent.summary}`
+          : 'Multi-agent pipeline failed';
+
+        if (task.retryCount < task.maxRetries) {
+          this.logger.warn(
+            `Task ${task.id} pipeline failed. Attempting bug fix (attempt ${task.retryCount + 1}/${task.maxRetries})`
+          );
+
+          task.retryCount++;
+          const bugFixResult = await this.bugFixOrchestrator.fixFailedTask(
+            task,
+            errorMsg,
+            specContext,
+            agentLoop,
+            task.retryCount,
+            task.maxRetries
+          );
+
+          if (bugFixResult.success) {
+            this.logger.info(`Bug fix successful for task ${task.id}. Retrying pipeline.`);
+            // Retry the entire task
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+            return this.executeTask(task, specContext, agentLoop, _options);
+          } else {
+            this.logger.error(`Bug fix failed for task ${task.id}: ${bugFixResult.diagnosis}`);
+          }
+        }
+
+        return {
           passed: false,
-          criterionResults: [],
+          criterionResults: [
+            {
+              criterion: 'Multi-agent pipeline execution',
+              passed: false,
+              explanation: errorMsg,
+            },
+          ],
           score: 0,
-          correctionInstructions: `Execution error: ${errorMsg}`,
-          durationMs: 0,
+          correctionInstructions: errorMsg,
+          durationMs: pipelineResult.totalDurationMs,
         };
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
 
-        if (attempts <= options.maxRetries && options.autoRetry) {
-          this.logger.warn(`Task ${task.id} errored, retrying (${attempts}/${options.maxRetries})`);
-        } else {
-          break;
+      // Try bug fix on exception
+      if (task.retryCount < task.maxRetries) {
+        this.logger.warn(
+          `Task ${task.id} threw exception. Attempting bug fix (attempt ${task.retryCount + 1}/${task.maxRetries})`
+        );
+
+        task.retryCount++;
+        const bugFixResult = await this.bugFixOrchestrator.fixFailedTask(
+          task,
+          errorMsg,
+          specContext,
+          agentLoop,
+          task.retryCount,
+          task.maxRetries
+        );
+
+        if (bugFixResult.success) {
+          this.logger.info(`Bug fix successful for task ${task.id}. Retrying.`);
+          return this.executeTask(task, specContext, agentLoop, {} as SpecExecutionOptions);
         }
       }
-    }
 
-    return (
-      lastResult || {
+      return {
         passed: false,
         criterionResults: [],
         score: 0,
+        correctionInstructions: `Execution error: ${errorMsg}`,
         durationMs: 0,
-      }
-    );
+      };
+    }
   }
 
   /**
@@ -562,7 +626,6 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
     // If no specific test files found, run the full test suite
     if (allTestFiles.length === 0) {
       try {
-        this.logger.info(`Running full test suite for Phase ${phase.number}`);
         const output = execSync('npx jest --passWithNoTests --silent', {
           timeout: 300000,
           stdio: 'pipe',
@@ -581,7 +644,6 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
 
     // Run specific test files collected from phase tasks
     try {
-      this.logger.info(`Running Phase ${phase.number} tests: ${allTestFiles.join(', ')}`);
       const testCmd = `npx jest --passWithNoTests ${allTestFiles.join(' ')}`;
       const output = execSync(testCmd, {
         timeout: 300000,
@@ -600,51 +662,10 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
   }
 
   /**
-   * Run the AgentLoop with the task prompt and spec context
-   */
-  private async runAgentLoop(
-    agentLoop: { execute: (...args: unknown[]) => Promise<void> },
-    prompt: string,
-    task: ExecutableTask,
-    specContext: SpecContext
-  ): Promise<unknown> {
-    const messages = [
-      {
-        role: 'system' as const,
-        content: 'You are a task executor. Follow instructions precisely.',
-      },
-      { role: 'user' as const, content: prompt },
-    ];
-
-    const toolResults: unknown[] = [];
-
-    await agentLoop.execute(
-      messages,
-      (update: unknown) => {
-        const u = update as { type: string; content?: string };
-        if (u.type === 'complete' || u.type === 'toolComplete') {
-          toolResults.push(u);
-        }
-      },
-      [],
-      DEFAULT_MODEL,
-      { specContext }
-    );
-
-    return {
-      success: true,
-      artifacts: task.expectedArtifacts,
-      output: `Executed: ${task.description}`,
-      results: toolResults,
-    };
-  }
-
-  /**
    * Stop execution gracefully
    */
   public stop(): void {
     this.shouldStop = true;
-    this.logger.info('Stop requested. Finishing current task...');
   }
 
   /**

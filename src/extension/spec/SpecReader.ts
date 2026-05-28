@@ -27,8 +27,9 @@ class SpecLogger {
   constructor(prefix: string) {
     this.prefix = prefix;
   }
-  info(msg: string) {
-    console.log(`[${this.prefix}] ${msg}`);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  info(_msg: string) {
+    // Suppressed — only errors and warnings are logged in production
   }
   warn(msg: string) {
     console.warn(`[${this.prefix}] ${msg}`);
@@ -55,8 +56,6 @@ export class SpecReader {
    * @returns ParsedSpec with requirements, tasks, and phases
    */
   public async parseSpecDirectory(specDir: string): Promise<ParsedSpec> {
-    this.logger.info(`Parsing spec directory: ${specDir}`);
-
     const requirementsPath = path.join(specDir, SPEC_DIR_LAYOUT.requirementsFile);
     const tasksPath = path.join(specDir, SPEC_DIR_LAYOUT.tasksFile);
     const statusPath = path.join(specDir, SPEC_DIR_LAYOUT.statusFile);
@@ -515,7 +514,7 @@ export class SpecReader {
         }
       }
     } catch (err) {
-      this.logger.warn(`Failed to load saved status from ${statusPath}: ${err}`);
+      // Failed to load saved status
     }
   }
 
@@ -570,9 +569,8 @@ export class SpecReader {
 
     try {
       fs.writeFileSync(statusPath, JSON.stringify(statusData, null, 2));
-      this.logger.info(`Saved task status to ${statusPath}`);
     } catch (err) {
-      this.logger.error(`Failed to save status: ${err}`);
+      // Failed to save status
     }
   }
 }

@@ -16,7 +16,6 @@ export interface RoutingResult {
   classification: ClassificationResult;
   systemPrompt: string;
   shouldUseTool: boolean;
-  maxToolCalls: number;
   metadata: {
     category: MessageCategory;
     confidence: number;
@@ -48,14 +47,12 @@ export class MessageRouter {
 
     // 4. Get execution parameters
     const shouldUseTool = this.handlerManager.shouldUseTool(adjustedClassification.category);
-    const maxToolCalls = this.handlerManager.getMaxToolCalls(adjustedClassification.category);
 
     // 5. Create routing result
     const result: RoutingResult = {
       classification: adjustedClassification,
       systemPrompt,
       shouldUseTool,
-      maxToolCalls,
       metadata: {
         category: adjustedClassification.category,
         confidence: adjustedClassification.confidence,

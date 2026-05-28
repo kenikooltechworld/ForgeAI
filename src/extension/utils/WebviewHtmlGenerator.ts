@@ -66,20 +66,16 @@ export function getHtmlForWebview(
       </div>
     </div>
     <script nonce="${nonce}">
-      console.log('[ForgeAI] Webview initializing...');
       window.__FORGEAI_LOGO_URI__ = '${logoUri}';
       const vscodeApi = acquireVsCodeApi();
       window.vscode = vscodeApi;
-      console.log('[ForgeAI] VS Code API acquired');
       window.addEventListener('error', function(e) {
-        console.error('[ForgeAI] Global error:', e.message, e.filename, e.lineno);
         const root = document.getElementById('root');
         if (root) {
           root.innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground);font-family:var(--vscode-font-family);"><h3>ForgeAI Error</h3><pre>' + e.message + '<br/>' + (e.filename || '') + ':' + (e.lineno || '') + '</pre></div>';
         }
       });
       window.addEventListener('unhandledrejection', function(e) {
-        console.error('[ForgeAI] Unhandled rejection:', e.reason);
         const root = document.getElementById('root');
         if (root) {
           root.innerHTML = '<div style="padding:20px;color:var(--vscode-errorForeground);font-family:var(--vscode-font-family);"><h3>ForgeAI Error</h3><pre>Unhandled Promise Rejection:<br/>' + (e.reason && e.reason.message ? e.reason.message : String(e.reason)) + '</pre></div>';

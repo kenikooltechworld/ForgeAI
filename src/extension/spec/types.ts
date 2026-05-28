@@ -275,6 +275,9 @@ export interface SpecExecutionOptions {
 
   /** Callback for phase gate validation result */
   onPhaseGate?: (phase: TaskPhase, passed: boolean, output: string) => void;
+
+  /** Optional filter — if provided, only tasks where this returns true will be executed */
+  taskFilter?: (task: ExecutableTask) => boolean;
 }
 
 /**

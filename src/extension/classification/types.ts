@@ -28,7 +28,6 @@ export interface ResponseHandler {
   category: MessageCategory;
   systemPrompt: string;
   shouldUseTool: boolean;
-  maxToolCalls: number;
 }
 
 export interface ClassificationMetrics {

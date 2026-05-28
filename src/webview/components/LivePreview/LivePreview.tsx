@@ -182,7 +182,6 @@ export function LivePreview({ type = 'empty', data }: LivePreviewProps) {
   // This ensures the preview panel updates when new content arrives from the extension
   useEffect(() => {
     if (type !== activeView) {
-      console.log('[LivePreview] Type changed from', activeView, 'to', type);
       setActiveView(type);
     }
   }, [type]);

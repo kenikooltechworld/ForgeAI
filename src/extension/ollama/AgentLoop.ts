@@ -3,11 +3,14 @@ import { OllamaClient, OllamaMessage, OllamaToolCall } from './OllamaClient';
 import { StreamHandler } from './StreamHandler';
 import { Logger } from '../utils/Logger';
 import { ToolRegistry } from '../tools/ToolRegistry';
-import { generateSystemPrompt, getWorkspaceContext } from './SystemPrompt';
-import { MessageRouter, RoutingContext, RoutingResult } from '../classification/MessageRouter';
+import { generateSystemPrompt } from './SystemPrompt';
+import { MessageRouter, RoutingResult } from '../classification/MessageRouter';
 import type { RagService } from '../rag/RagService';
 import type { SpecContext } from '../spec/types';
 import { getConfiguredModel } from '../config/ModelConfig';
+import { commandTracker } from '../tools/CommandExecutionTracker';
+import { SessionContextInjector } from './SessionContextInjector';
+import { ContextManager } from '../spec/ContextManager';
 
 /**
  * Agent Loop Update Types
@@ -20,7 +23,6 @@ export interface AgentLoopUpdate {
     | 'toolComplete'
     | 'toolError'
     | 'complete'
-    | 'maxIterations'
     | 'terminalOutput'
     | 'classification';
   iteration?: number;
@@ -62,8 +64,6 @@ export interface AgentLoopUpdate {
  * Follows Requirements 18.1-18.5 and design.md Agent Loop specification
  */
 export class AgentLoop {
-  // Backward-compatible default cap (older UI/webview assumes a warning when capped)
-  private readonly defaultMaxIterations = 20; // Max iterations before stopping (Requirement 48.1, 48.2)
   private isRunning = false;
   private shouldStop = false;
   private messageRouter = new MessageRouter(); // Message classification system
@@ -77,11 +77,19 @@ export class AgentLoop {
   private fetchedPageUrls = new Set<string>();
   private webResearchCompleted = false;
 
+  // Track context limit reached for multi-agent handoff
+  private contextLimitReached = false;
+  private contextSummary = '';
+  private lastThreeMessages: OllamaMessage[] = [];
+
   constructor(
     private readonly ollamaClient: OllamaClient,
     private readonly logger: Logger,
     private readonly toolRegistry?: ToolRegistry,
-    private readonly ragService?: RagService
+    private readonly ragService?: RagService,
+    private readonly conversationMemory?: any,
+    private readonly sessionContextInjector?: SessionContextInjector,
+    private readonly contextManager?: ContextManager
   ) {}
 
   /**
@@ -96,10 +104,8 @@ export class AgentLoop {
     onUpdate: (update: AgentLoopUpdate) => void,
     tools: any[] = [],
     model: string = getConfiguredModel(),
-    options?: { maxIterations?: number; specContext?: SpecContext } // undefined => unbounded (autonomous)
+    options?: { specContext?: SpecContext; conversationId?: string }
   ): Promise<void> {
-    this.logger.info('Starting agent loop execution');
-    this.logger.info(`Using model: ${model}`);
     this.isRunning = true;
     this.shouldStop = false;
 
@@ -110,18 +116,13 @@ export class AgentLoop {
 
     // Get workspace context for system prompt and classification
     const workspaceContext = await this.gatherWorkspaceContext();
-    this.logger.info(
-      `Workspace context: ${workspaceContext.workspacePath || 'none'}, ` +
-        `${workspaceContext.currentFiles?.length || 0} recent files`
-    );
 
     // Get language preference from VS Code settings
     const config = vscode.workspace.getConfiguration('forgeai');
     const language = config.get<string>('language', 'English');
-    this.logger.info(`Language preference: ${language}`);
 
-    // Classify the user's message if this is the first user message
-    let routing: RoutingResult | undefined;
+    // Skip classification — always use tools and the base system prompt.
+    // The model decides autonomously when tools are needed.
     const userMessage = initialMessages.find((m) => m.role === 'user')?.content;
 
     // Always keep ragChunks available for the final systemPrompt as well.
@@ -135,92 +136,85 @@ export class AgentLoop {
           : [];
 
       ragChunks.push(...fetched);
-      this.logger.info(
-        `RAG retrieval: ${fetched.length} chunk(s) fetched${this.ragService ? '' : ' (service not configured)'}`
-      );
-
-      const routingContext: RoutingContext = {
-        userMessage,
-        workspaceContext: {
-          hasErrors: false, // TODO: Detect actual errors
-          isEmpty: !workspaceContext.currentFiles?.length,
-        },
-        sessionHistory: [], // TODO: Add session history
-      };
-
-      // Generate base system prompt (optionally grounded with RAG and spec context)
-      const baseSystemPrompt = generateSystemPrompt(
-        workspaceContext,
-        language,
-        ragChunks,
-        options?.specContext
-      );
-
-      // Route the message and get category-specific system prompt
-      routing = this.messageRouter.route(routingContext, baseSystemPrompt);
-
-      this.logger.info(
-        `Message classified as: ${routing.classification.category} ` +
-          `(confidence: ${routing.classification.confidence.toFixed(2)}) - ` +
-          `${routing.classification.reasoning}`
-      );
-
-      // Send classification update to webview
-      onUpdate({
-        type: 'classification',
-        classification: routing,
-      });
     }
 
-    // Prepare messages with appropriate system prompt.
-    // IMPORTANT: Always pass ragChunks into the fallback generateSystemPrompt so
-    // that the final system prompt is consistently grounded.
+    // Always use the base system prompt — no category overrides.
     const messages = [...initialMessages];
-    const systemPrompt =
-      routing?.systemPrompt ||
-      generateSystemPrompt(workspaceContext, language, ragChunks, options?.specContext);
+    let systemPrompt = generateSystemPrompt(
+      workspaceContext,
+      language,
+      ragChunks,
+      options?.specContext
+    );
+
+    // Inject session context if available (last 3 messages + summary from previous session)
+    if (this.sessionContextInjector && options?.conversationId) {
+      const sessionContext = await this.sessionContextInjector.getSessionContext(
+        options.conversationId
+      );
+      if (sessionContext) {
+        systemPrompt += `\n\n${sessionContext}`;
+      }
+    }
+
+    // Inject conversation memory to prevent redundant operations
+    if (this.conversationMemory) {
+      const memorySummary = this.conversationMemory.getMemorySummary(
+        options?.conversationId || 'default'
+      );
+      if (memorySummary.trim().length > 0) {
+        systemPrompt += `\n\n## What You've Already Done in This Conversation\n\n${memorySummary}`;
+      }
+    }
 
     if (messages.length === 0 || messages[0].role !== 'system') {
       messages.unshift({
         role: 'system',
         content: systemPrompt,
       });
-      this.logger.info('Category-specific system prompt prepended to messages');
     } else {
       // Replace existing system prompt with category-specific one
       messages[0] = {
         role: 'system',
         content: systemPrompt,
       };
-      this.logger.info('System prompt replaced with category-specific version');
     }
 
-    // Adjust tool usage based on classification
+    // Inject error resolution priority at the start
+    messages.push({
+      role: 'system',
+      content: `## ERROR RESOLUTION PROTOCOL
+
+🚨 CRITICAL PRIORITY: Solving errors is your #1 job. Never leave errors unresolved.
+
+When a command fails:
+1. READ the error message carefully
+2. UNDERSTAND what went wrong and where
+3. FIND the root cause
+4. APPLY a fix to the code/config
+5. VERIFY the fix works by running the command again
+6. ONLY THEN move forward
+
+If a command fails multiple times:
+- Do NOT keep running the same command
+- Do NOT ignore the error
+- STOP and analyze what's wrong
+- Try a different approach
+- Test each fix before moving on
+
+Remember: Wasting time on unresolved errors costs credits. Solve them right the first time.`,
+    });
+
+    // Always use all available tools — the model decides when to call them.
     let effectiveTools = tools;
-
-    if (routing) {
-      if (!routing.shouldUseTool) {
-        effectiveTools = []; // Disable tools for conversation/planning categories
-        this.logger.info('Tools disabled based on message classification');
-      }
-    }
 
     let iteration = 0;
     let lastRequestTime = 0; // Track last request time for rate limiting
     const MIN_REQUEST_INTERVAL = 500; // Minimum 500ms between requests
-    const maxIterations = options?.maxIterations ?? this.defaultMaxIterations;
 
     try {
       while (!this.shouldStop) {
         iteration++;
-        if (iteration > maxIterations) {
-          this.logger.warn(
-            `Agent loop stopped after ${maxIterations} iterations to prevent infinite loops`
-          );
-          onUpdate({ type: 'maxIterations', iteration });
-          break;
-        }
-        this.logger.info(`Agent loop iteration ${iteration}/${maxIterations}`);
         onUpdate({ type: 'iteration', iteration });
 
         // Rate limiting: Wait if we're making requests too quickly
@@ -228,38 +222,12 @@ export class AgentLoop {
         const timeSinceLastRequest = now - lastRequestTime;
         if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
           const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-          this.logger.info(`Rate limiting: waiting ${waitTime}ms before next request`);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
         lastRequestTime = Date.now();
 
-        this.logger.info(
-          `Sending to Ollama: model=${model}, messages=${messages.length}, tools=${effectiveTools.length}, think=true`
-        );
-        if (effectiveTools.length > 0) {
-          this.logger.info(
-            `Tool names being sent: ${effectiveTools.map((t: any) => t.function.name).join(', ')}`
-          );
-        } else {
-          this.logger.info(
-            'No tools being sent to Ollama (disabled by classification or not available)'
-          );
-        }
-
         // Get response from Ollama with streaming
         const streamHandler = new StreamHandler(this.logger);
-
-        // Track tool calls made this session to enforce maxToolCalls limit
-        const toolCallsMade = messages.filter(
-          (m) => m.role === 'assistant' && m.tool_calls?.length
-        ).length;
-        const maxToolCalls = routing?.maxToolCalls ?? this.defaultMaxIterations;
-        if (toolCallsMade >= maxToolCalls && effectiveTools.length > 0) {
-          this.logger.warn(
-            `Max tool calls (${maxToolCalls}) reached. Disabling tools to force chat response.`
-          );
-          effectiveTools = []; // Force the model to chat instead of calling more tools
-        }
 
         try {
           const result = await this.ollamaClient.chat({
@@ -268,7 +236,8 @@ export class AgentLoop {
             stream: true,
             think: true,
             tools: effectiveTools,
-            options: { num_ctx: 8192 }, // Prevent context overflow with large tool results
+            // Do NOT set num_ctx here — let the model use its full context window.
+            // The applySlidingWindow in OllamaClient handles context budget.
           });
 
           // Type guard: result should be AsyncGenerator when stream=true
@@ -276,7 +245,6 @@ export class AgentLoop {
             // Process stream chunks
             for await (const chunk of result) {
               if (this.shouldStop) {
-                this.logger.info('Agent loop stopped by user');
                 break;
               }
 
@@ -295,20 +263,30 @@ export class AgentLoop {
                 done: streamHandler.isDone(),
               });
 
-              // Log token usage when available
-              if (tokenUsage) {
-                this.logger.info(
-                  `📊📊📊 SENDING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(tokenUsage)}`
-                );
-              }
-
               if (streamHandler.isDone()) {
                 break;
               }
             }
           }
         } catch (error) {
-          this.logger.error('Error during Ollama chat in agent loop', error);
+          // Handle context overflow gracefully
+          if (error instanceof Error && error.message.includes('Context overflow')) {
+            // Context limit reached - prepare handoff to next agent
+            this.contextLimitReached = true;
+            this.contextSummary = await this.generateContextSummary(
+              messages,
+              'Context limit reached during execution'
+            );
+
+            onUpdate({
+              type: 'complete',
+              message: `Context limit reached. Preparing handoff to next agent with summary and last 3 messages.`,
+            });
+
+            break; // Exit the main loop gracefully
+          }
+
+          // Re-throw other errors
           throw error;
         }
 
@@ -316,26 +294,57 @@ export class AgentLoop {
         const accumulated = streamHandler.getAccumulatedMessage();
         const { thinking, content, tool_calls } = accumulated;
 
-        this.logger.info(
-          `Iteration ${iteration} complete: thinking=${!!thinking}, content=${!!content}, tool_calls=${tool_calls?.length || 0}`
-        );
-
         // Add assistant message to history
         messages.push({
           role: 'assistant',
-          content: content || '',
+          content: content || ' ', // Use space placeholder if content is empty
           thinking,
           tool_calls,
         });
+
+        // Apply context management: sliding window + compression
+        if (this.contextManager) {
+          // Apply sliding window to prevent context overflow
+          const windowedMessages = this.contextManager.applySlidingWindow(messages);
+
+          // Compress large messages
+          const compressedMessages = windowedMessages.map((m) =>
+            this.contextManager!.compressMessage(m)
+          );
+
+          // Replace messages with managed version
+          messages.length = 0;
+          messages.push(...compressedMessages);
+        }
+
+        // Track last 3 messages for context limit handoff
+        this.lastThreeMessages = messages.slice(-3);
+
+        // Check if context limit is being reached (85% of effective limit)
+        const totalTokens = messages.reduce((sum, m) => sum + this.estimateTokens(m.content), 0);
+        const contextWindow = this.getContextWindowSize(model);
+        const safeLimit = Math.floor(contextWindow * 0.95);
+        const effectiveLimit = safeLimit - 2000;
+
+        if (totalTokens > effectiveLimit * 0.85) {
+          // Context limit approaching - prepare handoff
+          this.contextLimitReached = true;
+          this.contextSummary = await this.generateContextSummary(messages, content);
+
+          // Notify about context limit
+          onUpdate({
+            type: 'complete',
+            message: `Context limit approaching. Preparing handoff to next agent with summary and last 3 messages.`,
+          });
+
+          break; // Stop this agent loop
+        }
 
         // Check if we need to execute tools
         if (!tool_calls || tool_calls.length === 0) {
           // HARD GATE: If webResearch was done but fetchPage never called, force the AI to continue
           if (this.webResearchCompleted && this.fetchedPageUrls.size === 0) {
             const urlsToFetch = Array.from(this.webResearchUrls).slice(0, 5);
-            this.logger.warn(
-              'HARD GATE BLOCKED: AI tried to finish without calling fetchPage after webResearch'
-            );
             // Replace the assistant's empty response with a system command
             messages.pop(); // Remove the assistant's empty message
             messages.push({
@@ -352,7 +361,6 @@ export class AgentLoop {
           }
 
           // No more tools, we're done
-          this.logger.info('Agent loop complete - no more tool calls');
           onUpdate({ type: 'complete' });
           break;
         }
@@ -360,11 +368,42 @@ export class AgentLoop {
         // Execute tools sequentially (Requirement 18.1)
         for (const toolCall of tool_calls) {
           if (this.shouldStop) {
-            this.logger.info('Agent loop stopped by user during tool execution');
             break;
           }
 
-          this.logger.info(`Executing tool: ${toolCall.function.name}`);
+          // CRITICAL: Prevent blind command retries
+          // If this is a runCommand tool and it's a blind retry, force error analysis first
+          if (toolCall.function.name === 'forgeai_runCommand') {
+            const command = toolCall.function.arguments.command;
+            const cwd = toolCall.function.arguments.cwd;
+
+            if (commandTracker.isBlindRetry(command, cwd)) {
+              const lastError = commandTracker.getLastError(command, cwd);
+              const consecutiveFailures = commandTracker.getConsecutiveFailures(command, cwd);
+
+              // Inject a system message to force error analysis
+              messages.push({
+                role: 'system',
+                content:
+                  `⛔ STOP. You are about to run the same command again without fixing the problem.\n\n` +
+                  `Command: ${command}\n` +
+                  `Last error: ${lastError}\n` +
+                  `Consecutive failures: ${consecutiveFailures}\n\n` +
+                  `You MUST:\n` +
+                  `1. Analyze WHY this command failed\n` +
+                  `2. Think of 2-3 possible solutions\n` +
+                  `3. Compare which solution is most likely to work\n` +
+                  `4. Apply the solution (modify code, config, or environment)\n` +
+                  `5. THEN retry the command\n\n` +
+                  `Do NOT just run the same command again. That wastes the user's credits.`,
+              });
+
+              // Skip this tool call and continue to next iteration
+              // The AI will be forced to think and apply a fix first
+              continue;
+            }
+          }
+
           const toolStartTime = Date.now(); // Track start time
           const toolExecutionId = `${toolCall.function.name}-${toolStartTime}`; // Generate unique ID once
           onUpdate({ type: 'toolStart', toolCall, toolExecutionId });
@@ -411,9 +450,6 @@ export class AgentLoop {
                 for (const r of results) {
                   if (r.url) this.webResearchUrls.add(r.url);
                 }
-                this.logger.info(
-                  `Tracked ${this.webResearchUrls.size} URLs from ${toolCall.function.name}`
-                );
               } catch {
                 // Ignore parse errors
               }
@@ -426,7 +462,6 @@ export class AgentLoop {
                     : (result as Record<string, unknown>);
                 const url = resultObj.url as string | undefined;
                 if (url) this.fetchedPageUrls.add(url);
-                this.logger.info(`Tracked fetchPage for ${url || 'unknown'}`);
               } catch {
                 // Ignore parse errors
               }
@@ -434,29 +469,143 @@ export class AgentLoop {
 
             // Check if this is a terminal command execution (Task 4.9)
             if (toolCall.function.name === 'forgeai_runCommand' && result) {
-              this.logger.info('Terminal command executed, sending output to webview');
+              const exitCode = result.exitCode || 0;
+              const stdout = result.stdout || '';
+              const stderr = result.stderr || '';
+              const command = result.command || toolCall.function.arguments.command;
+              const cwd = result.cwd || toolCall.function.arguments.cwd;
+
+              // Track command execution for blind retry detection
+              commandTracker.recordExecution(command, cwd, exitCode, stdout, stderr, toolDuration);
+
+              // CRITICAL: If command FAILED (exitCode !== 0), STOP and force error diagnosis
+              if (exitCode !== 0) {
+                // Command failed - inject mandatory error diagnosis gate
+                messages.push({
+                  role: 'tool',
+                  name: toolCall.function.name,
+                  content: JSON.stringify({
+                    command,
+                    cwd,
+                    exitCode,
+                    stdout,
+                    stderr,
+                    success: false,
+                  }),
+                });
+
+                // Inject system message to force error diagnosis BEFORE any further action
+                messages.push({
+                  role: 'system',
+                  content: `⛔ CRITICAL ERROR - STOP IMMEDIATELY
+
+Command FAILED with exit code ${exitCode}:
+${command}
+
+STDOUT:
+${stdout || '(empty)'}
+
+STDERR:
+${stderr || '(empty)'}
+
+🚨 ERROR RESOLUTION IS #1 PRIORITY 🚨
+
+You MUST NOT proceed until this error is SOLVED. Follow these steps:
+
+1. **ANALYZE THE ERROR**
+   - What does the error message say?
+   - Where did it occur (file, line, function)?
+   - What is the root cause?
+
+2. **FIND THE SOLUTION**
+   - What code/config needs to change?
+   - What is the fix?
+   - Why will this fix work?
+
+3. **APPLY THE FIX**
+   - Modify the code/config
+   - Verify the fix is correct
+   - Do NOT just run the same command again
+
+4. **VERIFY THE FIX**
+   - Run the command again
+   - Confirm it succeeds (exit code 0)
+   - If it still fails, go back to step 1
+
+DO NOT MOVE FORWARD UNTIL THIS ERROR IS COMPLETELY RESOLVED.
+DO NOT SKIP THIS STEP.
+DO NOT RUN THE SAME COMMAND TWICE WITHOUT FIXING THE PROBLEM.`,
+                });
+
+                // Skip adding to tool results - force the AI to think and fix first
+                onUpdate({
+                  type: 'terminalOutput',
+                  terminalData: {
+                    command,
+                    cwd,
+                    stdout,
+                    stderr,
+                    exitCode,
+                    timestamp: Date.now(),
+                  },
+                });
+
+                // Continue loop - AI will be forced to analyze and fix before proceeding
+                continue;
+              }
+
+              // Command succeeded - reset the fix flag
+              commandTracker.resetFixFlag(command, cwd);
+
               onUpdate({
                 type: 'terminalOutput',
                 terminalData: {
-                  command: result.command || toolCall.function.arguments.command,
-                  cwd: result.cwd || toolCall.function.arguments.cwd,
-                  stdout: result.stdout || '',
-                  stderr: result.stderr || '',
-                  exitCode: result.exitCode || 0,
+                  command,
+                  cwd,
+                  stdout,
+                  stderr,
+                  exitCode,
                   timestamp: Date.now(),
                 },
               });
             }
 
             // Add tool result to message history (Requirement 18.2)
-            // Truncate to prevent HTTP 400 from oversized payloads.
+            // Smart truncation based on content type
             const MAX_TOOL_RESULT_CHARS = 12_000;
             let toolResultJson = JSON.stringify(result);
+
             if (toolResultJson.length > MAX_TOOL_RESULT_CHARS) {
-              toolResultJson =
-                toolResultJson.slice(0, MAX_TOOL_RESULT_CHARS) +
-                `\n... [truncated — ${toolResultJson.length - MAX_TOOL_RESULT_CHARS} chars omitted]`;
+              // Try to parse as JSON for smart truncation
+              try {
+                const parsed = JSON.parse(toolResultJson);
+
+                // If it's a file read result, keep first 50 lines + last 50 lines
+                if (
+                  typeof parsed === 'object' &&
+                  parsed.content &&
+                  typeof parsed.content === 'string'
+                ) {
+                  const lines = parsed.content.split('\n');
+                  if (lines.length > 100) {
+                    const first50 = lines.slice(0, 50).join('\n');
+                    const last50 = lines.slice(-50).join('\n');
+                    parsed.content = `${first50}\n\n... [${lines.length - 100} lines omitted] ...\n\n${last50}`;
+                    toolResultJson = JSON.stringify(parsed);
+                  }
+                }
+              } catch {
+                // Not JSON, use simple truncation
+              }
+
+              // Final check: if still too large, truncate
+              if (toolResultJson.length > MAX_TOOL_RESULT_CHARS) {
+                toolResultJson =
+                  toolResultJson.slice(0, MAX_TOOL_RESULT_CHARS) +
+                  `\n... [truncated — ${toolResultJson.length - MAX_TOOL_RESULT_CHARS} chars omitted]`;
+              }
             }
+
             messages.push({
               role: 'tool',
               name: toolCall.function.name,
@@ -466,9 +615,6 @@ export class AgentLoop {
             // Reset failure count on success — the tool works again
             this.toolFailureCounts.delete(toolCall.function.name);
 
-            this.logger.info(
-              `Tool ${toolCall.function.name} completed successfully in ${toolDuration}ms`
-            );
             onUpdate({
               type: 'toolComplete',
               toolCall,
@@ -479,7 +625,6 @@ export class AgentLoop {
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             const toolDuration = Date.now() - toolStartTime; // Calculate duration even on error
-            this.logger.error(`Tool ${toolCall.function.name} failed`, error);
 
             // Track failures to detect loops
             const toolKey = `${toolCall.function.name}`;
@@ -522,6 +667,9 @@ export class AgentLoop {
           }
         }
 
+        // Log after tool execution loop completes — kept for debugging tool count issues
+        // (no-op info removed; shouldStop check below is the only logic here)
+
         // Enforce fetchPage after webResearch: if webResearch was done but no fetchPage
         // has been called yet, inject a system reminder before the next LLM call
         if (
@@ -537,7 +685,6 @@ export class AgentLoop {
               urlsToFetch.join(', ') +
               `. The search snippets are NOT enough — you need the FULL page content for accurate specs and plans.`;
             messages.push({ role: 'system', content: reminder });
-            this.logger.info('Injected fetchPage enforcement reminder');
           }
         }
 
@@ -554,7 +701,7 @@ export class AgentLoop {
               t.function?.name !== 'forgeai_webSearch' && t.function?.name !== 'forgeai_webResearch'
           );
           if (effectiveTools.length < before) {
-            this.logger.info('Disabled webSearch/webResearch tools to prevent duplicate searches');
+            // webSearch/webResearch disabled to prevent duplicate searches
           }
         }
 
@@ -574,7 +721,6 @@ export class AgentLoop {
    * Stop the agent loop
    */
   public stop(): void {
-    this.logger.info('Stopping agent loop');
     this.shouldStop = true;
   }
 
@@ -604,6 +750,104 @@ export class AgentLoop {
    */
   public getRoutingHistory() {
     return this.messageRouter.getHistory();
+  }
+
+  /**
+   * Check if context limit was reached
+   */
+  public isContextLimitReached(): boolean {
+    return this.contextLimitReached;
+  }
+
+  /**
+   * Get context summary for handoff to next agent
+   */
+  public getContextSummary(): string {
+    return this.contextSummary;
+  }
+
+  /**
+   * Get last 3 messages for handoff to next agent
+   */
+  public getLastThreeMessages(): OllamaMessage[] {
+    return this.lastThreeMessages;
+  }
+
+  /**
+   * Generate summary of current work for multi-agent handoff
+   */
+  private async generateContextSummary(
+    messages: OllamaMessage[],
+    lastContent: string
+  ): Promise<string> {
+    // Extract key information from recent messages
+    const recentMessages = messages.slice(-10);
+    const userMessages = recentMessages.filter((m) => m.role === 'user');
+    const assistantMessages = recentMessages.filter((m) => m.role === 'assistant');
+
+    // Build summary from last few exchanges
+    const summary = `
+## Work Summary
+
+**Last Action:** ${lastContent.substring(0, 200)}...
+
+**Recent Progress:**
+${assistantMessages
+  .slice(-3)
+  .map((m) => `- ${m.content.substring(0, 100)}...`)
+  .join('\n')}
+
+**User Requests:**
+${userMessages
+  .slice(-3)
+  .map((m) => `- ${m.content.substring(0, 100)}...`)
+  .join('\n')}
+
+**Continue with:** The next agent should continue from where this agent left off using the last 3 messages below.
+`;
+
+    return summary;
+  }
+
+  /**
+   * Estimate token count for text
+   */
+  private estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Get context window size for model
+   */
+  private getContextWindowSize(model: string): number {
+    const contextWindows: Record<string, number> = {
+      'gpt-oss-120b-cloud': 131_072,
+      'gemma4-31b-cloud': 256_000,
+      'qwen3.5-397b-cloud': 128_000,
+      'deepseek-v3.1-671b-cloud': 128_000,
+      'kimi-k2.5-cloud': 256_000,
+      'qwen3-vl-8b': 32_768,
+      'qwen3-coder-30b': 32_768,
+      'deepseek-r1-8b': 32_768,
+      'gemma4-e4b': 128_000,
+      'qwen3.5-9b': 32_768,
+      'llava-7b': 4_096,
+      'llava-13b': 8_192,
+    };
+
+    const lower = model.toLowerCase().replace(/:/g, '-');
+    if (contextWindows[model]) return contextWindows[model];
+
+    for (const [key, value] of Object.entries(contextWindows)) {
+      if (key.toLowerCase() === lower) return value;
+    }
+
+    for (const [key, value] of Object.entries(contextWindows)) {
+      const normKey = key.toLowerCase().replace(/:/g, '-');
+      if (lower.includes(normKey) || normKey.includes(lower)) return value;
+    }
+
+    return 32_768;
   }
 
   /**
@@ -657,6 +901,14 @@ export class AgentLoop {
    * Gather workspace context for system prompt generation
    */
   private async gatherWorkspaceContext(): Promise<import('./SystemPrompt').WorkspaceContext> {
+    // Check cache first (30 second TTL)
+    if (this.conversationMemory) {
+      const cached = this.conversationMemory.getCachedWorkspaceTree();
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    }
+
     const workspaceFolders = vscode.workspace.workspaceFolders;
 
     if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -682,13 +934,20 @@ export class AgentLoop {
 
     const workspaceTree = this.buildCompactTree(workspaceFiles, 60);
 
-    return {
+    const context = {
       workspacePath,
       openFiles,
       currentFiles: openFiles,
       workspaceFiles,
       workspaceTree,
     };
+
+    // Cache for 30 seconds
+    if (this.conversationMemory) {
+      this.conversationMemory.setCachedWorkspaceTree(JSON.stringify(context));
+    }
+
+    return context;
   }
 
   /**

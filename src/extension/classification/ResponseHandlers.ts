@@ -24,7 +24,6 @@ You are answering a user's question. Your goal is to provide clear, accurate inf
 - Be concise but thorough
 - Use natural, conversational language`,
     shouldUseTool: true,
-    maxToolCalls: 3,
   },
   {
     category: MessageCategory.PLANNING,
@@ -69,7 +68,6 @@ Your training data is outdated. Before proposing ANY plan or creating ANY spec:
 - Ask clarifying questions if requirements are vague
 - Do NOT create a spec without the user's explicit request or agreement`,
     shouldUseTool: true,
-    maxToolCalls: 10,
   },
   {
     category: MessageCategory.EXECUTION,
@@ -91,7 +89,6 @@ You are executing a specific task. Your goal is to implement the requested chang
 - Mention any issues you fixed along the way
 - Be concise about your process`,
     shouldUseTool: true,
-    maxToolCalls: 10,
   },
   {
     category: MessageCategory.ANALYSIS,
@@ -113,7 +110,6 @@ You are analyzing code, systems, or problems. Your goal is to investigate and pr
 - Prioritize findings by importance
 - Be objective and constructive`,
     shouldUseTool: true,
-    maxToolCalls: 5,
   },
   {
     category: MessageCategory.CONVERSATION,
@@ -135,7 +131,6 @@ You are having a natural conversation with the user. Your goal is to be helpful 
 - Keep responses proportional to the input
 - Show understanding and empathy when appropriate`,
     shouldUseTool: true,
-    maxToolCalls: 3,
   },
 ];
 
@@ -146,7 +141,6 @@ export class ResponseHandlerManager {
   getHandler(category: MessageCategory): ResponseHandler {
     const handler = RESPONSE_HANDLERS.find((h) => h.category === category);
     if (!handler) {
-      // Fallback to conversation handler
       return RESPONSE_HANDLERS.find((h) => h.category === MessageCategory.CONVERSATION)!;
     }
     return handler;
@@ -164,8 +158,7 @@ ${handler.systemPrompt}
 
 ## Tool Usage Guidelines:
 - Should use tools: ${handler.shouldUseTool}
-- Maximum tool calls: ${handler.maxToolCalls}
-- Use tools efficiently and purposefully`;
+- Use tools as many times as needed — there is no limit`;
   }
 
   /**
@@ -174,13 +167,5 @@ ${handler.systemPrompt}
   shouldUseTool(category: MessageCategory): boolean {
     const handler = this.getHandler(category);
     return handler.shouldUseTool;
-  }
-
-  /**
-   * Get maximum tool calls allowed for this category
-   */
-  getMaxToolCalls(category: MessageCategory): number {
-    const handler = this.getHandler(category);
-    return handler.maxToolCalls;
   }
 }

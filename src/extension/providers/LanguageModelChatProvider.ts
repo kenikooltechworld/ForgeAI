@@ -30,21 +30,15 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
    */
   async provideLanguageModelChatInformation(
     options: { silent: boolean },
-    token: vscode.CancellationToken
+    _token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelChatInformation[]> {
-    this.logger.info('provideLanguageModelChatInformation called');
-
     if (options.silent) {
-      this.logger.info('Silent mode - returning empty array');
       return [];
     }
 
     try {
       // Fetch available models from Ollama
       const models = await this.fetchOllamaModels();
-
-      this.logger.info(`Found ${models.length} models from Ollama`);
-
       return models;
     } catch (error) {
       this.logger.error('Failed to fetch Ollama models', error);
@@ -60,21 +54,16 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
   async provideLanguageModelChatResponse(
     model: vscode.LanguageModelChatInformation,
     messages: readonly vscode.LanguageModelChatRequestMessage[],
-    options: any,
+    _options: any,
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     token: vscode.CancellationToken
   ): Promise<void> {
-    this.logger.info(`provideLanguageModelChatResponse called for model: ${model.id}`);
-
     try {
       // Convert VS Code messages to Ollama format
       const ollamaMessages = this.convertMessages(messages);
 
-      this.logger.info(`Sending ${ollamaMessages.length} messages to Ollama`);
-
       // Get tools from ToolRegistry instead of options
       const tools = this.toolRegistry ? this.toolRegistry.getToolDefinitions() : [];
-      this.logger.info(`Using ${tools.length} tools from ToolRegistry`);
 
       // Stream response from Ollama
       const stream = (await this.ollamaClient.chat({
@@ -88,7 +77,6 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
       // Forward chunks to VS Code
       for await (const chunk of stream) {
         if (token.isCancellationRequested) {
-          this.logger.info('Request cancelled by user');
           break;
         }
 
@@ -110,8 +98,6 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
           }
         }
       }
-
-      this.logger.info('Response streaming completed');
     } catch (error) {
       this.logger.error('Error in provideLanguageModelChatResponse', error);
       throw error;
@@ -123,19 +109,13 @@ export class LanguageModelChatProvider implements vscode.LanguageModelChatProvid
    * Requirement 2.5: Return estimated token count
    */
   async provideTokenCount(
-    model: vscode.LanguageModelChatInformation,
+    _model: vscode.LanguageModelChatInformation,
     text: string | vscode.LanguageModelChatRequestMessage,
-    token: vscode.CancellationToken
+    _token: vscode.CancellationToken
   ): Promise<number> {
     // Simple estimation: ~4 characters per token
     const textContent = typeof text === 'string' ? text : this.extractTextContent(text);
-    const tokenCount = Math.ceil(textContent.length / 4);
-
-    this.logger.info(
-      `Token count estimation: ${tokenCount} tokens for ${textContent.length} characters`
-    );
-
-    return tokenCount;
+    return Math.ceil(textContent.length / 4);
   }
 
   /**

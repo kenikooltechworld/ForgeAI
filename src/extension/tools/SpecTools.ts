@@ -262,7 +262,7 @@ export class SpecTools {
                 { role: 'user', content: userPrompt },
               ],
               stream: false,
-              options: { temperature: 0.3, num_ctx: 8192 },
+              options: { temperature: 0.3 },
             });
             const chatResponse = response as { message: { content: string } };
             return chatResponse.message.content;

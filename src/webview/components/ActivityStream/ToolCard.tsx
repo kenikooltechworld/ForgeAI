@@ -22,6 +22,38 @@ import {
   ChevronDown,
 } from 'lucide-react';
 
+/**
+ * Format milliseconds to human-readable time string
+ * Examples: 500ms → "500ms", 1500ms → "1s 500ms", 65000ms → "1m 5s"
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${Math.round(ms)}ms`;
+  }
+
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const milliseconds = Math.round(ms % 1000);
+
+  const parts: string[] = [];
+
+  if (hours > 0) {
+    parts.push(`${hours}h`);
+  }
+  if (minutes > 0) {
+    parts.push(`${minutes}m`);
+  }
+  if (seconds > 0) {
+    parts.push(`${seconds}s`);
+  }
+  if (milliseconds > 0 && ms < 60000) {
+    parts.push(`${milliseconds}ms`);
+  }
+
+  return parts.join(' ');
+}
+
 export interface ToolCardProps {
   toolName: string;
   target?: string;
@@ -150,7 +182,7 @@ function ToolCard({
             />
             <span className="text-xs" style={{ color: 'var(--vscode-charts-blue)' }}>
               Running
-              {elapsedTime > 0 && ` (${Math.round(elapsedTime)}ms)`}
+              {elapsedTime > 0 && ` (${formatDuration(elapsedTime)})`}
             </span>
           </div>
         );
@@ -160,7 +192,7 @@ function ToolCard({
             <Check size={16} style={{ color: 'var(--vscode-testing-iconPassed)' }} />
             <span className="text-xs" style={{ color: 'var(--vscode-testing-iconPassed)' }}>
               Complete
-              {duration !== undefined && ` (${duration}ms)`}
+              {duration !== undefined && ` (${formatDuration(duration)})`}
             </span>
           </div>
         );

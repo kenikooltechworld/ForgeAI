@@ -37,8 +37,6 @@ export class ToolRegistry implements vscode.Disposable {
    * This will be called during extension activation
    */
   public registerAllTools(): void {
-    this.logger.info('Registering all tools...');
-
     // Register file system tools (Task 4.2)
     const { FileSystemTools } = require('./FileSystemTools');
     const fsTools = new FileSystemTools();
@@ -125,9 +123,6 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(specTools.startTask());
     this.registerTool(specTools.runAllTasks());
     this.registerTool(specTools.approveSpec());
-
-    this.logger.info(`✅ Tool registry initialized with ${this.tools.size} tools`);
-    this.logger.info(`✅ Registered tools: ${this.getToolNames().join(', ')}`);
   }
 
   /**
@@ -138,8 +133,6 @@ export class ToolRegistry implements vscode.Disposable {
    * Requirements: 5.1, 5.2
    */
   public registerTool(tool: Tool): void {
-    this.logger.info(`Registering tool: ${tool.name}`);
-
     // Store tool in registry
     this.tools.set(tool.name, tool);
 
@@ -154,8 +147,6 @@ export class ToolRegistry implements vscode.Disposable {
         options: vscode.LanguageModelToolInvocationPrepareOptions<any>,
         token: vscode.CancellationToken
       ) => {
-        this.logger.info(`Preparing invocation for tool: ${tool.name}`);
-
         return {
           invocationMessage: `Executing ${tool.name}...`,
           confirmationMessages: {
@@ -175,12 +166,9 @@ export class ToolRegistry implements vscode.Disposable {
         options: vscode.LanguageModelToolInvocationOptions<any>,
         token: vscode.CancellationToken
       ) => {
-        this.logger.info(`Invoking tool: ${tool.name} with args:`, options.input);
-
         try {
           // Check cancellation before execution
           if (token.isCancellationRequested) {
-            this.logger.info(`Tool ${tool.name} cancelled before execution`);
             return new vscode.LanguageModelToolResult([
               new vscode.LanguageModelTextPart(
                 JSON.stringify({ error: 'Tool execution cancelled' })
@@ -193,7 +181,6 @@ export class ToolRegistry implements vscode.Disposable {
 
           // Check cancellation after execution
           if (token.isCancellationRequested) {
-            this.logger.info(`Tool ${tool.name} cancelled after execution`);
             return new vscode.LanguageModelToolResult([
               new vscode.LanguageModelTextPart(
                 JSON.stringify({ error: 'Tool execution cancelled' })
@@ -223,8 +210,6 @@ export class ToolRegistry implements vscode.Disposable {
 
     this.disposables.push(disposable);
     this.context.subscriptions.push(disposable);
-
-    this.logger.info(`✅ Tool ${tool.name} registered with VS Code LM Tools API`);
   }
 
   /**
@@ -279,7 +264,6 @@ export class ToolRegistry implements vscode.Disposable {
     try {
       // Check cancellation before execution
       if (token?.isCancellationRequested) {
-        this.logger.info(`Tool ${name} cancelled before execution`);
         throw new Error('Tool execution cancelled');
       }
 
@@ -287,11 +271,9 @@ export class ToolRegistry implements vscode.Disposable {
 
       // Check cancellation after execution
       if (token?.isCancellationRequested) {
-        this.logger.info(`Tool ${name} cancelled after execution`);
         throw new Error('Tool execution cancelled');
       }
 
-      this.logger.info(`Tool ${name} executed successfully`);
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

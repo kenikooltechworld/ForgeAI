@@ -210,19 +210,16 @@ function MessageInput({ conversationId }: MessageInputProps) {
           }
         }
 
-        // Get conversation history for context
-        const conversationHistory = conversation?.messages || [];
-
         // Get the model for this conversation
         const model = conversation?.model || 'gpt-oss:120b-cloud';
 
-        // Send to extension host with conversation history and model
+        // Send to extension host with ONLY the current message
+        // The extension manages conversation history internally to avoid HTTP 400 errors
         if (window.vscode) {
           window.vscode.postMessage({
             type: 'sendMessage',
             conversationId,
             content,
-            conversationHistory,
             model, // Include selected model
             images: attachedImages.map((img) => ({
               name: img.name,

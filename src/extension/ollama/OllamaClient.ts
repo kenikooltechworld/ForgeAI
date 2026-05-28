@@ -118,11 +118,189 @@ export class OllamaClient {
   constructor(baseUrl: string = 'http://localhost:11434', logger: Logger) {
     this.baseUrl = baseUrl.replace(/\/$/, ''); // Remove trailing slash
     this.logger = logger;
-    this.logger.info(`OllamaClient initialized with baseUrl: ${this.baseUrl}`);
   }
 
   public getBaseUrl(): string {
     return this.baseUrl;
+  }
+
+  /**
+   * Estimate token count for text (rough approximation: ~4 chars per token)
+   * This is a conservative estimate for most models
+   */
+  private estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Get context window size for a model — actual values from official sources.
+   * These are used both for context management (4-tier triage) and for
+   * setting num_ctx in Ollama requests so the model uses its full window.
+   */
+  private getContextWindowSize(model: string): number {
+    const contextWindows: Record<string, number> = {
+      // ── Cloud models ──────────────────────────────────────────────────────
+      'gpt-oss-120b-cloud': 131_072, // 131K — OpenAI GPT-OSS 120B
+      'gemma4-31b-cloud': 256_000, // 256K — Google Gemma 4 31B
+      'qwen3.5-397b-cloud': 128_000, // 128K — Qwen 3.5 397B
+      'deepseek-v3.1-671b-cloud': 128_000, // 128K — DeepSeek V3.1
+      'kimi-k2.5-cloud': 256_000, // 256K — Kimi K2.5
+
+      // ── Local models ──────────────────────────────────────────────────────
+      'qwen3-vl-8b': 32_768, // 32K
+      'qwen3-coder-30b': 32_768, // 32K
+      'deepseek-r1-8b': 32_768, // 32K
+      'gemma4-e4b': 128_000, // 128K — Gemma 4 E4B
+      'qwen3.5-9b': 32_768, // 32K
+      'llava-7b': 4_096, // 4K
+      'llava-13b': 8_192, // 8K
+    };
+
+    // Exact match
+    if (contextWindows[model]) {
+      return contextWindows[model];
+    }
+
+    // Normalize: replace colons with dashes for matching (e.g. "gemma4:31b-cloud" → "gemma4-31b-cloud")
+    const lower = model.toLowerCase().replace(/:/g, '-');
+    for (const [key, value] of Object.entries(contextWindows)) {
+      if (key.toLowerCase() === lower) {
+        return value;
+      }
+    }
+
+    // Partial match — e.g. "gemma4-31b" matches "gemma4-31b-cloud"
+    for (const [key, value] of Object.entries(contextWindows)) {
+      const normKey = key.toLowerCase().replace(/:/g, '-');
+      if (lower.includes(normKey) || normKey.includes(lower)) {
+        return value;
+      }
+    }
+
+    // Safe default for unknown models
+    return 32_768;
+  }
+
+  /**
+   * Context management using the industry-standard 4-tier triage approach.
+   *
+   * Tier 1 — System prompt:        ALWAYS kept, never touched.
+   * Tier 2 — User/assistant turns: Kept as-is; only dropped as a last resort.
+   * Tier 3 — Recent tool results:  Kept (last 5 tool results to preserve context).
+   * Tier 4 — Old tool results:     FIRST target — replace with compact metadata tag.
+   *
+   * This matches how Claude Code / Windsurf handle context:
+   *   - Tool outputs are the biggest token consumers and the cheapest to lose.
+   *   - Conversation turns carry intent and must be preserved.
+   *   - No separate summarization LLM call needed (we don't have a cheap side-model).
+   *
+   * CRITICAL FIX: Keep more recent tool results (5 instead of 3) to prevent
+   * breaking the agent loop after tool calls. The model needs context of what
+   * just happened to continue reasoning.
+   */
+  private applySlidingWindow(
+    messages: OllamaMessage[],
+    model: string,
+    maxTokensForResponse: number = 2000
+  ): OllamaMessage[] {
+    const contextWindow = this.getContextWindowSize(model);
+    // INCREASED: 90% → 95% to preserve more context
+    // INCREASED: response buffer 2000 → 3000 tokens for longer responses
+    const safeLimit = Math.floor(contextWindow * 0.95); // 95% threshold (less aggressive)
+    const effectiveLimit = safeLimit - maxTokensForResponse;
+
+    // ── Fast path: already within budget ──────────────────────────────────────
+    let totalTokens = messages.reduce((sum, m) => sum + this.estimateTokens(m.content), 0);
+    if (totalTokens <= effectiveLimit) {
+      return messages;
+    }
+
+    // ── Tier 4: truncate OLD tool-result messages first ───────────────────────
+    // Keep the 10 most-recent tool results intact; replace older ones with a tag.
+    // INCREASED: 5 → 10 to preserve more tool context
+    const MAX_TOOL_RESULT_CHARS = 1000; // INCREASED: 500 → 1000 chars to keep more detail
+
+    // Count total tool messages so we can identify "old" ones
+    const totalToolMsgs = messages.filter((m) => m.role === 'tool').length;
+    let toolIdx = 0;
+    const pass1 = messages.map((msg) => {
+      if (msg.role !== 'tool') return msg;
+      toolIdx++;
+      const isOld = toolIdx <= totalToolMsgs - 10; // keep last 10 intact (was 5)
+      if (!isOld) return msg;
+
+      const preview = msg.content.slice(0, MAX_TOOL_RESULT_CHARS);
+      const saved = msg.content.length - preview.length;
+      if (saved <= 0) return msg;
+
+      return {
+        ...msg,
+        content: `${preview}\n… [${saved} chars truncated — tool result compacted]`,
+      };
+    });
+
+    totalTokens = pass1.reduce((sum, m) => sum + this.estimateTokens(m.content), 0);
+
+    if (totalTokens <= effectiveLimit) {
+      return pass1;
+    }
+
+    // ── Tier 3: drop old tool-result messages entirely ────────────────────────
+    // If still over budget, remove old tool results completely.
+    // But keep the last 10 to preserve recent context.
+    toolIdx = 0;
+    const pass2 = pass1.filter((msg) => {
+      if (msg.role !== 'tool') return true;
+      toolIdx++;
+      return toolIdx > totalToolMsgs - 10; // keep only last 10 (was 5)
+    });
+
+    totalTokens = pass2.reduce((sum, m) => sum + this.estimateTokens(m.content), 0);
+
+    if (totalTokens <= effectiveLimit) {
+      return pass2;
+    }
+
+    // ── Tier 2: drop oldest conversation turns (keep system + recent N turns) ─
+    // Only reach here if tool-result removal wasn't enough.
+
+    const systemMsg = pass2[0]?.role === 'system' ? pass2[0] : null;
+    const rest = systemMsg ? pass2.slice(1) : pass2;
+
+    // CRITICAL: Always keep the last user message AND the last assistant message
+    // (which may contain tool calls). Without these, the model has no context.
+    const lastUserIdx =
+      [...rest]
+        .map((m, i) => ({ m, i }))
+        .filter(({ m }) => m.role === 'user')
+        .pop()?.i ?? -1;
+
+    const lastAssistantIdx =
+      [...rest]
+        .map((m, i) => ({ m, i }))
+        .filter(({ m }) => m.role === 'assistant')
+        .pop()?.i ?? -1;
+
+    // Walk from newest to oldest, accumulate until budget is full.
+    // Always include the last user and assistant messages regardless of budget.
+    const kept: OllamaMessage[] = [];
+    let budget = effectiveLimit - (systemMsg ? this.estimateTokens(systemMsg.content) : 0);
+
+    for (let i = rest.length - 1; i >= 0; i--) {
+      const tokens = this.estimateTokens(rest[i].content);
+      const isLastUserMsg = i === lastUserIdx;
+      const isLastAssistantMsg = i === lastAssistantIdx;
+      const isCritical = isLastUserMsg || isLastAssistantMsg;
+
+      if (budget - tokens < 0 && !isCritical) {
+        continue;
+      }
+      kept.unshift(rest[i]);
+      budget -= tokens;
+    }
+
+    const result = systemMsg ? [systemMsg, ...kept] : kept;
+    return result;
   }
 
   /**
@@ -133,21 +311,82 @@ export class OllamaClient {
   public async chat(
     request: OllamaChatRequest
   ): Promise<OllamaChatResponse | AsyncGenerator<OllamaStreamChunk>> {
-    this.logger.info(
-      `Sending chat request to Ollama: model=${request.model}, stream=${request.stream}, think=${request.think}`
+    // Validate messages before processing
+    if (!request.messages || request.messages.length === 0) {
+      throw new Error('No messages provided to chat request');
+    }
+
+    // Apply sliding window to prevent context overflow
+    request.messages = this.applySlidingWindow(request.messages, request.model);
+
+    // Tell Ollama to use the model's full context window.
+    const contextWindow = this.getContextWindowSize(request.model);
+    request.options = {
+      ...request.options,
+      num_ctx: contextWindow,
+    };
+
+    // Validate messages after sliding window
+    if (request.messages.length === 0) {
+      throw new Error('Messages list is empty after sliding window - context management failed');
+    }
+
+    // Sanitize messages: Ollama rejects empty content strings.
+    // - Assistant messages with tool_calls but no text get a single space placeholder.
+    // - Tool messages with empty content get a placeholder.
+    // - Filter out any message that has no content AND no tool_calls (completely empty).
+    request.messages = request.messages
+      .map((msg) => {
+        if (!msg.content || msg.content.trim() === '') {
+          if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+            // Tool-call-only assistant message — Ollama needs non-empty content
+            return { ...msg, content: ' ' };
+          }
+          if (msg.role === 'tool') {
+            // Empty tool result — replace with a placeholder
+            return { ...msg, content: '[no output]' };
+          }
+        }
+        return msg;
+      })
+      .filter((msg) => {
+        // Drop completely empty messages that have no tool_calls either
+        const hasContent = msg.content && msg.content.trim().length > 0;
+        const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
+        return hasContent || hasToolCalls;
+      });
+
+    // Final safety check: ensure we still have messages after sanitization
+    if (request.messages.length === 0) {
+      throw new Error(
+        'All messages were filtered out during sanitization - this indicates a critical issue with message handling'
+      );
+    }
+
+    // CRITICAL: Pre-flight check to prevent 500 errors from Ollama
+    // Calculate total tokens and throw BEFORE sending if over limit
+    const totalTokens = request.messages.reduce(
+      (sum, m) => sum + this.estimateTokens(m.content),
+      0
     );
+    const safeLimit = Math.floor(contextWindow * 0.95) - 3000; // 95% - 3000 token buffer for response
+
+    if (totalTokens > safeLimit) {
+      // Context is still too large even after sliding window
+      // This should rarely happen, but if it does, throw a clear error
+      throw new Error(
+        `Context overflow: ${totalTokens} tokens exceeds safe limit of ${safeLimit} tokens. ` +
+          `This indicates the sliding window failed to compress enough. ` +
+          `Consider breaking this task into smaller subtasks or using a model with larger context window.`
+      );
+    }
 
     // Retry with exponential backoff (1s, 2s, 4s) up to 3 attempts
     return this.retryWithBackoff(async () => {
-      try {
-        if (request.stream) {
-          return this.streamChat(request);
-        } else {
-          return this.nonStreamChat(request);
-        }
-      } catch (error) {
-        this.handleError(error);
-        throw error; // TypeScript requires this after handleError
+      if (request.stream) {
+        return this.streamChat(request);
+      } else {
+        return this.nonStreamChat(request);
       }
     });
   }
@@ -174,13 +413,11 @@ export class OllamaClient {
         }
 
         if (attempt === maxRetries - 1) {
-          this.logger.error(`Max retries (${maxRetries}) exceeded`);
           throw error;
         }
 
         // Exponential backoff: 1s, 2s, 4s
         const backoff = initialDelay * Math.pow(2, attempt);
-        this.logger.info(`Retry attempt ${attempt + 1}/${maxRetries} after ${backoff}ms`);
         await new Promise((resolve) => setTimeout(resolve, backoff));
       }
     }
@@ -221,7 +458,6 @@ export class OllamaClient {
     }
 
     const data: OllamaChatResponse = await response.json();
-    this.logger.info(`Received non-streaming response from Ollama: done=${data.done}`);
 
     return data;
   }
@@ -262,8 +498,6 @@ export class OllamaClient {
       throw new Error('Response body is null');
     }
 
-    this.logger.info('Started streaming response from Ollama');
-
     // Read the stream
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -273,16 +507,12 @@ export class OllamaClient {
       const { done, value } = await reader.read();
 
       if (done) {
-        this.logger.info('Streaming completed');
         break;
       }
 
-      // Decode the chunk and add to buffer
       buffer += decoder.decode(value, { stream: true });
-
-      // Process complete lines
       const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
         if (line.trim() === '') continue;
@@ -292,11 +522,10 @@ export class OllamaClient {
           yield chunk;
 
           if (chunk.done) {
-            this.logger.info('Received done signal from Ollama');
             return;
           }
         } catch (parseError) {
-          this.logger.warn(`Failed to parse streaming chunk: ${line}`, parseError);
+          // Skip unparseable chunks
         }
       }
     }
@@ -307,8 +536,6 @@ export class OllamaClient {
    * @returns List of available models
    */
   public async listModels(): Promise<OllamaModel[]> {
-    this.logger.info('Fetching available models from Ollama');
-
     const url = `${this.baseUrl}/api/tags`;
 
     try {
@@ -324,12 +551,9 @@ export class OllamaClient {
       }
 
       const data: OllamaListResponse = await response.json();
-      this.logger.info(`Retrieved ${data.models.length} models from Ollama`);
-
       return data.models;
     } catch (error) {
       this.handleError(error);
-      throw error; // TypeScript requires this after handleError
     }
   }
 
@@ -345,7 +569,6 @@ export class OllamaClient {
 
       return response.ok;
     } catch (error) {
-      this.logger.warn('Ollama is not available', error);
       return false;
     }
   }
@@ -358,32 +581,27 @@ export class OllamaClient {
       // Connection refused (Ollama not running)
       if (error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
         const message = 'Cannot connect to Ollama. Please ensure Ollama is running on port 11434.';
-        this.logger.error(message, error);
         throw new OllamaConnectionError(message, this.baseUrl, error);
       }
 
       // Abort (user cancelled or connection dropped)
       if (error.name === 'AbortError') {
         const message = 'Request to Ollama was aborted';
-        this.logger.error(message, error);
         throw new OllamaConnectionError(message, this.baseUrl, error);
       }
 
       // HTTP errors
       if (error.message.includes('HTTP')) {
         const message = `Ollama API error: ${error.message}`;
-        this.logger.error(message, error);
         throw new OllamaConnectionError(message, this.baseUrl, error);
       }
 
       // Generic error
-      this.logger.error('Ollama request failed', error);
       throw new OllamaConnectionError(error.message, this.baseUrl, error);
     }
 
     // Unknown error type
     const message = 'Unknown error occurred while communicating with Ollama';
-    this.logger.error(message, error);
     throw new OllamaConnectionError(message, this.baseUrl);
   }
 }

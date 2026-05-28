@@ -23,8 +23,9 @@ import {
  */
 class ComplianceLogger {
   private readonly prefix = 'ComplianceChecker';
-  info(msg: string) {
-    console.log(`[${this.prefix}] ${msg}`);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  info(_msg: string) {
+    // Suppressed — only errors and warnings are logged in production
   }
   warn(msg: string) {
     console.warn(`[${this.prefix}] ${msg}`);
@@ -53,7 +54,6 @@ export class SpecComplianceChecker {
    */
   public check(task: ExecutableTask, spec: ParsedSpec, projectRoot: string): ComplianceResult {
     const startTime = Date.now();
-    this.logger.info(`Checking compliance for task ${task.id}: ${task.description}`);
 
     // Find acceptance criteria for this task's requirements
     const relevantCriteria = this.getRelevantCriteria(task, spec);

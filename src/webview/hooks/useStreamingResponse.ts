@@ -53,15 +53,11 @@ export function useStreamingResponse() {
             }
           : undefined;
 
-        // Debug logging for token usage
+        // Token usage tracking (silent)
         if (chunk.done && tokenUsage) {
-          console.log('✅✅✅ Token usage received in FINAL chunk:', tokenUsage);
+          // Final chunk with token usage
         } else if (chunk.done && !tokenUsage) {
-          console.warn(
-            '⚠️⚠️⚠️ No token usage in final chunk - Ollama may not be returning token counts'
-          );
-        } else if (tokenUsage) {
-          console.log('📊 Token usage received in intermediate chunk:', tokenUsage);
+          // Final chunk without token usage
         }
 
         const store = useConversationStore.getState();
