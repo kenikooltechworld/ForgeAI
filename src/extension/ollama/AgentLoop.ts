@@ -230,66 +230,95 @@ Remember: Wasting time on unresolved errors costs credits. Solve them right the 
         // Get response from Ollama with streaming
         const streamHandler = new StreamHandler(this.logger);
 
-        try {
-          const result = await this.ollamaClient.chat({
-            model,
-            messages,
-            stream: true,
-            think: true,
-            tools: effectiveTools,
-            // Do NOT set num_ctx here — let the model use its full context window.
-            // The applySlidingWindow in OllamaClient handles context budget.
-          });
+try {
+           const result = await this.ollamaClient.chat({
+             model,
+             messages,
+             stream: true,
+             think: true,
+             tools: effectiveTools,
+             // Do NOT set num_ctx here — let the model use its full context window.
+             // The applySlidingWindow in OllamaClient handles context budget.
+           });
 
-          // Type guard: result should be AsyncGenerator when stream=true
-          if (Symbol.asyncIterator in result) {
-            // Process stream chunks
-            for await (const chunk of result) {
-              if (this.shouldStop) {
-                break;
-              }
+           // Type guard: result should be AsyncGenerator when stream=true
+           if (Symbol.asyncIterator in result) {
+             // Process stream chunks
+             for await (const chunk of result) {
+               if (this.shouldStop) {
+                 break;
+               }
 
-              streamHandler.processChunk(chunk);
+               streamHandler.processChunk(chunk);
 
-              // Get token usage for this chunk
-              const tokenUsage = streamHandler.getTokenUsage();
+               // Get token usage for this chunk
+               const tokenUsage = streamHandler.getTokenUsage();
 
-              // Send chunk update to webview
-              onUpdate({
-                type: 'chunk',
-                thinking: streamHandler.getThinking(),
-                content: streamHandler.getContent(),
-                toolCalls: streamHandler.getToolCalls(),
-                tokenUsage,
-                done: streamHandler.isDone(),
-              });
+               // Send chunk update to webview
+               onUpdate({
+                 type: 'chunk',
+                 thinking: streamHandler.getThinking(),
+                 content: streamHandler.getContent(),
+                 toolCalls: streamHandler.getToolCalls(),
+                 tokenUsage,
+                 done: streamHandler.isDone(),
+               });
 
-              if (streamHandler.isDone()) {
-                break;
-              }
-            }
-          }
-        } catch (error) {
-          // Handle context overflow gracefully
-          if (error instanceof Error && error.message.includes('Context overflow')) {
-            // Context limit reached - prepare handoff to next agent
-            this.contextLimitReached = true;
-            this.contextSummary = await this.generateContextSummary(
-              messages,
-              'Context limit reached during execution'
-            );
+               if (streamHandler.isDone()) {
+                 break;
+               }
+             }
+           }
+         } catch (error) {
+           // Handle context overflow gracefully
+           if (error instanceof Error && error.message.includes('Context overflow')) {
+             // Context limit reached - prepare handoff to next agent
+             this.contextLimitReached = true;
+             this.contextSummary = await this.generateContextSummary(
+               messages,
+               'Context limit reached during execution'
+             );
 
-            onUpdate({
-              type: 'complete',
-              message: `Context limit reached. Preparing handoff to next agent with summary and last 3 messages.`,
-            });
+             onUpdate({
+               type: 'complete',
+               message: `Context limit reached. Preparing handoff to next agent with summary and last 3 messages.`,
+             });
 
-            break; // Exit the main loop gracefully
-          }
+             break; // Exit the main loop gracefully
+           }
 
-          // Re-throw other errors
-          throw error;
-        }
+           // Handle HTTP 503/400 (often context-related) with aggressive trimming
+           if (error instanceof Error && (error.message.includes('503') || error.message.includes('400'))) {
+             this.logger.warn(`Ollama returned ${error.message.includes('503') ? '503' : '400'} - likely context overflow, attempting recovery`);
+
+             // Aggressively trim messages to last 10
+             const systemMessages = messages.filter((m) => m.role === 'system');
+             const otherMessages = messages.filter((m) => m.role !== 'system');
+             const trimmedCount = otherMessages.length - 10;
+
+             if (trimmedCount > 0) {
+               // Replace messages with trimmed version
+               (messages as OllamaMessage[]).length = 0;
+               messages.push(...systemMessages, ...otherMessages.slice(-10));
+
+               this.contextLimitReached = true;
+               this.contextSummary = await this.generateContextSummary(
+                 messages,
+                 `Recovered from ${error.message.includes('503') ? '503' : '400'} by trimming ${trimmedCount} oldest messages`
+               );
+
+               onUpdate({
+                 type: 'complete',
+                 message: `Context recovery: Trimmed ${trimmedCount} old messages. Continuing with summary.`,
+               });
+
+               break;
+             }
+           }
+
+           // Re-throw other errors
+           throw error;
+         }
 
         // Get accumulated response
         const accumulated = streamHandler.getAccumulatedMessage();

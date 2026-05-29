@@ -816,10 +816,10 @@ export class FileSystemTools {
     };
   }
 
-  /**
-   * Replace text using regex pattern
-   * Allows flexible pattern matching for code edits
-   */
+/**
+    * Replace text using regex pattern
+    * Allows flexible pattern matching for code edits
+    */
   replaceRegex(): Tool {
     return {
       name: 'forgeai_replaceRegex',
@@ -895,6 +895,71 @@ export class FileSystemTools {
           path: args.path,
           success: true,
           matches: matches.length,
+        };
+      },
+    };
+  }
+
+  /**
+   * Find a file by its name (searches across entire workspace)
+   * Use this when you know the filename but not the exact path
+   * More efficient than listing directories manually
+   */
+  findFile(): Tool {
+    return {
+      name: 'forgeai_findFile',
+      description: 'Find a file by name across the workspace. Use this when you know the filename but need to locate its path. Searches recursively from workspace root.',
+      inputSchema: {
+        type: 'object',
+        required: ['fileName'],
+        properties: {
+          fileName: {
+            type: 'string',
+            description: 'Exact filename or pattern to search for (e.g., "extension.ts")',
+          },
+          exactMatch: {
+            type: 'boolean',
+            description: 'If true, matches exact filename. If false, matches files containing the name (default: true)',
+          },
+        },
+      },
+      execute: async (
+        args: { fileName: string; exactMatch?: boolean },
+        token?: vscode.CancellationToken
+      ) => {
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const exclude = '{**/node_modules/**,**/.git/**,**/dist/**,**/build/**,**/out/**,**/.next/**,**/coverage/**,**/.cache/**}';
+        const allFiles = await vscode.workspace.findFiles('**/*', exclude, 1000);
+
+        if (token?.isCancellationRequested) {
+          throw new Error('Operation cancelled');
+        }
+
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+
+        // Filter files by name
+        const matchingFiles = allFiles.filter((uri) => {
+          const fileName = uri.fsPath.split(/[/\\]/).pop() || '';
+          if (args.exactMatch === false) {
+            return fileName.toLowerCase().includes(args.fileName.toLowerCase());
+          }
+          return fileName === args.fileName;
+        });
+
+        // Sort by path for consistent results
+        matchingFiles.sort((a, b) => a.fsPath.localeCompare(b.fsPath));
+
+        return {
+          fileName: args.fileName,
+          exactMatch: args.exactMatch ?? true,
+          files: matchingFiles.map((uri) => ({
+            path: workspaceRoot ? uri.fsPath.replace(workspaceRoot, '').replace(/^[\\/]/, '') : uri.fsPath,
+            fullPath: uri.fsPath,
+          })),
+          count: matchingFiles.length,
         };
       },
     };

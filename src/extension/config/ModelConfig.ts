@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
  */
 
 /** Fallback model only used when no setting exists. */
-const FALLBACK_MODEL = 'gpt-oss:120b-cloud';
+const FALLBACK_MODEL = 'gemma4-31b-cloud';
 
 /** Read the user's selected model from VS Code settings. */
 export function getConfiguredModel(): string {

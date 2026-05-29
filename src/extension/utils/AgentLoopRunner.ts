@@ -61,7 +61,7 @@ export class AgentLoopRunner {
         (update: AgentLoopUpdate) => this.handleUpdate(update, conversationId),
         tools,
         model,
-        { autonomyLevel }
+        { autonomyLevel, conversationId }
       );
     } finally {
       this.currentAgentLoop = undefined;

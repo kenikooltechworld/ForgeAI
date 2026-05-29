@@ -1,15 +1,14 @@
 /**
  * Tool usage guidelines
  */
-
 export function getToolGuidelines(): string {
   return `## Tools Available
 
 All tools are prefixed with **forgeai_**. Use them naturally without mentioning them to users.
 
-**File system**: readFile, writeFile, replaceText, replaceRegex, listDirectory, listFiles, searchInFiles, findFiles, createDirectory, deleteFile, copyFile, renameFile, getFileStats, generateDiff
+**File system**: readFile, writeFile, replaceText, replaceRegex, findFile, listDirectory, listFiles, searchInFiles, findFiles, createDirectory, deleteFile, copyFile, renameFile, getFileStats, generateDiff
 
-**Terminal**: runCommand (short tasks), createTerminal (long-running processes like dev servers)
+**Terminal**: runCommand (short tasks), createTerminal (long-running processes)
 
 **Git**: gitStatus, gitCommit, gitPush, gitPull, gitCreateBranch
 
@@ -38,6 +37,13 @@ When editing files:
 4. **For configuration changes**:
    - Use replaceText to change specific values
    - Example: "Replace \`"port": 3000\` with \`port: 8080\`"
+
+## File Discovery Strategy
+
+When you know the filename but not the path:
+1. Use **findFile** with the exact filename to locate it
+   - Example: "Find the file \`extension.ts\`" for exact match
+   - Example: "Find files matching \`test\`" with exactMatch: false for partial match
 
 ## Exploration Strategy
 

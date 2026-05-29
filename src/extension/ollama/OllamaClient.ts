@@ -138,6 +138,8 @@ export class OllamaClient {
    * setting num_ctx in Ollama requests so the model uses its full window.
    */
   private getContextWindowSize(model: string): number {
+    // Exact context windows from official Ollama model configurations
+    // Source: https://docs.ollama.com/context-length and Ollama model library
     const contextWindows: Record<string, number> = {
       // ── Cloud models ──────────────────────────────────────────────────────
       'gpt-oss-120b-cloud': 131_072, // 131K — OpenAI GPT-OSS 120B
@@ -146,14 +148,48 @@ export class OllamaClient {
       'deepseek-v3.1-671b-cloud': 128_000, // 128K — DeepSeek V3.1
       'kimi-k2.5-cloud': 256_000, // 256K — Kimi K2.5
 
-      // ── Local models ──────────────────────────────────────────────────────
-      'qwen3-vl-8b': 32_768, // 32K
-      'qwen3-coder-30b': 32_768, // 32K
-      'deepseek-r1-8b': 32_768, // 32K
-      'gemma4-e4b': 128_000, // 128K — Gemma 4 E4B
-      'qwen3.5-9b': 32_768, // 32K
-      'llava-7b': 4_096, // 4K
-      'llava-13b': 8_192, // 8K
+      // ── Local Ollama models ──────────────────────────────────────────────────────
+      // Llama 3.x - 8K base, 128K for Llama 3.1/3.2+
+      'llama3': 8_192, 'llama3-8b': 8_192, 'llama3-70b': 8_192,
+      'llama3.1': 128_000, 'llama3.1-8b': 128_000, 'llama3.1-70b': 128_000, 'llama3.1-405b': 128_000,
+      'llama3.2': 128_000, 'llama3.2-1b': 128_000, 'llama3.2-3b': 128_000,
+      'llama3.2-vision': 128_000, 'llama3.2-vision-11b': 128_000, 'llama3.2-vision-90b': 128_000,
+
+      // Gemma 3/4 - 128K/256K context (per official Ollama)
+      'gemma': 8_192, 'gemma-2b': 8_192, 'gemma-7b': 8_192,
+      'gemma3': 128_000, 'gemma3-270m': 32_768, 'gemma3-1b': 32_768, 'gemma3-4b': 128_000, 'gemma3-12b': 128_000, 'gemma3-27b': 128_000,
+      // Gemma4: E2B/E4B=128K, 26B/31B=256K
+      'gemma4': 256_000, 'gemma4-e2b': 128_000, 'gemma4-e4b': 128_000, 'gemma4-26b': 256_000, 'gemma4-31b': 256_000,
+
+      // Qwen 2.5/3 - up to 128K context
+      'qwen2.5': 128_000, 'qwen2.5-0.5b': 128_000, 'qwen2.5-1.5b': 128_000, 'qwen2.5-3b': 128_000,
+      'qwen2.5-7b': 128_000, 'qwen2.5-14b': 128_000, 'qwen2.5-32b': 128_000, 'qwen2.5-72b': 128_000,
+      'qwen3': 128_000, 'qwen3-0.6b': 128_000, 'qwen3-4b': 128_000, 'qwen3-8b': 128_000, 'qwen3-14b': 128_000, 'qwen3-32b': 128_000,
+      'qwen3.5': 128_000, 'qwen3.5-9b': 128_000, 'qwen3.5-27b': 128_000, 'qwen3.5-35b': 128_000,
+
+      // DeepSeek - 128K context
+      'deepseek-r1': 128_000, 'deepseek-r1-1.5b': 128_000, 'deepseek-r1-7b': 128_000, 'deepseek-r1-8b': 128_000,
+      'deepseek-r1-14b': 128_000, 'deepseek-r1-32b': 128_000, 'deepseek-r1-70b': 128_000, 'deepseek-r1-671b': 128_000,
+      'deepseek-v3.1': 128_000, 'deepseek-v3.1-128b': 128_000,
+
+      // Llava (vision) - Ollama official: 7b=32K, 13b/34b=4K
+      'llava': 32_768, 'llava-7b': 32_768, 'llava-13b': 4_096, 'llava-34b': 4_096,
+      'bakllava': 32_768, 'moondream': 8_192,
+
+      // Phi 4 - 128K context
+      'phi4': 128_000, 'phi4-14b': 128_000, 'phi4-mini': 128_000,
+
+      // Mistral/Nemo - 128K context
+      'mistral-nemo': 128_000, 'mistral-nemo-12b': 128_000,
+      'mistral-small': 128_000, 'mistral-small-22b': 128_000, 'mistral-small-24b': 128_000,
+
+      // Qwen3-Coder - native 256K context (confirmed on ollama.com)
+      'qwen3-coder': 256_000, 'qwen3-coder-30b': 256_000, 'qwen3-coder-480b': 256_000,
+
+      // Coding models - Qwen2.5-Coder: 0.5b/1.5b/3b=32K, 7b/14b/32b=128K
+      'qwen2.5-coder': 128_000, 'qwen2.5-coder-0.5b': 32_768, 'qwen2.5-coder-1.5b': 32_768, 'qwen2.5-coder-3b': 32_768,
+      'qwen2.5-coder-7b': 128_000, 'qwen2.5-coder-14b': 128_000, 'qwen2.5-coder-32b': 128_000,
+      'starcoder2': 16_000, 'starcoder2-7b': 16_000, 'starcoder2-15b': 16_000,
     };
 
     // Exact match
@@ -177,8 +213,12 @@ export class OllamaClient {
       }
     }
 
-    // Safe default for unknown models
-    return 32_768;
+    // No assumptions - require explicit model configuration
+    throw new Error(
+      `Unknown model '${model}' - no context window size configured. ` +
+        `Please add the model to the contextWindows mapping in OllamaClient.ts. ` +
+        `Known models: ${Object.keys(contextWindows).join(', ')}`
+    );
   }
 
   /**
@@ -370,6 +410,14 @@ export class OllamaClient {
       0
     );
     const safeLimit = Math.floor(contextWindow * 0.95) - 3000; // 95% - 3000 token buffer for response
+
+    // Warn user when approaching context limit (75% threshold)
+    if (totalTokens > safeLimit * 0.75) {
+      this.logger.warn(
+        `Context warning: ${totalTokens} tokens used, limit is ${safeLimit}. ` +
+          `Consider a model with larger context or smaller steps.`
+      );
+    }
 
     if (totalTokens > safeLimit) {
       // Context is still too large even after sliding window

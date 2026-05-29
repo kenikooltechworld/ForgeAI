@@ -2,7 +2,7 @@
 
 ## Introduction
 
-{One or two paragraphs describing what this feature/capability is, why it exists, and what problem it solves.}
+{One or two paragraphs describing what this feature/capability is, why it exists, and what problem it solves. Describe the stakeholders and the high-level approach.}
 
 **Key Constraint:** {The most important constraint — e.g., "The implementation must be free and run locally with zero cloud service costs."}
 
@@ -13,7 +13,7 @@
 - **Term_One**: Definition of the first key domain term.
 - **Term_Two**: Definition of the second key domain term.
 - **Term_Three**: Definition of the third key domain term.
-- {Continue for all important terms used in requirements.}
+- **{Continue for all important terms used in requirements.}**
 
 ---
 
@@ -58,6 +58,10 @@
 
 ---
 
+*Continue adding numbered requirements following the same pattern.*
+
+---
+
 ## Out of Scope
 
 The following items are explicitly out of scope for this feature:
@@ -65,6 +69,20 @@ The following items are explicitly out of scope for this feature:
 1. **{Out of scope item 1}** — {Why it's excluded}
 2. **{Out of scope item 2}** — {Why it's excluded}
 3. **{Out of scope item 3}** — {Why it's excluded}
+
+### Security Constraints (Non-Goals)
+
+- No cloud-based execution or data transmission
+- No persistent credential storage in browser contexts
+- No automatic form submission on password-protected sites
+- No session sharing between different browser contexts
+- No external telemetry or analytics collection
+
+### Timeline Constraints
+
+- Implementation phase 1 (MVP) does not include: {advanced features}
+- Phase 2+ features are out of scope for initial release: {future enhancements}
+- Performance optimizations beyond {baseline} are out of scope for MVP
 
 ---
 

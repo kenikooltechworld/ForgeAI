@@ -695,12 +695,12 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         role: 'user',
         content:
           'Continue working on the task. You have 20 more iterations. Focus on completing the most important remaining work.',
-      });
+});
 
       this.logger.info(`Continuing with ${messages.length} messages`);
 
       // Execute agent loop with streaming updates
-      await this.executeAgentLoop(agentLoop, conversationId, messages, tools);
+      await this.executeAgentLoop(agentLoop, conversationId, messages, tools, DEFAULT_MODEL);
     } catch (error) {
       this.logger.error('Failed to continue after max iterations', error);
 
@@ -923,7 +923,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
               }
               break;
 
-            case 'complete':
+case 'complete':
               this.logger.info('Agent loop complete');
               // Send final completion message
               this.view?.webview.postMessage({
@@ -960,7 +960,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         },
         tools,
         model, // Pass the model parameter
-        specContext ? { specContext } : undefined
+{ specContext, conversationId } // Pass conversationId for memory management
       );
     } finally {
       // Clear the current agent loop instance
@@ -1443,6 +1443,45 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
             label: 'Open Ollama Docs',
             url: 'https://docs.ollama.com',
           },
+        };
+      }
+
+      // Context overflow - tokens exceed model limit
+      if (error.message.includes('Context overflow') || error.message.includes('tokens exceeds')) {
+        this.logger.error('CONTEXT_OVERFLOW error: Too many tokens in request');
+        return {
+          type: 'CONTEXT_OVERFLOW',
+          message:
+            'Conversation context exceeded model limit. Try: (1) Switch to a model with larger context, ' +
+            '(2) Continue in a fresh conversation, or (3) Implement the task in smaller steps.',
+          actionButton: undefined,
+        };
+      }
+
+      // HTTP 503 - Service unavailable (model loading or overloaded)
+      if (error.message.includes('503') || error.message.includes('Service Unavailable')) {
+        this.logger.error('OLLAMA_SERVICE_UNAVAILABLE: Model may be loading or server overloaded');
+        return {
+          type: 'OLLAMA_SERVICE_UNAVAILABLE',
+          message:
+            'Ollama service unavailable. The model may be loading or the server is overloaded. ' +
+            'Please wait a moment and try again.',
+          actionButton: {
+            label: 'Retry',
+            url: '',
+          },
+        };
+      }
+
+      // HTTP 400 - Bad request (often context related)
+      if (error.message.includes('400') || error.message.includes('Bad Request')) {
+        this.logger.error('OLLAMA_BAD_REQUEST: Check model name and request format');
+        return {
+          type: 'OLLAMA_BAD_REQUEST',
+          message:
+            'Ollama rejected the request. This may be due to context size or an invalid model name. ' +
+            'Verify settings and try a smaller context.',
+          actionButton: undefined,
         };
       }
 

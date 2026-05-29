@@ -11,12 +11,11 @@ Enable {stakeholders} to:
 - {First capability this design enables}
 - {Second capability this design enables}
 - {Third capability this design enables}
-- {Continue as needed}
 
 ### Key Technical Decisions
 
-| Decision              | Choice   | Rationale                  |
-| --------------------- | -------- | -------------------------- |
+| Decision | Choice | Rationale |
+|--------|--------|-----------|
 | **{Technology Area}** | {Choice} | {Why this choice was made} |
 | **{Technology Area}** | {Choice} | {Why this choice was made} |
 | **{Technology Area}** | {Choice} | {Why this choice was made} |
@@ -71,7 +70,7 @@ graph TB
     D --> F
 ```
 
-### {Flow Name} Flow
+### Component Interaction Flow
 
 ```mermaid
 sequenceDiagram
@@ -79,15 +78,13 @@ sequenceDiagram
     participant Agent as {Agent Name}
     participant Service as {Service}
     participant LLM as {LLM}
-    participant FS as File System
 
     User->>Agent: "{User request}"
-    Agent->>Service: Query / detect context
-    Service-->>Agent: {Context data}
-    Agent->>LLM: Generate {artifact}
-    LLM-->>Agent: {Generated content}
-    Agent->>FS: Write {files}
-    Agent-->>User: {Result summary}
+    Agent->>Service: {Action}
+    Service-->>Agent: {Response}
+    Agent->>LLM: Generate {output}
+    LLM-->>Agent: {Result}
+    Agent-->>User: {Final output}
 ```
 
 ---
@@ -149,7 +146,7 @@ export class {ComponentName} {
 
 ## API Design
 
-### {Endpoint/Tool Name}
+### {Tool/Endpoint Name}
 
 - **Purpose**: {What this does}
 - **Input**: {Schema}
@@ -162,6 +159,8 @@ export class {ComponentName} {
 
 ### {Error Category}
 
+- `{ErrorType}`: {When it occurs and how to handle it}
+- `{ErrorType}`: {When it occurs and how to handle it}
 - `{ErrorType}`: {When it occurs and how to handle it}
 
 ---
@@ -251,8 +250,68 @@ export class {ComponentName} {
 
 ## Testing Strategy
 
-### Property-Based Tests
+### Testing Approach
 
-- **Property {N}: {Property Name}**
-  - **Validates: Requirements {numbers}**
-  - {Description of what this property checks}
+This feature involves {integration points} and may require different test strategies.
+
+| Component | Test Type | Strategy |
+|-----------|-----------|----------|
+| {Component} | Unit Tests | Test pure logic functions |
+| {Component} | Integration Tests | Test with {external systems} |
+| {Component} | Manual Tests | Test {user workflows} |
+
+### Unit Tests (Pure Logic)
+
+```typescript
+describe('{Component}', () => {
+  it('should {verify behavior}', () => {
+    // Test pure logic with mock inputs
+    const result = handler.{method}({mockInput});
+    expect(result).toBe({expected});
+  });
+});
+```
+
+### Integration Tests (With Real Systems)
+
+```typescript
+describe('{Component} Integration', () => {
+  let {service}: {ServiceType};
+  
+  beforeAll(async () => {
+    {service} = new {ServiceType}({config});
+  });
+  
+  afterAll(async () => {
+    await {service}.close();
+  });
+  
+  it('should {verify integration behavior}', async () => {
+    const result = await {service}.{method}('{testInput}');
+    expect(result.success).toBe(true);
+  });
+});
+```
+
+---
+
+## VS Code Integration
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `{command}` | {What this command does} |
+| `{command}` | {What this command does} |
+
+### Settings
+
+```json
+{
+  "{setting}": {
+    "type": "string/boolean/number",
+    "default": "{default}",
+    "description": "{What this setting controls}"
+  }
+}
+```

@@ -191,6 +191,64 @@
         }
       },
       {
+        "name": "forgeai_replaceText",
+        "displayName": "Replace Text",
+        "modelDescription": "Replace specific text in a file. Use this for targeted edits instead of rewriting entire files.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path",
+            "oldText",
+            "newText"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the file"
+            },
+            "oldText": {
+              "type": "string",
+              "description": "Exact text to replace"
+            },
+            "newText": {
+              "type": "string",
+              "description": "New text to insert"
+            }
+          }
+        }
+      },
+      {
+        "name": "forgeai_replaceRegex",
+        "displayName": "Replace Regex",
+        "modelDescription": "Replace text matching a regex pattern in a file. Use this for flexible code edits.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path",
+            "pattern",
+            "replacement"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute path to the file"
+            },
+            "pattern": {
+              "type": "string",
+              "description": "Regular expression pattern to match"
+            },
+            "replacement": {
+              "type": "string",
+              "description": "Replacement text"
+            },
+            "flags": {
+              "type": "string",
+              "description": "Regex flags (e.g., 'g' for global)"
+            }
+          }
+        }
+      },
+      {
         "name": "forgeai_listFiles",
         "displayName": "List Files",
         "modelDescription": "List files matching a glob pattern. Use this to discover files in the workspace.",
@@ -203,6 +261,27 @@
             "pattern": {
               "type": "string",
               "description": "Glob pattern to match files (e.g., '**/*.ts')"
+            }
+          }
+        }
+      },
+      {
+        "name": "forgeai_findFile",
+        "displayName": "Find File",
+        "modelDescription": "Find a file by name across the workspace. Use this when you know the filename but need to locate its path.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "fileName"
+          ],
+          "properties": {
+            "fileName": {
+              "type": "string",
+              "description": "Exact filename to search for (e.g., 'extension.ts')"
+            },
+            "exactMatch": {
+              "type": "boolean",
+              "description": "If true, matches exact filename. If false, matches files containing the name (default: true)"
             }
           }
         }

@@ -22,6 +22,7 @@ import {
   ChevronDown,
   Regex,
   Replace,
+  FileSearch,
 } from 'lucide-react';
 
 /**
@@ -116,6 +117,7 @@ function ToolCard({
     if (name.includes('writeFile') || name.includes('Write')) return <Edit {...iconProps} />;
     if (name.includes('replaceText') || name.includes('Replace')) return <Replace {...iconProps} />;
     if (name.includes('replaceRegex') || name.includes('Regex')) return <Regex {...iconProps} />;
+    if (name.includes('findFile') || name.includes('Find File')) return <FileSearch {...iconProps} />;
     if (name.includes('listFiles') || name.includes('listDirectory'))
       return <Folder {...iconProps} />;
     if (name.includes('createDirectory')) return <FolderPlus {...iconProps} />;

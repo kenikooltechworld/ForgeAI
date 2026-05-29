@@ -44,6 +44,7 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(fsTools.writeFile());
     this.registerTool(fsTools.replaceText());
     this.registerTool(fsTools.replaceRegex());
+    this.registerTool(fsTools.findFile());
     this.registerTool(fsTools.listFiles());
     this.registerTool(fsTools.listDirectory());
     this.registerTool(fsTools.createDirectory());

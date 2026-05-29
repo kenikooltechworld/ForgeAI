@@ -5,6 +5,9 @@ export type ErrorType =
   | 'OLLAMA_CONNECTION'
   | 'OLLAMA_MODEL_NOT_FOUND'
   | 'OLLAMA_TIMEOUT'
+  | 'OLLAMA_SERVICE_UNAVAILABLE'
+  | 'OLLAMA_BAD_REQUEST'
+  | 'CONTEXT_OVERFLOW'
   | 'TOOL_EXECUTION_ERROR'
   | 'NETWORK_ERROR'
   | 'UNKNOWN';
@@ -181,6 +184,23 @@ export function ErrorNotification({
               >
                 <SkipForward size={12} />
                 Skip
+              </button>
+            )}
+          </>
+        );
+
+      case 'OLLAMA_SERVICE_UNAVAILABLE':
+      case 'CONTEXT_OVERFLOW':
+      case 'OLLAMA_BAD_REQUEST':
+        return (
+          <>
+            {onRetry && (
+              <button
+                onClick={handleRetry}
+                className="flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs transition-colors border-(--vscode-button-border) bg-(--vscode-button-background) text-(--vscode-button-foreground) hover:bg-(--vscode-button-hoverBackground)"
+              >
+                <RefreshCw size={12} />
+                Retry
               </button>
             )}
           </>
