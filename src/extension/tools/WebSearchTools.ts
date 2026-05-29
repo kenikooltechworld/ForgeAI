@@ -43,10 +43,12 @@ export class WebSearchTools {
   }
 
   /**
-   * Persist web-search findings to ResearchCache so ResearchAgent
-   * can reuse them during spec generation instead of repeating the search.
-   */
+    * Persist web-search findings to ResearchCache so ResearchAgent
+    * can reuse them during spec generation instead of repeating the search.
+    */
   private saveResearchReport(
+    sessionId: string,
+    topicSlug: string,
     query: string,
     findings: ResearchFinding[],
     webQueriesRun: number
@@ -56,7 +58,7 @@ export class WebSearchTools {
       return;
     }
     const report: ResearchReport = {
-      sessionId: `websearch-${Date.now()}`,
+      sessionId,
       topic: query,
       findings,
       ragCoverage: 0,
@@ -65,7 +67,7 @@ export class WebSearchTools {
       learningCorrectionsApplied: 0,
       generatedAt: Date.now(),
     };
-    cache.set(query, report);
+    cache.set(sessionId, topicSlug, query, report);
   }
 
   /**
@@ -210,10 +212,11 @@ export class WebSearchTools {
           },
         },
       },
-      execute: async (args: { query: string }) => {
-        const result = await this.performSearch(args.query);
+execute: async (args: { query: string }) => {
+         const result = await this.performSearch(args.query);
+         const sessionId = `websearch-${Date.now()}`;
 
-        // ─── Auto-fetch top 3 URLs for real content ───
+         // ─── Auto-fetch top 3 URLs for real content ───
         const topUrls = result.results.slice(0, 3);
         const fetchedPages: Array<{
           title: string;
@@ -250,35 +253,36 @@ export class WebSearchTools {
           }
         }
 
-        // ─── Persist findings to ResearchCache for reuse by ResearchAgent ───
-        const findings: ResearchFinding[] = [
-          ...result.results.slice(0, 5).map((r) => ({
-            source: 'web' as const,
-            query: args.query,
-            text: `${r.title}\n${r.snippet}`,
-            url: r.url,
-            relevanceScore: 0.5,
-            retrievedAt: Date.now(),
-          })),
-          ...fetchedPages
-            .filter((p) => p.method !== 'error')
-            .map((p) => ({
-              source: 'web-page' as const,
-              query: args.query,
-              text: `📄 ${p.title}\n${p.content}`,
-              url: p.url,
-              relevanceScore: 0.85,
-              retrievedAt: Date.now(),
-            })),
-          {
-            source: 'web' as const,
-            query: args.query,
-            text: `📊 Fetch summary: ${fetchSuccess} fetched, ${fetchFailed} failed (attempted ${fetchSuccess + fetchFailed}).`,
-            relevanceScore: 0.0,
-            retrievedAt: Date.now(),
-          },
-        ];
-        this.saveResearchReport(args.query, findings, 1);
+// ─── Persist findings to ResearchCache for reuse by ResearchAgent ───
+         const slug = args.query.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'web-search';
+         const findings: ResearchFinding[] = [
+           ...result.results.slice(0, 5).map((r) => ({
+             source: 'web' as const,
+             query: args.query,
+             text: `${r.title}\n${r.snippet}`,
+             url: r.url,
+             relevanceScore: 0.5,
+             retrievedAt: Date.now(),
+           })),
+           ...fetchedPages
+             .filter((p) => p.method !== 'error')
+             .map((p) => ({
+               source: 'web-page' as const,
+               query: args.query,
+               text: `📄 ${p.title}\n${p.content}`,
+               url: p.url,
+               relevanceScore: 0.85,
+               retrievedAt: Date.now(),
+             })),
+           {
+             source: 'web' as const,
+             query: args.query,
+             text: `📊 Fetch summary: ${fetchSuccess} fetched, ${fetchFailed} failed (attempted ${fetchSuccess + fetchFailed}).`,
+             relevanceScore: 0.0,
+             retrievedAt: Date.now(),
+           },
+];
+         this.saveResearchReport(sessionId, slug, args.query, findings, 1);
 
         return {
           success: true,
@@ -347,14 +351,15 @@ export class WebSearchTools {
           },
         },
       },
-      execute: async (args: { topic: string; subQueries?: string[] }) => {
-        const queries = args.subQueries?.slice(0, 3) || [
-          args.topic,
-          `${args.topic} documentation`,
-          `${args.topic} best practices`,
-        ];
+execute: async (args: { topic: string; subQueries?: string[] }) => {
+         const queries = args.subQueries?.slice(0, 3) || [
+           args.topic,
+           `${args.topic} documentation`,
+           `${args.topic} best practices`,
+         ];
+         const sessionId = `research-${Date.now()}`;
 
-        const allResults: SearchResult[] = [];
+         const allResults: SearchResult[] = [];
         const seenUrls = new Set<string>();
 
         for (const q of queries.slice(0, 3)) {
@@ -436,7 +441,8 @@ export class WebSearchTools {
             retrievedAt: Date.now(),
           },
         ];
-        this.saveResearchReport(args.topic, findings, queries.slice(0, 3).length);
+        const slug = args.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'web-research';
+        this.saveResearchReport(sessionId, slug, args.topic, findings, queries.slice(0, 3).length);
 
         return {
           success: true,

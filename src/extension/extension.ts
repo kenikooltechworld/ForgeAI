@@ -419,8 +419,22 @@ export class ForgeAIExtension {
     ragService: RagService | undefined
   ): Promise<void> {
     try {
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+      const { SessionMemory } = await import('./utils/SessionMemory');
+      const { SessionContextInjector } = await import('./ollama/SessionContextInjector');
+
+      const sessionMemory = new SessionMemory(workspaceRoot, logger);
+      const sessionContextInjector = new SessionContextInjector(sessionMemory, logger);
+
       const { ChatParticipant } = await import('./providers/ChatParticipant');
-      const chatParticipant = new ChatParticipant(ollama, toolRegistry, logger, ragService);
+      const chatParticipant = new ChatParticipant(
+        ollama,
+        toolRegistry,
+        logger,
+        ragService,
+        sessionContextInjector,
+        workspaceRoot
+      );
 
       const participant = (vscode.chat as any).createChatParticipant(
         'forgeai.assistant',

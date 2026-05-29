@@ -3,8 +3,11 @@ import { Logger } from '../utils/Logger';
 import { AgentLoop, AgentLoopUpdate } from '../ollama/AgentLoop';
 import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { ToolRegistry } from '../tools/ToolRegistry';
+import { ConversationMemory } from '../utils/ConversationMemory';
 import type { RagService } from '../rag/RagService';
 import { getConfiguredModel } from '../config/ModelConfig';
+import { SessionMemory } from '../utils/SessionMemory';
+import { SessionContextInjector } from '../ollama/SessionContextInjector';
 
 /**
  * Chat Participant for ForgeAI
@@ -24,17 +27,44 @@ export class ChatParticipant {
   private logger: Logger;
   private agentLoop: AgentLoop;
   private toolRegistry: ToolRegistry;
+  private conversationMemory: ConversationMemory;
+  private sessionContextInjector: SessionContextInjector;
 
   constructor(
     ollamaClient: OllamaClient,
     toolRegistry: ToolRegistry,
     logger: Logger,
-    ragService?: RagService
+    ragService?: RagService,
+    sessionContextInjector?: SessionContextInjector,
+    workspaceRoot?: string
   ) {
     this.toolRegistry = toolRegistry;
     this.logger = logger;
+
+    // Initialize conversation memory first (needed for AgentLoop)
+    this.conversationMemory = new ConversationMemory({
+      getWorkspaceValue: <T>(key: string, defaultValue: T): T => {
+        return defaultValue; // No-op for chat participant (uses context.history instead)
+      },
+      setWorkspaceValue: async <T>(_key: string, _value: T): Promise<void> => {
+        // No-op for chat participant
+      },
+    });
+
+    // Initialize session context injector
+    this.sessionContextInjector =
+      sessionContextInjector ??
+      new SessionContextInjector(new SessionMemory(workspaceRoot || process.cwd(), logger), logger);
+
     // Reuse existing AgentLoop - no duplication!
-    this.agentLoop = new AgentLoop(ollamaClient, logger, toolRegistry, ragService);
+    this.agentLoop = new AgentLoop(
+      ollamaClient,
+      logger,
+      toolRegistry,
+      ragService,
+      this.conversationMemory,
+      this.sessionContextInjector
+    );
   }
 
   /**
@@ -48,9 +78,14 @@ export class ChatParticipant {
     request: vscode.ChatRequest,
     context: vscode.ChatContext,
     stream: vscode.ChatResponseStream,
-    token: vscode.CancellationToken
+    _token: vscode.CancellationToken
   ): Promise<any> {
-    this.logger.info(`Chat request received: command=${request.command}, prompt=${request.prompt}`);
+    // Generate a stable conversation ID from the request context
+    const conversationId = this.getConversationId(request, context);
+
+    this.logger.info(
+      `Chat request received: command=${request.command}, prompt=${request.prompt}, conversationId=${conversationId}`
+    );
 
     try {
       // Spec-generation intent detection for @forgeai chat
@@ -73,6 +108,20 @@ export class ChatParticipant {
 
       // Convert VS Code chat history to Ollama message format
       const messages = this.convertChatHistory(context.history, request);
+
+      // Load previous session context if available (for conversation continuity)
+      let sessionContextMessage: string | null = null;
+      if (this.sessionContextInjector) {
+        sessionContextMessage = await this.sessionContextInjector.getSessionContext(conversationId);
+        if (sessionContextMessage) {
+          this.logger.info(`Loaded session context for conversation ${conversationId}`);
+          // Inject session context as a system message at the beginning
+          messages.unshift({
+            role: 'system',
+            content: sessionContextMessage,
+          });
+        }
+      }
 
       // Get available tools from registry (reuse existing tools!)
       const tools = this.toolRegistry.getToolDefinitions();
@@ -161,7 +210,8 @@ export class ChatParticipant {
           }
         },
         tools,
-        typeof request.model === 'string' ? request.model : getConfiguredModel()
+        typeof request.model === 'string' ? request.model : getConfiguredModel(),
+        { conversationId } // Pass conversationId for session context continuity
       );
 
       stream.button({
@@ -257,8 +307,8 @@ export class ChatParticipant {
    */
   public provideFollowups(
     result: any,
-    context: vscode.ChatContext,
-    token: vscode.CancellationToken
+    _context: vscode.ChatContext,
+    _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.ChatFollowup[]> {
     const followups: vscode.ChatFollowup[] = [];
 
@@ -322,6 +372,35 @@ export class ChatParticipant {
     }
 
     return followups;
+  }
+
+  /**
+   * Get a stable conversation ID from the VS Code chat context.
+   * This ensures all messages in the same chat session share the same ID.
+   */
+  private getConversationId(_request: vscode.ChatRequest, _context: vscode.ChatContext): string {
+    // VS Code's ChatContext has a sessionId property that provides a stable identifier
+    // for the conversation. If not available, generate one from workspace.
+    const sessionId = (_context as any).sessionId;
+    if (sessionId && typeof sessionId === 'string') {
+      return `chat-${sessionId}`;
+    }
+    // Generate a deterministic ID from the first message (if any) as anchor
+    // This ensures all messages in the same chat panel get the same ID
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    // Use first user message as anchor for stable ID
+    let anchor = '';
+    for (const turn of _context.history || []) {
+      if ('prompt' in turn) {
+        anchor = turn.prompt.substring(0, 50).replace(/\s+/g, '-');
+        break;
+      }
+    }
+    if (anchor) {
+      return `chat-${workspaceRoot.replace(/[^a-zA-Z0-9]/g, '')}-${anchor}`;
+    }
+    // Fallback: single chat session per workspace
+    return `chat-${workspaceRoot.replace(/[^a-zA-Z0-9]/g, '') || 'default'}`;
   }
 
   /**

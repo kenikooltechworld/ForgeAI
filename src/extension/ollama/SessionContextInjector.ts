@@ -17,29 +17,31 @@ export class SessionContextInjector {
    * Get session context for a conversation
    * Returns system prompt injection if session memory exists
    */
-  public async getSessionContext(conversationId: string): Promise<string | null> {
-    try {
-      const sessionData = await this.sessionMemory.loadSessionMemory(conversationId);
+public async getSessionContext(conversationId: string): Promise<string | null> {
+  try {
+    const sessionData = await this.sessionMemory.loadSessionMemory(conversationId);
 
-      if (!sessionData) {
-        return null; // No previous session
-      }
+    if (!sessionData) {
+      this.logger.info(`No session memory found for conversation ${conversationId}`);
+      return null; // No previous session
+    }
 
-      // Check if session is recent (within last 24 hours)
-      const hoursSinceLastSession = (Date.now() - sessionData.timestamp) / (1000 * 60 * 60);
-      if (hoursSinceLastSession > 24) {
-        this.logger.info(
-          `Session memory for ${conversationId} is older than 24 hours, not injecting`
-        );
-        return null;
-      }
-
-      return this.createContextPrompt(sessionData);
-    } catch (error) {
-      this.logger.error(`Failed to get session context for ${conversationId}`, error);
+    // Check if session is recent (within last 24 hours)
+    const hoursSinceLastSession = (Date.now() - sessionData.timestamp) / (1000 * 60 * 60);
+    if (hoursSinceLastSession > 24) {
+      this.logger.info(
+        `Session memory for ${conversationId} is older than 24 hours, not injecting`
+      );
       return null;
     }
+
+    this.logger.info(`Successfully loaded session memory for conversation ${conversationId}`);
+    return this.createContextPrompt(sessionData);
+  } catch (error) {
+    this.logger.error(`Failed to get session context for ${conversationId}`, error);
+    return null;
   }
+}
 
   /**
    * Create context prompt from session memory

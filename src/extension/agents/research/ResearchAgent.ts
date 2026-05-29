@@ -200,8 +200,8 @@ Generate research topics:`;
     topic: ResearchTopic,
     discoverySession: DiscoverySession
   ): Promise<ResearchReport> {
-    // Check cache
-    const cached = this.cache.get(topic.query);
+    // Check cache (session-scoped)
+    const cached = this.cache.get(sessionId, topic.slug);
     if (cached && !cached.stale) {
       return cached.report;
     }
@@ -320,23 +320,18 @@ Generate research topics:`;
       generatedAt: Date.now(),
     };
 
-    // 5. Cache
-    this.cache.set(topic.query, report);
+// 5. Cache (session-scoped)
+     this.cache.set(sessionId, topic.slug, topic.query, report);
 
-    return report;
-  }
+     return report;
+   }
 
-  /**
-   * Persist the research session to disk.
-   */
-  private persistSession(session: ResearchSession): void {
-    const dir = path.join(session.workspaceRoot, '.forgeai', 'research');
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const filePath = path.join(dir, `${session.sessionId}.json`);
-    fs.writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf-8');
-  }
+   /**
+    * Persist the research session to disk.
+    */
+   private persistSession(session: ResearchSession): void {
+     this.cache.persistSession(session);
+   }
 
   /**
    * Build an enriched prompt context from research for the spec generator.

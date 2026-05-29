@@ -741,7 +741,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     try {
       await agentLoop.execute(
         messages,
-        (update: AgentLoopUpdate) => {
+        async (update: AgentLoopUpdate) => {
           // Handle different update types
           switch (update.type) {
             case 'chunk':
@@ -924,25 +924,68 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
               break;
 
 case 'complete':
-              this.logger.info('Agent loop complete');
-              // Send final completion message
-              this.view?.webview.postMessage({
-                type: 'streamChunk',
-                conversationId,
-                data: {
-                  content: '',
-                  thinking: '',
-                  toolCalls: [],
-                },
-                done: true,
-              });
+               this.logger.info('Agent loop complete');
+               // Send final completion message
+               this.view?.webview.postMessage({
+                 type: 'streamChunk',
+                 conversationId,
+                 data: {
+                   content: '',
+                   thinking: '',
+                   toolCalls: [],
+                 },
+                 done: true,
+               });
 
-              // Notify webview that agent loop stopped
-              this.view?.webview.postMessage({
-                type: 'agentLoopStopped',
-                conversationId,
-              });
-              break;
+               // Notify webview that agent loop stopped
+               this.view?.webview.postMessage({
+                 type: 'agentLoopStopped',
+                 conversationId,
+               });
+
+               // Save session memory for conversation continuity
+               try {
+                 // Extract user and assistant messages for session memory
+                 const userMessages = messages
+                   .filter((msg: OllamaMessage) => msg.role === 'user')
+                   .map((msg) => ({ role: 'user' as const, content: msg.content || '' }));
+                 
+                 const assistantMessages = messages
+                   .filter((msg: OllamaMessage) => msg.role === 'assistant')
+                   .map((msg) => ({ role: 'assistant' as const, content: msg.content || '' }));
+                 
+                 // Combine and take last 10 exchanges (20 messages) for context
+                 const combinedMessages: Array<{ role: string; content: string }> = [];
+                 for (let i = 0; i < Math.max(userMessages.length, assistantMessages.length); i++) {
+                   if (i < userMessages.length) combinedMessages.push(userMessages[i]);
+                   if (i < assistantMessages.length) combinedMessages.push(assistantMessages[i]);
+                 }
+                 
+                 // Take last 20 messages (or fewer if conversation is shorter)
+                 const recentMessages = combinedMessages.slice(-20);
+                 
+                 // Generate simple summary and next steps
+                 const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
+                 const lastAssistantMessage = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
+                 
+                 const summary = `Conversation about: ${lastUserMessage.substring(0, 100)}${lastUserMessage.length > 100 ? '...' : ''}`;
+                 const nextSteps = lastAssistantMessage.length > 0 
+                   ? `Continue from: ${lastAssistantMessage.substring(0, 100)}${lastAssistantMessage.length > 100 ? '...' : ''}`
+                   : 'No specific next steps';
+                 
+                 await this.sessionContextInjector.saveSessionMemory(
+                   conversationId,
+                   recentMessages,
+                   summary,
+                   nextSteps,
+                   {} // empty context for now
+                 );
+                 
+                 this.logger.info(`Session memory saved for conversation ${conversationId}`);
+               } catch (error) {
+                 this.logger.error(`Failed to save session memory for ${conversationId}`, error);
+               }
+               break;
 
             case 'maxIterations':
               this.logger.warn('Agent loop reached max iterations');
