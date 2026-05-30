@@ -94,7 +94,11 @@ export class ResearchCache {
    * Check cache for any topic matching the query hash.
    * Used when user wants to reuse cached results across sessions.
    */
-  getAny(sessionId: string, topicSlug: string, query: string): { report: ResearchReport; stale: boolean } | null {
+  getAny(
+    sessionId: string,
+    topicSlug: string,
+    query: string
+  ): { report: ResearchReport; stale: boolean } | null {
     // First try session-scoped cache
     const sessionDir = this.getSessionCacheDir(sessionId);
     const sessionFile = path.join(sessionDir, `${topicSlug}.json`);
@@ -182,10 +186,80 @@ export class ResearchCache {
   }
 
   /**
+   * Get cleaned page content from cache by URL.
+   * Returns the cached content if found, null otherwise.
+   * No expiration — content is permanent per-project.
+   */
+  getPageContent(url: string): string | null {
+    const contentCacheDir = path.join(this.baseCacheDir, 'page-content');
+    const urlHash = this.hashUrl(url);
+    const filePath = path.join(contentCacheDir, `${urlHash}.json`);
+
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+
+    try {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const entry = JSON.parse(raw) as { content: string; url: string };
+      return entry.content;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Store cleaned page content in cache by URL.
+   * No expiration — content is permanent per-project.
+   * No size limits — store full cleaned content.
+   */
+  setPageContent(url: string, cleanedContent: string): void {
+    const contentCacheDir = path.join(this.baseCacheDir, 'page-content');
+    const urlHash = this.hashUrl(url);
+    const filePath = path.join(contentCacheDir, `${urlHash}.json`);
+
+    const entry = {
+      url,
+      content: cleanedContent,
+      cachedAt: Date.now(),
+    };
+
+    this.ensureDir(contentCacheDir);
+    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf-8');
+  }
+
+  /**
+   * Build a hash for a URL to use as cache key.
+   */
+  private static hashUrl(url: string): string {
+    // FNV-1a 32-bit hash — fast and good enough for cache keys
+    let hash = 0x811c9dc5;
+    const normalized = url.trim().toLowerCase();
+    for (let i = 0; i < normalized.length; i++) {
+      hash ^= normalized.charCodeAt(i);
+      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
+  /**
+   * Wrapper for static hashUrl method for use in instance methods.
+   */
+  private hashUrl(url: string): string {
+    return ResearchCache.hashUrl(url);
+  }
+
+  /**
    * Persist full research session to `.forgeai/research/sessions/{sessionId}/index.json`.
    */
   persistSession(session: ResearchSession): void {
-    const sessionDir = path.join(this.workspaceRoot, '.forgeai', 'research', 'sessions', session.sessionId);
+    const sessionDir = path.join(
+      this.workspaceRoot,
+      '.forgeai',
+      'research',
+      'sessions',
+      session.sessionId
+    );
     this.ensureDir(sessionDir);
     fs.writeFileSync(
       path.join(sessionDir, 'index.json'),
@@ -198,7 +272,14 @@ export class ResearchCache {
    * Load a research session by ID.
    */
   loadSession(sessionId: string): ResearchSession | null {
-    const sessionFile = path.join(this.workspaceRoot, '.forgeai', 'research', 'sessions', sessionId, 'index.json');
+    const sessionFile = path.join(
+      this.workspaceRoot,
+      '.forgeai',
+      'research',
+      'sessions',
+      sessionId,
+      'index.json'
+    );
     if (!fs.existsSync(sessionFile)) return null;
     try {
       const raw = fs.readFileSync(sessionFile, 'utf-8');

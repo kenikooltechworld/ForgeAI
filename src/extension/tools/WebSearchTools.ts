@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { Tool } from './ToolRegistry';
 import { ResearchCache } from '../agents/research/ResearchCache';
 import { ResearchFinding, ResearchReport } from '../agents/research/ResearchSession';
+import { ContentCleaner } from '../utils/ContentCleaner';
 
 /**
  * Web Search Tools - Cloud-based web search via SerpAPI and SerpStack
@@ -43,9 +44,9 @@ export class WebSearchTools {
   }
 
   /**
-    * Persist web-search findings to ResearchCache so ResearchAgent
-    * can reuse them during spec generation instead of repeating the search.
-    */
+   * Persist web-search findings to ResearchCache so ResearchAgent
+   * can reuse them during spec generation instead of repeating the search.
+   */
   private saveResearchReport(
     sessionId: string,
     topicSlug: string,
@@ -212,11 +213,11 @@ export class WebSearchTools {
           },
         },
       },
-execute: async (args: { query: string }) => {
-         const result = await this.performSearch(args.query);
-         const sessionId = `websearch-${Date.now()}`;
+      execute: async (args: { query: string }) => {
+        const result = await this.performSearch(args.query);
+        const sessionId = `websearch-${Date.now()}`;
 
-         // ─── Auto-fetch top 3 URLs for real content ───
+        // ─── Auto-fetch top 3 URLs for real content ───
         const topUrls = result.results.slice(0, 3);
         const fetchedPages: Array<{
           title: string;
@@ -253,36 +254,40 @@ execute: async (args: { query: string }) => {
           }
         }
 
-// ─── Persist findings to ResearchCache for reuse by ResearchAgent ───
-         const slug = args.query.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'web-search';
-         const findings: ResearchFinding[] = [
-           ...result.results.slice(0, 5).map((r) => ({
-             source: 'web' as const,
-             query: args.query,
-             text: `${r.title}\n${r.snippet}`,
-             url: r.url,
-             relevanceScore: 0.5,
-             retrievedAt: Date.now(),
-           })),
-           ...fetchedPages
-             .filter((p) => p.method !== 'error')
-             .map((p) => ({
-               source: 'web-page' as const,
-               query: args.query,
-               text: `📄 ${p.title}\n${p.content}`,
-               url: p.url,
-               relevanceScore: 0.85,
-               retrievedAt: Date.now(),
-             })),
-           {
-             source: 'web' as const,
-             query: args.query,
-             text: `📊 Fetch summary: ${fetchSuccess} fetched, ${fetchFailed} failed (attempted ${fetchSuccess + fetchFailed}).`,
-             relevanceScore: 0.0,
-             retrievedAt: Date.now(),
-           },
-];
-         this.saveResearchReport(sessionId, slug, args.query, findings, 1);
+        // ─── Persist findings to ResearchCache for reuse by ResearchAgent ───
+        const slug =
+          args.query
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'web-search';
+        const findings: ResearchFinding[] = [
+          ...result.results.slice(0, 5).map((r) => ({
+            source: 'web' as const,
+            query: args.query,
+            text: `${r.title}\n${r.snippet}`,
+            url: r.url,
+            relevanceScore: 0.5,
+            retrievedAt: Date.now(),
+          })),
+          ...fetchedPages
+            .filter((p) => p.method !== 'error')
+            .map((p) => ({
+              source: 'web-page' as const,
+              query: args.query,
+              text: `📄 ${p.title}\n${p.content}`,
+              url: p.url,
+              relevanceScore: 0.85,
+              retrievedAt: Date.now(),
+            })),
+          {
+            source: 'web' as const,
+            query: args.query,
+            text: `📊 Fetch summary: ${fetchSuccess} fetched, ${fetchFailed} failed (attempted ${fetchSuccess + fetchFailed}).`,
+            relevanceScore: 0.0,
+            retrievedAt: Date.now(),
+          },
+        ];
+        this.saveResearchReport(sessionId, slug, args.query, findings, 1);
 
         return {
           success: true,
@@ -351,15 +356,15 @@ execute: async (args: { query: string }) => {
           },
         },
       },
-execute: async (args: { topic: string; subQueries?: string[] }) => {
-         const queries = args.subQueries?.slice(0, 3) || [
-           args.topic,
-           `${args.topic} documentation`,
-           `${args.topic} best practices`,
-         ];
-         const sessionId = `research-${Date.now()}`;
+      execute: async (args: { topic: string; subQueries?: string[] }) => {
+        const queries = args.subQueries?.slice(0, 3) || [
+          args.topic,
+          `${args.topic} documentation`,
+          `${args.topic} best practices`,
+        ];
+        const sessionId = `research-${Date.now()}`;
 
-         const allResults: SearchResult[] = [];
+        const allResults: SearchResult[] = [];
         const seenUrls = new Set<string>();
 
         for (const q of queries.slice(0, 3)) {
@@ -441,7 +446,11 @@ execute: async (args: { topic: string; subQueries?: string[] }) => {
             retrievedAt: Date.now(),
           },
         ];
-        const slug = args.topic.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'web-research';
+        const slug =
+          args.topic
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'web-research';
         this.saveResearchReport(sessionId, slug, args.topic, findings, queries.slice(0, 3).length);
 
         return {
@@ -660,9 +669,11 @@ execute: async (args: { topic: string; subQueries?: string[] }) => {
    * real documentation content, not just search snippets.
    *
    * Strategy:
-   *  1. Try simple fetch first (fast, no overhead)
-   *  2. If fetch fails OR returns empty content, fallback to Playwright
+   *  1. Check cache for cleaned content (no expiration, per-project)
+   *  2. If not cached, try simple fetch first (fast, no overhead)
+   *  3. If fetch fails OR returns empty content, fallback to Playwright
    *     (real browser — handles Cloudflare, JS-rendered docs, cookies)
+   *  4. Clean content before caching
    */
   public async fetchPageContent(
     url: string,
@@ -679,6 +690,29 @@ execute: async (args: { topic: string; subQueries?: string[] }) => {
     if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
       throw new Error(`Unsupported protocol: ${urlObj.protocol}`);
     }
+
+    // ─── Check cache first (no expiration, per-project) ───
+    const cache = this.getResearchCache();
+    if (cache) {
+      const cachedContent = cache.getPageContent(url);
+      if (cachedContent) {
+        const truncated = cachedContent.length > maxLength;
+        const content = truncated
+          ? cachedContent.slice(0, maxLength) + '\n\n... [truncated]'
+          : cachedContent;
+        return {
+          url,
+          title: url,
+          content,
+          truncated,
+          method: 'fetch',
+        };
+      }
+    }
+
+    let fetchedContent: string | null = null;
+    let fetchedTitle: string | null = null;
+    let fetchMethod: 'fetch' | 'playwright' = 'fetch';
 
     // ─── Attempt 1: Simple fetch (fast, no browser startup cost) ───
     try {
@@ -702,19 +736,11 @@ execute: async (args: { topic: string; subQueries?: string[] }) => {
         const html = await response.text();
         let text = this.extractTextFromHtml(html);
 
-        // If content looks substantial, return it immediately
+        // If content looks substantial, use it
         if (text.length > 200) {
-          const truncated = text.length > maxLength;
-          if (truncated) {
-            text = text.slice(0, maxLength) + '\n\n... [truncated]';
-          }
-          return {
-            url,
-            title: this.extractTitle(html),
-            content: text,
-            truncated,
-            method: 'fetch',
-          };
+          fetchedContent = text;
+          fetchedTitle = this.extractTitle(html);
+          fetchMethod = 'fetch';
         }
         // Empty/short content — likely a Cloudflare challenge or JS-rendered shell
         // Fall through to Playwright
@@ -724,106 +750,118 @@ execute: async (args: { topic: string; subQueries?: string[] }) => {
     }
 
     // ─── Attempt 2: Playwright fallback (real browser with anti-bot) ───
-    try {
-      const { chromium } = await import('playwright');
-      const browser = await chromium.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1920,1080',
-        ],
-      });
-
-      const context = await browser.newContext({
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1920, height: 1080 },
-        locale: 'en-US',
-        timezoneId: 'America/New_York',
-        extraHTTPHeaders: {
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-          'Sec-Ch-Ua-Mobile': '?0',
-          'Sec-Ch-Ua-Platform': '"Windows"',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
-        },
-      });
-
-      const page = await context.newPage();
-
+    if (!fetchedContent) {
       try {
-        // Add a small random delay to mimic human behavior
-        await page.waitForTimeout(Math.floor(Math.random() * 500) + 200);
-
-        const response = await page.goto(url, {
-          waitUntil: 'domcontentloaded',
-          timeout: 20000,
+        const { chromium } = await import('playwright');
+        const browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            '--window-size=1920,1080',
+          ],
         });
 
-        // Wait for network to settle, then extra time for JS hydration
-        await page.waitForLoadState('networkidle', { timeout: 15000 });
-        await page.waitForTimeout(2500);
+        const context = await browser.newContext({
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          viewport: { width: 1920, height: 1080 },
+          locale: 'en-US',
+          timezoneId: 'America/New_York',
+          extraHTTPHeaders: {
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"Windows"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+          },
+        });
 
-        const title = await page.title();
+        const page = await context.newPage();
 
-        // Extract main content with multiple fallback strategies
-        const text = await page.evaluate(() => {
-          const selectors = [
-            'main',
-            'article',
-            '[role="main"]',
-            '.content',
-            '.documentation',
-            '#content',
-            '.markdown-body',
-            '.prose',
-          ];
-          for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el && el.textContent && el.textContent.trim().length > 200) {
-              return (el as HTMLElement).innerText;
+        try {
+          // Add a small random delay to mimic human behavior
+          await page.waitForTimeout(Math.floor(Math.random() * 500) + 200);
+
+          const response = await page.goto(url, {
+            waitUntil: 'domcontentloaded',
+            timeout: 20000,
+          });
+
+          // Wait for network to settle, then extra time for JS hydration
+          await page.waitForLoadState('networkidle', { timeout: 15000 });
+          await page.waitForTimeout(2500);
+
+          fetchedTitle = await page.title();
+
+          // Extract main content with multiple fallback strategies
+          const text = await page.evaluate(() => {
+            const selectors = [
+              'main',
+              'article',
+              '[role="main"]',
+              '.content',
+              '.documentation',
+              '#content',
+              '.markdown-body',
+              '.prose',
+            ];
+            for (const sel of selectors) {
+              const el = document.querySelector(sel);
+              if (el && el.textContent && el.textContent.trim().length > 200) {
+                return (el as HTMLElement).innerText;
+              }
             }
-          }
-          // Fallback: body minus noise
-          const body = document.body.cloneNode(true) as HTMLElement;
-          body
-            .querySelectorAll(
-              'nav, header, footer, aside, script, style, noscript, .ads, .cookie-banner'
-            )
-            .forEach((el) => el.remove());
-          return body.innerText;
-        });
+            // Fallback: body minus noise
+            const body = document.body.cloneNode(true) as HTMLElement;
+            body
+              .querySelectorAll(
+                'nav, header, footer, aside, script, style, noscript, .ads, .cookie-banner'
+              )
+              .forEach((el) => el.remove());
+            return body.innerText;
+          });
 
-        let content = text;
-        const truncated = content.length > maxLength;
-        if (truncated) {
-          content = content.slice(0, maxLength) + '\n\n... [truncated]';
+          fetchedContent = text;
+          fetchMethod = 'playwright';
+        } finally {
+          await browser.close();
         }
-
-        return {
-          url: page.url(),
-          title,
-          content,
-          truncated,
-          method: 'playwright',
-          status: response?.status() ?? null,
-        };
-      } finally {
-        await browser.close();
+      } catch (playwrightErr) {
+        throw new Error(
+          `Both fetch and Playwright failed for ${url}. ` +
+            `Playwright error: ${playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr)}`
+        );
       }
-    } catch (playwrightErr) {
-      throw new Error(
-        `Both fetch and Playwright failed for ${url}. ` +
-          `Playwright error: ${playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr)}`
-      );
     }
+
+    // ─── Clean content before caching ───
+    const cleanedContent = ContentCleaner.cleanContent(fetchedContent || '');
+
+    // ─── Cache cleaned content (no expiration, per-project) ───
+    if (cache && cleanedContent) {
+      cache.setPageContent(url, cleanedContent);
+    }
+
+    // ─── Return result ───
+    const truncated = cleanedContent.length > maxLength;
+    const content = truncated
+      ? cleanedContent.slice(0, maxLength) + '\n\n... [truncated]'
+      : cleanedContent;
+
+    return {
+      url,
+      title: fetchedTitle || url,
+      content,
+      truncated,
+      method: fetchMethod,
+    };
   }
 }
