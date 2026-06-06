@@ -1,21 +1,18 @@
 /**
  * PerTaskMultiAgentOrchestrator
  *
- * Executes each task using a 5-agent pipeline with context management:
- * 1. Explorer - Analyzes existing code, dependencies, current state
- * 2. Implementer - Writes/modifies code based on Explorer findings
- * 3. Verifier - Checks against requirements.md + design.md
- * 4. Tester - Runs tests, diagnoses errors
- * 5. Reviewer - Final quality gate, security, performance
+ * Executes each task using a multi-agent pipeline.
+ * Now supports a specialized Tri-Agent loop for UI/UX tasks:
+ * UI/UX Architect (Design) -> Implementer (Code) -> UI/UX Architect (Verify via Browser Mirror)
  *
- * Uses ContextManager to prevent context overflow:
- * - Sliding window: keeps only last 10 messages
- * - Result caching: stores results in files, not in context
- * - Smart compression: truncates large messages
+ * For non-UI tasks, it falls back to the standard 5-agent pipeline.
  */
 
 import { ExecutableTask, SpecContext } from './types';
 import { ContextManager } from './ContextManager';
+import { UIUXArchitectAgent, UIUXAgentInput, UIUXAgentResult } from '../agents/ui-ux-architect/UIUXArchitectAgent';
+import { BrowserMirrorTools } from '../agents/ui-ux-architect/tools/BrowserMirrorTools';
+import { ForgeBrowserSession } from '../services/ForgeBrowserSession';
 
 export interface AgentResult {
   agentName: string;
@@ -36,163 +33,246 @@ export interface TaskExecutionPipeline {
 }
 
 /**
- * Orchestrates the 5-agent pipeline for a single task
+ * Orchestrates the agent pipeline for a single task.
+ * Integrates UI/UX Architect and Browser Mirror for a closed-loop visual feedback system.
  */
 export class PerTaskMultiAgentOrchestrator {
   private contextManager: ContextManager;
+  private uiuxAgent: UIUXArchitectAgent | null = null;
+  private workspaceRoot: string;
 
-  constructor(workspaceRoot?: string) {
-    this.contextManager = new ContextManager(workspaceRoot || process.cwd());
+  constructor(
+    workspaceRoot?: string,
+    toolRegistry?: any,
+    ollamaClient?: any,
+    logger?: any
+  ) {
+    this.workspaceRoot = workspaceRoot || process.cwd();
+    this.contextManager = new ContextManager(this.workspaceRoot);
+
+    if (toolRegistry && ollamaClient && logger && workspaceRoot) {
+      this.uiuxAgent = new UIUXArchitectAgent(toolRegistry, ollamaClient, logger, workspaceRoot);
+    }
   }
+
   /**
-   * Execute a task using the 5-agent pipeline
-   *
-   * @param task - The task to execute
-   * @param specContext - Full spec context (requirements, design, etc.)
-   * @param agentLoop - The AgentLoop instance to use for each agent
-   * @returns Pipeline execution result
+   * Execute a task using the multi-agent pipeline.
    */
   public async executeTaskWithMultiAgents(
     task: ExecutableTask,
     specContext: SpecContext,
-    agentLoop: { execute: (...args: unknown[]) => Promise<void> }
+    agentLoop: { execute: (...args: unknown[]) => Promise<void> },
+    browserSession?: ForgeBrowserSession
   ): Promise<TaskExecutionPipeline> {
     const startTime = Date.now();
     const results: AgentResult[] = [];
 
-    // Phase 1: Explorer Agent
-    const explorerResult = await this.runExplorerAgent(task, specContext, agentLoop);
-    results.push(explorerResult);
+    const isUITask = this.isUITask(task);
+    this.log(`Task ${task.id} identified as ${isUITask ? 'UI' : 'Core Logic'} task.`);
 
-    // Cache explorer result to prevent context overflow
-    if (explorerResult.success) {
-      const cached = this.contextManager.cacheAgentResult('Explorer', task.id, {
-        summary: explorerResult.summary,
-        findings: explorerResult.findings,
-      });
-      explorerResult.nextAgentPrompt = this.contextManager.summarizeResult(cached);
-    }
+    if (isUITask) {
+      // --- TRI-AGENT UI LOOP ---
 
-    if (!explorerResult.success) {
+      // 1. UI/UX Architect: Design Phase
+      this.log(`Running UI/UX Design Phase for ${task.id}...`);
+      const designResult = await this.runUIUXDesignPhase(task, specContext, browserSession);
+      results.push(designResult);
+
+      if (!designResult.success) {
+        this.log(`Design Phase FAILED: ${designResult.summary}`);
+        return this.failPipeline(task, results, startTime);
+      }
+      this.log(`Design Phase SUCCESS`);
+
+      // 2. Implementer: Implementation Phase
+      this.log(`Running Implementation Phase for ${task.id}...`);
+      const implementerResult = await this.runImplementerAgent(
+        task,
+        specContext,
+        agentLoop,
+        designResult
+      );
+      results.push(implementerResult);
+
+      if (!implementerResult.success) {
+        this.log(`Implementation Phase FAILED: ${implementerResult.summary}`);
+        return this.failPipeline(task, results, startTime);
+      }
+      this.log(`Implementation Phase SUCCESS`);
+
+      // 3. UI/UX Architect: Visual Verification Phase (Using Browser Mirror)
+      this.log(`Running Visual Verification Phase for ${task.id}...`);
+      const visualResult = await this.runUIUXVerificationPhase(task, specContext, implementerResult, browserSession);
+      results.push(visualResult);
+
+      if (!visualResult.success) {
+        this.log(`Visual Verification FAILED: ${visualResult.summary}`);
+        return this.failPipeline(task, results, startTime);
+      }
+      this.log(`Visual Verification SUCCESS`);
+
+      // Final Quality Review
+      this.log(`Running Final Review for ${task.id}...`);
+      const reviewerResult = await this.runReviewerAgent(task, specContext, agentLoop, visualResult);
+      results.push(reviewerResult);
+
+      if (!reviewerResult.success) {
+        this.log(`Review Phase FAILED: ${reviewerResult.summary}`);
+        return this.failPipeline(task, results, startTime);
+      }
+      this.log(`Review Phase SUCCESS`);
+
       return {
         taskId: task.id,
         taskDescription: task.description,
         results,
-        finalStatus: 'failed',
+        finalStatus: 'success',
         totalDurationMs: Date.now() - startTime,
       };
-    }
 
-    // Phase 2: Implementer Agent
-    const implementerResult = await this.runImplementerAgent(
-      task,
-      specContext,
-      agentLoop,
-      explorerResult
-    );
-    results.push(implementerResult);
+    } else {
+      // --- STANDARD 5-AGENT PIPELINE ---
+      const explorerResult = await this.runExplorerAgent(task, specContext, agentLoop);
+      results.push(explorerResult);
+      if (!explorerResult.success) return this.failPipeline(task, results, startTime);
 
-    // Cache implementer result
-    if (implementerResult.success) {
-      const cached = this.contextManager.cacheAgentResult('Implementer', task.id, {
-        summary: implementerResult.summary,
-        artifacts: implementerResult.artifacts,
-      });
-      implementerResult.nextAgentPrompt = this.contextManager.summarizeResult(cached);
-    }
+      const implementerResult = await this.runImplementerAgent(task, specContext, agentLoop, explorerResult);
+      results.push(implementerResult);
+      if (!implementerResult.success) return this.failPipeline(task, results, startTime);
 
-    if (!implementerResult.success) {
+      const verifierResult = await this.runVerifierAgent(task, specContext, agentLoop, implementerResult);
+      results.push(verifierResult);
+      if (!verifierResult.success) return this.failPipeline(task, results, startTime);
+
+      const testerResult = await this.runTesterAgent(task, specContext, agentLoop, verifierResult);
+      results.push(testerResult);
+      if (!testerResult.success) return this.failPipeline(task, results, startTime);
+
+      const reviewerResult = await this.runReviewerAgent(task, specContext, agentLoop, testerResult);
+      results.push(reviewerResult);
+
+      const finalStatus = reviewerResult.success ? 'success' : 'failed';
+
       return {
         taskId: task.id,
         taskDescription: task.description,
         results,
-        finalStatus: 'failed',
+        finalStatus,
         totalDurationMs: Date.now() - startTime,
       };
     }
+  }
 
-    // Phase 3: Verifier Agent
-    const verifierResult = await this.runVerifierAgent(
-      task,
-      specContext,
-      agentLoop,
-      implementerResult
-    );
-    results.push(verifierResult);
+  private isUITask(task: ExecutableTask): boolean {
+    const uiKeywords = ['ui', 'ux', 'layout', 'component', 'css', 'style', 'color', 'button', 'modal', 'page', 'view', 'frontend', 'visual', 'design'];
+    const text = (task.description + ' ' + task.instructions.join(' ')).toLowerCase();
+    return uiKeywords.some(keyword => text.includes(keyword));
+  }
 
-    // Cache verifier result
-    if (verifierResult.success) {
-      const cached = this.contextManager.cacheAgentResult('Verifier', task.id, {
-        summary: verifierResult.summary,
-        findings: verifierResult.findings,
-      });
-      verifierResult.nextAgentPrompt = this.contextManager.summarizeResult(cached);
-    }
-
-    if (!verifierResult.success) {
+  private async runUIUXDesignPhase(
+    task: ExecutableTask,
+    specContext: SpecContext,
+    browserSession?: ForgeBrowserSession
+  ): Promise<AgentResult> {
+    if (!this.uiuxAgent) {
       return {
-        taskId: task.id,
-        taskDescription: task.description,
-        results,
-        finalStatus: 'failed',
-        totalDurationMs: Date.now() - startTime,
+        agentName: 'UI/UX Architect',
+        success: false,
+        summary: 'UI/UX Architect agent not initialized.',
+        errors: ['Agent missing'],
       };
     }
 
-    // Phase 4: Tester Agent
-    const testerResult = await this.runTesterAgent(task, specContext, agentLoop, verifierResult);
-    results.push(testerResult);
+    const request = `Design the UI/UX for task ${task.id}: ${task.description}.
+    Instructions: ${task.instructions.join(' ')}.
+    Requirements: ${specContext.spec.requirements.filter(r => task.requirementIds.includes(r.id)).map(r => r.title).join(', ')}`;
 
-    // Cache tester result
-    if (testerResult.success) {
-      const cached = this.contextManager.cacheAgentResult('Tester', task.id, {
-        summary: testerResult.summary,
-        findings: testerResult.findings,
-      });
-      testerResult.nextAgentPrompt = this.contextManager.summarizeResult(cached);
-    }
+    const result = await this.uiuxAgent.execute({
+      request,
+      workspaceRoot: this.workspaceRoot,
+      browserSession,
+    });
 
-    if (!testerResult.success) {
-      return {
-        taskId: task.id,
-        taskDescription: task.description,
-        results,
-        finalStatus: 'failed',
-        totalDurationMs: Date.now() - startTime,
+    if (result.success && result.artifacts?.designSystem) {
+      task.uxSpec = {
+        expectedElements: [],
+        visualRules: [],
+        componentSpecs: result.artifacts,
       };
     }
-
-    // Phase 5: Reviewer Agent
-    const reviewerResult = await this.runReviewerAgent(task, specContext, agentLoop, testerResult);
-    results.push(reviewerResult);
-
-    // Cache reviewer result
-    if (reviewerResult.success) {
-      const cached = this.contextManager.cacheAgentResult('Reviewer', task.id, {
-        summary: reviewerResult.summary,
-        findings: reviewerResult.findings,
-      });
-      reviewerResult.nextAgentPrompt = this.contextManager.summarizeResult(cached);
-    }
-
-    // Clean old cache files
-    this.contextManager.cleanOldCache();
-
-    const finalStatus = reviewerResult.success ? 'success' : 'failed';
 
     return {
-      taskId: task.id,
-      taskDescription: task.description,
-      results,
-      finalStatus,
-      totalDurationMs: Date.now() - startTime,
+      agentName: 'UI/UX Architect',
+      success: result.success,
+      summary: result.response,
+      findings: result.artifacts ? [result.artifacts.designSystem || 'Tokens generated'] : [],
+      errors: result.error ? [result.error] : [],
     };
   }
 
-  /**
-   * Phase 1: Explorer Agent
-   * Analyzes what exists, dependencies, current state
-   */
+  private async runUIUXVerificationPhase(
+    task: ExecutableTask,
+    specContext: SpecContext,
+    implementerResult: AgentResult,
+    browserSession?: ForgeBrowserSession
+  ): Promise<AgentResult> {
+    if (!this.uiuxAgent) {
+      return {
+        agentName: 'UI/UX Architect (Verification)',
+        success: false,
+        summary: 'UI/UX Architect agent not initialized.',
+        errors: ['Agent missing'],
+      };
+    }
+
+    if (!browserSession) {
+      return {
+        agentName: 'UI/UX Architect (Verification)',
+        success: false,
+        summary: 'Browser session not available for visual verification.',
+        errors: ['No active browser session'],
+      };
+    }
+
+    const mirrorTools = new BrowserMirrorTools(browserSession);
+
+    // 1. Gather visual and semantic evidence
+    const semanticsResult = await mirrorTools.getSemanticSnapshot().execute({});
+    const screenshotResult = await mirrorTools.takeScreenshot().execute({});
+
+    const evidence = {
+      semantics: semanticsResult.success ? semanticsResult.response : 'Could not capture semantics',
+      screenshot: screenshotResult.success ? 'Screenshot captured' : 'Screenshot failed',
+    };
+
+    const request = `Verify the implementation of Task ${task.id}: ${task.description}.
+
+    Implementation Summary: ${implementerResult.summary}
+
+    Semantic Snapshot:
+    ${evidence.semantics}
+
+    Please analyze if the structural and visual implementation matches the design requirements.
+    If it does not match, explain why and provide a "Verdict: FAIL" with correction instructions.
+    If it matches, provide "Verdict: PASS".`;
+
+    const result = await this.uiuxAgent.execute({
+      request,
+      workspaceRoot: this.workspaceRoot,
+      browserSession,
+    });
+
+    const success = result.response.toLowerCase().includes('verdict: pass');
+
+    return {
+      agentName: 'UI/UX Architect (Verification)',
+      success,
+      summary: result.response,
+      findings: result.artifacts ? [result.artifacts.designSystem || 'Verification performed'] : [],
+      errors: success ? [] : ['Visual/Structural mismatch detected'],
+    };
+  }
+
   private async runExplorerAgent(
     task: ExecutableTask,
     specContext: SpecContext,
@@ -217,7 +297,7 @@ ${task.description}
 ${specContext.spec.requirements
   .filter((r) => task.requirementIds.includes(r.id))
   .map((r) => `- ${r.title}: ${r.description}`)
-  .join('\n')}
+  .join('\\n')}
 
 ## Design guidance:
 ${specContext.spec.design || 'No design document available'}
@@ -234,36 +314,14 @@ Provide a JSON response with:
 }
 `;
 
-    try {
-      const result = await this.executeAgent(agentLoop, prompt, 'Explorer');
-      return {
-        agentName: 'Explorer',
-        success: true,
-        summary: result.summary || 'Analysis complete',
-        findings: result.findings || [],
-        nextAgentPrompt: prompt,
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        agentName: 'Explorer',
-        success: false,
-        summary: `Explorer failed: ${errorMsg}`,
-        errors: [errorMsg],
-      };
-    }
+    return this.executeGenericAgent(agentLoop, prompt, 'Explorer');
   }
 
-  /**
-   * Phase 2: Implementer Agent
-   * Writes/modifies code based on Explorer findings
-   * MUST verify no errors are introduced
-   */
   private async runImplementerAgent(
     task: ExecutableTask,
     specContext: SpecContext,
     agentLoop: { execute: (...args: unknown[]) => Promise<void> },
-    explorerResult: AgentResult
+    previousResult: AgentResult
   ): Promise<AgentResult> {
     const prompt = `
 # IMPLEMENTER AGENT - Task ${task.id}
@@ -273,23 +331,23 @@ Your job: Write/modify code to implement this task. VERIFY no errors are introdu
 ## Task
 ${task.description}
 
-## Explorer's findings:
-${explorerResult.summary}
+## Explorer/Architect's findings:
+${previousResult.summary}
 
 ## Requirements:
 ${specContext.spec.requirements
   .filter((r) => task.requirementIds.includes(r.id))
   .map((r) => `- ${r.title}: ${r.description}`)
-  .join('\n')}
+  .join('\\n')}
 
 ## Design:
 ${specContext.spec.design || 'No design document available'}
 
 ## Instructions:
-${task.instructions.map((i) => `- ${i}`).join('\n')}
+${task.instructions.map((i) => `- ${i}`).join('\\n')}
 
 ## Expected artifacts:
-${task.expectedArtifacts.join('\n')}
+${task.expectedArtifacts.join('\\n')}
 
 ## 🚨 ERROR PREVENTION PROTOCOL 🚨
 
@@ -297,7 +355,7 @@ After writing/modifying code:
 1. **VERIFY** TypeScript compilation: npx tsc --noEmit
    - If errors: FIX them immediately
    - Do NOT move forward with TypeScript errors
-   
+
 2. **VERIFY** ESLint: npx eslint --ext .ts,.tsx src/ --max-warnings=0
    - If errors: FIX them immediately
    - Do NOT move forward with linting errors
@@ -331,52 +389,9 @@ Provide a JSON response with:
 }
 `;
 
-    try {
-      const result = await this.executeAgent(
-        agentLoop,
-        prompt,
-        'Implementer',
-        explorerResult.summary
-      );
-      
-      // Check if compilation and linting passed
-      const compilationOK = result.compilationPassed !== false;
-      const lintOK = result.lintPassed !== false;
-      const success = compilationOK && lintOK && result.success !== false;
-      
-      if (!success) {
-        const errors = result.errors || [];
-        return {
-          agentName: 'Implementer',
-          success: false,
-          summary: `Implementation has errors: ${errors.join('; ')}`,
-          errors,
-          artifacts: result.artifacts || [],
-        };
-      }
-      
-      return {
-        agentName: 'Implementer',
-        success: true,
-        summary: result.summary || 'Implementation complete - no errors',
-        artifacts: result.artifacts || [],
-        nextAgentPrompt: prompt,
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        agentName: 'Implementer',
-        success: false,
-        summary: `Implementer failed: ${errorMsg}`,
-        errors: [errorMsg],
-      };
-    }
+    return this.executeGenericAgent(agentLoop, prompt, 'Implementer', previousResult.summary);
   }
 
-  /**
-   * Phase 3: Verifier Agent
-   * Checks against requirements.md + design.md
-   */
   private async runVerifierAgent(
     task: ExecutableTask,
     specContext: SpecContext,
@@ -399,9 +414,9 @@ ${specContext.spec.requirements
   .filter((r) => task.requirementIds.includes(r.id))
   .map(
     (r) =>
-      `- ${r.title}: ${r.description}\n  Acceptance criteria: ${r.acceptanceCriteria.map((c) => c.text).join(', ')}`
+      `- ${r.title}: ${r.description}\\n  Acceptance criteria: ${r.acceptanceCriteria.map((c) => c.text).join(', ')}`
   )
-  .join('\n')}
+  .join('\\n')}
 
 ## Design to verify against:
 ${specContext.spec.design || 'No design document available'}
@@ -424,32 +439,9 @@ Provide a JSON response with:
 }
 `;
 
-    try {
-      const result = await this.executeAgent(agentLoop, prompt, 'Verifier');
-      const success = result.success !== false;
-      return {
-        agentName: 'Verifier',
-        success,
-        summary: result.summary || 'Verification complete',
-        findings: result.findings || [],
-        errors: result.errors || [],
-        nextAgentPrompt: prompt,
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        agentName: 'Verifier',
-        success: false,
-        summary: `Verifier failed: ${errorMsg}`,
-        errors: [errorMsg],
-      };
-    }
+    return this.executeGenericAgent(agentLoop, prompt, 'Verifier');
   }
 
-  /**
-   * Phase 4: Tester Agent
-   * Runs tests, diagnoses errors - MANDATORY error resolution
-   */
   private async runTesterAgent(
     task: ExecutableTask,
     specContext: SpecContext,
@@ -468,7 +460,7 @@ ${task.description}
 ${verifierResult.summary}
 
 ## Test files to run:
-${task.expectedArtifacts.filter((a) => a.includes('.test.')).join('\n') || 'No specific test files'}
+${task.expectedArtifacts.filter((a) => a.includes('.test.')).join('\\n') || 'No specific test files'}
 
 ## 🚨 ERROR RESOLUTION PROTOCOL 🚨
 
@@ -490,12 +482,12 @@ NEVER run the same command twice without fixing the problem.
    - If errors: STOP and diagnose each one
    - Fix the TypeScript errors
    - Re-run until zero errors
-   
+
 2. Run ESLint: npx eslint --ext .ts,.tsx src/ --max-warnings=0
    - If errors: STOP and diagnose each one
    - Fix the linting errors
    - Re-run until zero errors
-   
+
 3. Run tests: npx jest --passWithNoTests
    - If failures: STOP and diagnose each one
    - Fix the failing tests
@@ -515,52 +507,9 @@ Provide a JSON response with:
 }
 `;
 
-    try {
-      const result = await this.executeAgent(agentLoop, prompt, 'Tester');
-      
-      // Check if all errors were resolved
-      const allErrorsResolved = result.allErrorsResolved !== false && result.success !== false;
-      
-      if (!allErrorsResolved) {
-        // If errors remain, mark as failed with detailed error list
-        const errors = [
-          ...(result.compilationErrors || []),
-          ...(result.lintErrors || []),
-          ...(result.testFailures || []),
-        ];
-        
-        return {
-          agentName: 'Tester',
-          success: false,
-          summary: `Testing found unresolved errors: ${errors.join('; ')}`,
-          errors,
-          findings: result.findings || [],
-        };
-      }
-      
-      return {
-        agentName: 'Tester',
-        success: true,
-        summary: result.summary || 'All tests passed - no errors',
-        findings: result.findings || [],
-        errors: [],
-        nextAgentPrompt: prompt,
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        agentName: 'Tester',
-        success: false,
-        summary: `Tester failed: ${errorMsg}`,
-        errors: [errorMsg],
-      };
-    }
+    return this.executeGenericAgent(agentLoop, prompt, 'Tester');
   }
 
-  /**
-   * Phase 5: Reviewer Agent
-   * Final quality gate, security, performance
-   */
   private async runReviewerAgent(
     task: ExecutableTask,
     specContext: SpecContext,
@@ -602,32 +551,10 @@ Provide a JSON response with:
 }
 `;
 
-    try {
-      const result = await this.executeAgent(agentLoop, prompt, 'Reviewer');
-      const success = result.success !== false;
-      return {
-        agentName: 'Reviewer',
-        success,
-        summary: result.summary || 'Review complete',
-        findings: result.findings || [],
-        errors: result.errors || [],
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        agentName: 'Reviewer',
-        success: false,
-        summary: `Reviewer failed: ${errorMsg}`,
-        errors: [errorMsg],
-      };
-    }
+    return this.executeGenericAgent(agentLoop, prompt, 'Reviewer');
   }
 
-  /**
-   * Execute a single agent with the given prompt
-   * Handles context limit by using handoff mechanism
-   */
-  private async executeAgent(
+  private async executeGenericAgent(
     agentLoop: {
       execute: (...args: unknown[]) => Promise<void>;
       isContextLimitReached?: () => boolean;
@@ -637,116 +564,50 @@ Provide a JSON response with:
     prompt: string,
     agentName: string,
     previousAgentSummary?: string
-  ): Promise<{
-    success?: boolean;
-    summary?: string;
-    findings?: string[];
-    errors?: string[];
-    contextLimitReached?: boolean;
-    contextSummary?: string;
-    lastThreeMessages?: any[];
-    compilationPassed?: boolean;
-    lintPassed?: boolean;
-    artifacts?: string[];
-    compilationErrors?: string[];
-    lintErrors?: string[];
-    testFailures?: string[];
-    allErrorsResolved?: boolean;
-  }> {
-    // If previous agent hit context limit, use handoff
-    let systemPrompt = `You are a ${agentName} agent. Respond with valid JSON only. No markdown, no explanations, just JSON.`;
-
-    if (previousAgentSummary) {
-      systemPrompt += `\n\nPrevious agent's work summary:\n${previousAgentSummary}\n\nContinue from where the previous agent left off.`;
-    }
-
-    const messages = [
-      {
-        role: 'system' as const,
-        content: systemPrompt,
-      },
-      { role: 'user' as const, content: prompt },
-    ];
-
+  ): Promise<AgentResult> {
     let finalContent = '';
-    let result: {
-      success?: boolean;
-      summary?: string;
-      findings?: string[];
-      errors?: string[];
-      contextLimitReached?: boolean;
-      contextSummary?: string;
-      lastThreeMessages?: any[];
-      compilationPassed?: boolean;
-      lintPassed?: boolean;
-      artifacts?: string[];
-      compilationErrors?: string[];
-      lintErrors?: string[];
-      testFailures?: string[];
-      allErrorsResolved?: boolean;
-    } = {
-      success: true,
-      summary: `${agentName} completed`,
-    };
+    let result: any = { success: true, summary: `${agentName} completed` };
 
     try {
       await agentLoop.execute(
-        messages,
-        (update: unknown) => {
-          const u = update as { type: string; content?: string; message?: string };
-          // Collect content from chunk updates
-          if (u.type === 'chunk' && u.content) {
-            finalContent += u.content;
-          }
-          // Handle context limit reached
-          if (u.type === 'complete' && u.message?.includes('Context limit')) {
-            result.contextLimitReached = true;
-            result.contextSummary = agentLoop.getContextSummary?.();
-            result.lastThreeMessages = agentLoop.getLastThreeMessages?.();
-            return;
-          }
-          // On complete, parse the final content
-          if (u.type === 'complete') {
-            if (finalContent.trim().length > 0) {
-              try {
-                const parsed = JSON.parse(finalContent);
-                result = { ...result, ...parsed };
-              } catch {
-                result = { ...result, success: true, summary: finalContent };
-              }
-            }
+        [
+          { role: 'system' as const, content: `You are a ${agentName} agent. Respond with valid JSON only. No markdown, no explanations, just JSON.` },
+          { role: 'user' as const, content: prompt },
+        ],
+        (update: any) => {
+          if (update.type === 'chunk' && update.content) finalContent += update.content;
+          if (update.type === 'complete' && finalContent.trim().length > 0) {
+            try { result = { ...result, ...JSON.parse(finalContent) }; } catch { result = { ...result, summary: finalContent }; }
           }
         },
         [],
         'default-model',
         {}
       );
-
-      // Check if context limit was reached after execution
-      if (agentLoop.isContextLimitReached?.()) {
-        const contextSummary = agentLoop.getContextSummary?.();
-        const lastThreeMessages = agentLoop.getLastThreeMessages?.();
-        result.contextLimitReached = true;
-        result.contextSummary = contextSummary;
-        result.lastThreeMessages = lastThreeMessages;
-      }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-
-      // If error is context overflow, mark it as such
-      if (errorMsg.includes('Context overflow')) {
-        result = {
-          success: false,
-          errors: [errorMsg],
-          contextLimitReached: true,
-          contextSummary: agentLoop.getContextSummary?.(),
-          lastThreeMessages: agentLoop.getLastThreeMessages?.(),
-        };
-      } else {
-        result = { success: false, errors: [errorMsg] };
-      }
+      return { agentName, success: false, summary: `${agentName} failed: ${err}`, errors: [String(err)] };
     }
 
-    return result;
+    return {
+      agentName,
+      success: result.success !== false,
+      summary: result.summary || 'Completed',
+      findings: result.findings || [],
+      errors: result.errors || [],
+    };
+  }
+
+  private failPipeline(task: ExecutableTask, results: AgentResult[], startTime: number): TaskExecutionPipeline {
+    return {
+      taskId: task.id,
+      taskDescription: task.description,
+      results,
+      finalStatus: 'failed',
+      totalDurationMs: Date.now() - startTime,
+    };
+  }
+
+  private log(msg: string) {
+    console.log(`[PerTaskMultiAgentOrchestrator] ${msg}`);
   }
 }

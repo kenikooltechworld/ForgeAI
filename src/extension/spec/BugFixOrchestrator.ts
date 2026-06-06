@@ -94,7 +94,10 @@ export class BugFixOrchestrator {
     error: string,
     specContext: SpecContext,
     agentLoop: { execute: (...args: unknown[]) => Promise<void> }
-  ): Promise<{ success: boolean; summary: string; rootCause?: string; suggestions?: string[] }> {
+  ): Promise<{ success: boolean; summary: string; rootCause?: string; suggestions?: string[]; errorType?: string }> {
+    const errorType = this.categorizeError(error);
+    const recovery = this.getRecoveryStrategy(errorType, error);
+
     const prompt = `
 # ERROR DIAGNOSIS - Task ${task.id}
 
@@ -103,6 +106,9 @@ ${task.description}
 
 ## Error Message
 ${error}
+
+## Error Category
+${errorType}
 
 ## Requirements this task implements
 ${specContext.spec.requirements
@@ -139,18 +145,96 @@ Provide a JSON response with:
 
     try {
       const result = await this.executeAgent(agentLoop, prompt, 'Diagnostician');
+      const parsed = result as Record<string, unknown> | undefined;
       return {
-        success: result.success !== false,
-        summary: result.summary || 'Diagnosis complete',
-        rootCause: (result as any).rootCause,
-        suggestions: (result as any).possibleFixes?.map((f: any) => f.fix) || [],
+        success: (parsed?.success as boolean | undefined) !== false,
+        summary: (parsed?.summary as string | undefined) || 'Diagnosis complete',
+        rootCause: (parsed?.rootCause as string | undefined) || recovery.rootCause,
+        suggestions: ((parsed?.possibleFixes as Array<{ fix: string }> | undefined) || []).map((f) => f.fix),
+        errorType,
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       return {
         success: false,
         summary: `Diagnosis failed: ${errorMsg}`,
+        errorType,
       };
+    }
+  }
+
+  private categorizeError(error: string): string {
+    const lower = error.toLowerCase();
+    if (lower.includes('ts ') && lower.includes('error')) return 'typescript';
+    if (lower.includes('jest') || lower.includes('test') || lower.includes('expect')) return 'test';
+    if (lower.includes('eslint') || lower.includes('lint')) return 'lint';
+    if (lower.includes('playwright') || lower.includes('browser') || lower.includes('timeout')) return 'browser';
+    if (lower.includes('enoent') || lower.includes('module not found') || lower.includes('cannot find')) return 'missing';
+    return 'other';
+  }
+
+  private getRecoveryStrategy(errorType: string, _error: string): { suggestions: string[]; strategy: string; rootCause?: string } {
+    switch (errorType) {
+      case 'typescript':
+        return {
+          strategy: 'fix_typescript',
+          rootCause: 'TypeScript compilation error',
+          suggestions: [
+            'Fix type errors in the affected files',
+            'Add missing type imports or declarations',
+            'Check for incorrect interface implementations',
+          ],
+        };
+      case 'test':
+        return {
+          strategy: 'fix_tests',
+          rootCause: 'Test failure detected',
+          suggestions: [
+            'Update failing test assertions to match implementation',
+            'Fix mock data or test setup',
+            'Ensure test environment matches runtime',
+          ],
+        };
+      case 'lint':
+        return {
+          strategy: 'fix_lint',
+          rootCause: 'Linting error detected',
+          suggestions: [
+            'Apply ESLint auto-fix with --fix flag',
+            'Manually fix remaining lint violations',
+            'Update ESLint config if rule is inappropriate',
+          ],
+        };
+      case 'browser':
+        return {
+          strategy: 'fix_browser',
+          rootCause: 'Browser/Playwright error',
+          suggestions: [
+            'Check if dev server is running',
+            'Verify element selectors exist in the DOM',
+            'Add wait conditions for async content',
+          ],
+        };
+      case 'missing':
+        return {
+          strategy: 'fix_missing',
+          rootCause: 'Missing file or module',
+          suggestions: [
+            'Create the missing file or module',
+            'Install missing dependencies',
+            'Fix import paths',
+          ],
+        };
+      default:
+        return {
+          strategy: 'general_fix',
+          rootCause: 'Unknown error type',
+          suggestions: [
+            'Review error message and stack trace',
+            'Check recent changes for regressions',
+            'Consult documentation for the affected API',
+          ],
+        };
     }
   }
 
@@ -284,34 +368,27 @@ Provide a JSON response with:
     const messages = [
       {
         role: 'system' as const,
-        content: `You are a ${agentName} agent. Respond with valid JSON only. No markdown, no explanations, just JSON.`,
+        content: `You are a ${agentName} agent. Respond with valid JSON only.`,
       },
       { role: 'user' as const, content: prompt },
     ];
 
     let finalContent = '';
-    let result: any = {
-      success: true,
-      summary: `${agentName} completed`,
-    };
+    let result: any = { success: true, summary: `${agentName} completed` };
 
     try {
       await agentLoop.execute(
         messages,
         (update: unknown) => {
           const u = update as { type: string; content?: string };
-          // Collect content from chunk updates
           if (u.type === 'chunk' && u.content) {
             finalContent += u.content;
           }
-          // On complete, parse the final content
-          if (u.type === 'complete') {
-            if (finalContent.trim().length > 0) {
-              try {
-                result = JSON.parse(finalContent);
-              } catch {
-                result = { success: true, summary: finalContent };
-              }
+          if (u.type === 'complete' && finalContent.trim().length > 0) {
+            try {
+              result = JSON.parse(finalContent);
+            } catch {
+              result = { success: true, summary: finalContent };
             }
           }
         },
@@ -325,5 +402,52 @@ Provide a JSON response with:
     }
 
     return result;
+  }
+
+  public async fixRegression(
+    filePath: string,
+    errorOutput: string
+  ): Promise<{ success: boolean; diagnosis?: string; applied?: boolean }> {
+    try {
+      const diagnosis = await this.diagnoseRegression(filePath, errorOutput);
+      const applied = await this.applyRegressionFix(filePath, diagnosis);
+      return { success: applied, diagnosis, applied };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { success: false, diagnosis: msg };
+    }
+  }
+
+  private async diagnoseRegression(filePath: string, errorOutput: string): Promise<string> {
+    const prompt = `
+# REGRESSION DIAGNOSIS
+
+## File
+${filePath}
+
+## Error Output
+${errorOutput.slice(0, 4000)}
+
+## Your Job
+Identify the root cause and the exact fix needed.
+
+Output JSON:
+{
+  "diagnosis": "Root cause description",
+  "fixDescription": "What to change",
+  "confidence": 0-100
+}
+`;
+
+    try {
+      const result = await this.executeAgent({ execute: async () => {} }, prompt, 'RegressionDiagnostician');
+      return (result as any).diagnosis || 'Unknown regression';
+    } catch {
+      return 'Unknown regression';
+    }
+  }
+
+  private async applyRegressionFix(_filePath: string, _diagnosis: string): Promise<boolean> {
+    return false;
   }
 }

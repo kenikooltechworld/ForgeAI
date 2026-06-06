@@ -3,6 +3,7 @@
  *
  * Core principle: Read the spec, execute tasks one by one, verify, repeat.
  * No recursion limits. No graph transitions. Just: task → execute → verify → next.
+ * Now includes UI/UX validation via Browser Mirror.
  */
 
 import * as fs from 'fs';
@@ -10,7 +11,12 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { SpecReader } from './SpecReader';
 import { PerTaskMultiAgentOrchestrator } from './PerTaskMultiAgentOrchestrator';
-import { BugFixOrchestrator } from './BugFixOrchestrator';
+import { BugFixOrchestrator, BugFixResult } from './BugFixOrchestrator';
+import { UXSpecValidator, UXValidationResult } from './UXSpecValidator';
+import { HITLHandoffManager } from './HITLHandoffManager';
+import { BrowserMirrorStream } from './BrowserMirrorStream';
+import { VisualQAAgent } from '../agents/visual-qa/VisualQAAgent';
+import { Logger } from '../utils/Logger';
 import {
   ParsedSpec,
   ExecutableTask,
@@ -50,14 +56,29 @@ export class SpecTaskExecutor {
   private readonly specReader: SpecReader;
   private readonly multiAgentOrchestrator: PerTaskMultiAgentOrchestrator;
   private readonly bugFixOrchestrator: BugFixOrchestrator;
+  private readonly uxValidator: UXSpecValidator;
+  private readonly hitlManager: HITLHandoffManager | null;
+  private readonly visualQAAgent: VisualQAAgent | null;
   private isRunning = false;
   private shouldStop = false;
+  private browserMirror?: BrowserMirrorStream;
 
-  constructor() {
-    this.logger = new TaskLogger('SpecTaskExecutor');
+  constructor(
+    orchestrator?: PerTaskMultiAgentOrchestrator,
+    hitlManager?: HITLHandoffManager,
+    workspaceRoot?: string,
+    ollamaClient?: any,
+    logger?: Logger
+  ) {
+    this.logger = (logger as unknown as TaskLogger) || new TaskLogger('SpecTaskExecutor');
     this.specReader = new SpecReader();
-    this.multiAgentOrchestrator = new PerTaskMultiAgentOrchestrator();
+    this.multiAgentOrchestrator = orchestrator || new PerTaskMultiAgentOrchestrator();
     this.bugFixOrchestrator = new BugFixOrchestrator();
+    this.hitlManager = hitlManager || null;
+    this.uxValidator = new UXSpecValidator(workspaceRoot || process.cwd());
+    this.visualQAAgent = ollamaClient && workspaceRoot
+      ? new VisualQAAgent(ollamaClient, this.logger as unknown as Logger, workspaceRoot)
+      : null;
   }
 
   /**
@@ -66,11 +87,15 @@ export class SpecTaskExecutor {
    * @param specDir — Path to spec directory
    * @param agentLoop — The AgentLoop instance to use for task execution
    * @param options — Execution options (checkpoints, retries, callbacks)
+   * @param browserSession — The active browser session for visual verification
    */
   public async executeSpec(
     specDir: string,
     agentLoop: { execute: (...args: unknown[]) => Promise<void> },
-    options: Partial<SpecExecutionOptions> = {}
+    options: Partial<SpecExecutionOptions> = {},
+    browserSession?: any,
+    ollamaClient?: any,
+    logger?: Logger
   ): Promise<{ spec: ParsedSpec; completed: number; failed: number }> {
     const opts: SpecExecutionOptions = {
       stopAtCheckpoints: true,
@@ -83,8 +108,26 @@ export class SpecTaskExecutor {
     this.isRunning = true;
     this.shouldStop = false;
 
+    // Start browser mirror if a browser session is provided
+    if (browserSession) {
+      try {
+        this.browserMirror = new BrowserMirrorStream(
+          { extensionUri: { fsPath: specDir } } as any,
+          specDir,
+          browserSession,
+          ollamaClient,
+          logger
+        );
+        await this.browserMirror.open('about:blank');
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.warn(`[SpecTaskExecutor] Browser mirror failed to start: ${msg}`);
+      }
+    }
+
     // Parse the spec
     const spec = await this.specReader.parseSpecDirectory(specDir);
+    console.log(`[SpecTaskExecutor] Parsed spec ${spec.id} with ${spec.tasks.length} tasks`);
     this.logger.info(
       `Starting spec execution: ${spec.id} (${spec.tasks.length} tasks, ${spec.progress}% already complete)`
     );
@@ -97,11 +140,14 @@ export class SpecTaskExecutor {
 
     try {
       while (!this.shouldStop) {
+        console.log(`[SpecTaskExecutor] Loop iteration: shouldStop=${this.shouldStop}`);
         // Get next ready task
         const nextTask = this.specReader.getNextTask(spec);
         if (!nextTask) {
+          console.log(`[SpecTaskExecutor] No next task found. Breaking loop.`);
           break;
         }
+        console.log(`[SpecTaskExecutor] Found next task: ${nextTask.id}`);
 
         // Apply taskFilter if provided — skip tasks that don't match
         if (opts.taskFilter && !opts.taskFilter(nextTask)) {
@@ -160,7 +206,7 @@ export class SpecTaskExecutor {
         }
 
         // Execute the task
-        const result = await this.executeTask(nextTask, specContext, agentLoop, opts);
+        const result = await this.executeTask(nextTask, specContext, agentLoop, opts, browserSession);
 
         if (result.passed) {
           nextTask.status = 'complete';
@@ -205,6 +251,15 @@ export class SpecTaskExecutor {
       }
     } finally {
       this.isRunning = false;
+
+      if (this.browserMirror) {
+        try {
+          this.browserMirror.dispose();
+        } catch {
+          // ignore cleanup errors
+        }
+        this.browserMirror = undefined;
+      }
     }
 
     this.logger.info(
@@ -214,36 +269,52 @@ export class SpecTaskExecutor {
   }
 
   /**
-   * Execute a single task using the 5-agent pipeline
+   * Execute a single task using the multi-agent pipeline
    * If task fails, use BugFixOrchestrator to diagnose and fix
    *
    * @param task — The task to execute
    * @param specContext — Full spec context injected into system prompt
    * @param agentLoop — AgentLoop instance
    * @param options — Execution options
+   * @param browserSession — Optional browser session for visual verification
    */
-  private async executeTask(
+  public async executeTask(
     task: ExecutableTask,
     specContext: SpecContext,
     agentLoop: { execute: (...args: unknown[]) => Promise<void> },
-    _options: SpecExecutionOptions
+    _options: SpecExecutionOptions,
+    browserSession?: any
   ): Promise<ComplianceResult> {
+    console.log(`[SpecTaskExecutor] Entering executeTask for ${task.id}`);
     this.logger.info(`Executing task ${task.id}: ${task.description}`);
     task.status = 'in_progress';
     task.startedAt = Date.now();
 
     try {
-      // Execute task using 5-agent pipeline
+      // Execute task using the multi-agent pipeline (now including UI/UX and Browser Mirror)
       const pipelineResult = await this.multiAgentOrchestrator.executeTaskWithMultiAgents(
         task,
         specContext,
-        agentLoop
+        agentLoop,
+        browserSession
       );
 
       // Check if all agents succeeded
       if (pipelineResult.finalStatus === 'success') {
-        // Verify compliance with tests/compilation
-        const complianceResult = this.verifyCompliance(task, pipelineResult, specContext);
+        const complianceResult = await this.verifyCompliance(task, pipelineResult, specContext);
+
+        // Run Visual QA after compliance if browser mirror is available
+        if (complianceResult.passed && this.browserMirror) {
+          const visualDefects = await this.browserMirror.runVisualQA();
+          if (visualDefects.length > 0) {
+            complianceResult.passed = false;
+            complianceResult.score = Math.max(0, complianceResult.score - 20);
+            complianceResult.correctionInstructions =
+              (complianceResult.correctionInstructions || '') +
+              '\nVisual QA issues:\n' +
+              visualDefects.map((d) => `- [${d.type}] ${d.description}`).join('\n');
+          }
+        }
 
         // If compliance check fails, try to fix it
         if (!complianceResult.passed && task.retryCount < task.maxRetries) {
@@ -264,7 +335,7 @@ export class SpecTaskExecutor {
           if (bugFixResult.success) {
             this.logger.info(`Bug fix successful for task ${task.id}. Retrying compliance check.`);
             // Re-verify after fix
-            return this.verifyCompliance(task, pipelineResult, specContext);
+            return await this.verifyCompliance(task, pipelineResult, specContext);
           } else {
             this.logger.error(`Bug fix failed for task ${task.id}: ${bugFixResult.diagnosis}`);
             return complianceResult;
@@ -298,7 +369,7 @@ export class SpecTaskExecutor {
             this.logger.info(`Bug fix successful for task ${task.id}. Retrying pipeline.`);
             // Retry the entire task
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            return this.executeTask(task, specContext, agentLoop, _options);
+            return this.executeTask(task, specContext, agentLoop, _options, browserSession);
           } else {
             this.logger.error(`Bug fix failed for task ${task.id}: ${bugFixResult.diagnosis}`);
           }
@@ -339,7 +410,7 @@ export class SpecTaskExecutor {
 
         if (bugFixResult.success) {
           this.logger.info(`Bug fix successful for task ${task.id}. Retrying.`);
-          return this.executeTask(task, specContext, agentLoop, {} as SpecExecutionOptions);
+          return this.executeTask(task, specContext, agentLoop, {} as SpecExecutionOptions, browserSession);
         }
       }
 
@@ -447,12 +518,13 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
   /**
    * Verify task output against acceptance criteria by running actual tests,
    * TypeScript compilation, and artifact checks. Task passes ONLY at 100%.
+   * Now includes UI/UX visual validation via Browser Mirror.
    */
-  private verifyCompliance(
+  private async verifyCompliance(
     task: ExecutableTask,
     _executionResult: unknown,
     _context: SpecContext
-  ): ComplianceResult {
+  ): Promise<ComplianceResult> {
     const startTime = Date.now();
     const criterionResults: ComplianceResult['criterionResults'] = [];
     let allPassed = true;
@@ -473,7 +545,28 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
       }
     }
 
-    // Check 2: TypeScript compilation (zero errors required)
+    // Check 2: UI/UX Validation (for UI tasks with browser session)
+    if (task.uxSpec && this.browserMirror) {
+      const uxResult = await this.validateUX(task, _context);
+      if (!uxResult.passed) {
+        allPassed = false;
+        const uxErrors = uxResult.correctionInstructions || 'UI/UX validation failed';
+        criterionResults.push({
+          criterion: 'UI/UX visual and semantic validation',
+          passed: false,
+          explanation: uxErrors,
+        });
+        errors.push(uxErrors);
+      } else {
+        criterionResults.push({
+          criterion: 'UI/UX visual and semantic validation',
+          passed: true,
+          explanation: 'UI/UX validation passed',
+        });
+      }
+    }
+
+    // Check 3: TypeScript compilation (zero errors required)
     try {
       execSync('npx tsc --noEmit', { timeout: 60000, stdio: 'pipe' });
       criterionResults.push({
@@ -492,7 +585,7 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
       errors.push(`TypeScript errors: ${msg.slice(0, 200)}`);
     }
 
-    // Check 3: Run tests if test files are specified in instructions
+    // Check 4: Run tests if test files are specified in instructions
     const testFileMatches = this.extractTestFilesFromInstructions(task);
     if (testFileMatches.length > 0) {
       try {
@@ -523,7 +616,7 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
       });
     }
 
-    // Check 4: Lint check if eslint is configured
+// Check 5: Lint check if eslint is configured
     try {
       if (
         fs.existsSync(path.resolve('.eslintrc')) ||
@@ -673,5 +766,73 @@ Expected artifacts: ${task.expectedArtifacts.join(', ') || 'None specified'}
    */
   public isCurrentlyRunning(): boolean {
     return this.isRunning;
+  }
+
+  private async validateUX(task: ExecutableTask, context: SpecContext, browserSession?: any): Promise<UXValidationResult> {
+    if (!task.uxSpec) {
+      return { passed: true, score: 100, visualDefects: [], semanticIssues: [], contrastViolations: [], layoutIssues: [], accessibilityIssues: [] };
+    }
+
+    if (!browserSession) {
+      return {
+        passed: false,
+        score: 0,
+        visualDefects: ['No browser session available'],
+        semanticIssues: [],
+        contrastViolations: [],
+        layoutIssues: [],
+        accessibilityIssues: [],
+        correctionInstructions: 'Browser session not available for UX validation. Start Browser Mirror first.'
+      };
+    }
+
+    try {
+      const result = await this.uxValidator.validate(task, context, browserSession);
+      return result;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return {
+        passed: false,
+        score: 0,
+        visualDefects: [msg],
+        semanticIssues: [],
+        contrastViolations: [],
+        layoutIssues: [],
+        accessibilityIssues: [],
+        correctionInstructions: `UX validation error: ${msg}`
+      };
+    }
+  }
+
+  /**
+   * Handle HITL handoff when task fails repeatedly
+   */
+  private async handleHITLHandoff(
+    task: ExecutableTask,
+    error: string,
+    retryAttempt: number
+  ): Promise<boolean> {
+    if (!this.hitlManager) return false;
+
+    if (retryAttempt >= task.maxRetries) {
+      const result = await this.hitlManager!.requestAssistance(
+        task,
+        'validation-failure',
+        `Task ${task.id} failed after ${retryAttempt} attempts: ${error}`,
+        {
+          whatAIWasTrying: `Complete task: ${task.description}`,
+          whatWentWrong: error,
+          whatIsNeeded: 'User guidance on how to proceed',
+          attemptedFixes: [],
+          suggestions: [
+            { title: 'Try a different approach', description: 'Let AI attempt a different implementation strategy' },
+            { title: 'Skip this task', description: 'Mark task as skipped and continue' },
+            { title: 'Review the spec requirements', description: 'User reviews and updates requirements.md' },
+          ],
+        }
+      );
+      return result !== null;
+    }
+    return false;
   }
 }

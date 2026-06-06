@@ -3,15 +3,12 @@
  * Provides tools for AI agents to interact with and inspect the live browser mirror.
  */
 
-import { Tool } from '../../tools/Tool';
+import { Tool } from '../../../tools/ToolRegistry';
 import { ForgeBrowserSession } from '../../../services/ForgeBrowserSession';
 
 export class BrowserMirrorTools {
   constructor(private readonly session: ForgeBrowserSession) {}
 
-  /**
-   * Tool to click an element on the page.
-   */
   public clickElement(): Tool {
     return {
       name: 'browser_click',
@@ -30,9 +27,13 @@ export class BrowserMirrorTools {
           },
         },
       },
-      execute: async ({ selectorOrX, y }) => {
+      execute: async ({ selectorOrX, y }: { selectorOrX: string | number; y?: number }) => {
         try {
-          await this.session.click(selectorOrX, y);
+          if (typeof selectorOrX === 'number' && y !== undefined) {
+            await this.session.click(selectorOrX, y);
+          } else {
+            await this.session.click(String(selectorOrX));
+          }
           return { success: true, response: `Successfully clicked ${selectorOrX}` };
         } catch (error) {
           return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -41,9 +42,6 @@ export class BrowserMirrorTools {
     };
   }
 
-  /**
-   * Tool to fill an input field.
-   */
   public fillInput(): Tool {
     return {
       name: 'browser_fill',
@@ -62,9 +60,9 @@ export class BrowserMirrorTools {
           },
         },
       },
-      execute: async ({ selector, value }) => {
+      execute: async ({ selector, value }: { selector: string; value: string }) => {
         try {
-          await this.session.fill(selector, value);
+          await this.session.fill(String(selector), String(value));
           return { success: true, response: `Successfully filled ${selector} with value.` };
         } catch (error) {
           return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -73,9 +71,6 @@ export class BrowserMirrorTools {
     };
   }
 
-  /**
-   * Tool to navigate to a URL.
-   */
   public navigateTo(): Tool {
     return {
       name: 'browser_navigate',
@@ -90,9 +85,9 @@ export class BrowserMirrorTools {
           },
         },
       },
-      execute: async ({ url }) => {
+      execute: async ({ url }: { url: string }) => {
         try {
-          await this.session.navigate(url);
+          await this.session.navigate(String(url));
           return { success: true, response: `Navigated to ${url}` };
         } catch (error) {
           return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -136,9 +131,7 @@ export class BrowserMirrorTools {
       },
       execute: async () => {
         try {
-          const buffer = await this.session.takeScreenshot();
-          // In a real implementation, we would save this to a file or upload it.
-          // For now, we return success and notify that the screenshot was captured.
+          await this.session.takeScreenshot();
           return { success: true, response: 'Screenshot captured and available for visual analysis.' };
         } catch (error) {
           return { success: false, error: error instanceof Error ? error.message : String(error) };

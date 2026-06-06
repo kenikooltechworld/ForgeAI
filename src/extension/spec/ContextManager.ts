@@ -5,6 +5,7 @@
  * 1. Sliding window - keeps only last N messages
  * 2. Result caching - stores agent results in files, not in context
  * 3. Smart compression - summarizes old messages
+ * 4. File indexing with .gitignore exclusion for context-aware file ranking
  */
 
 import * as fs from 'fs';
@@ -28,12 +29,97 @@ export interface CachedAgentResult {
 
 export class ContextManager {
   private readonly cacheDir: string;
-  private readonly maxContextMessages = 10; // Keep only last 10 messages
-  private readonly maxMessageSize = 4000; // Max chars per message
+  private readonly indexPath: string;
+  private readonly maxContextMessages = 10;
+  private readonly maxMessageSize = 4000;
+  private fileIndex: Map<string, { mtimeMs: number; tokens: number; content: string }> = new Map();
+  private gitignorePatterns: string[] = [];
+  private readonly workspaceRoot: string;
 
   constructor(workspaceRoot: string) {
+    this.workspaceRoot = workspaceRoot;
     this.cacheDir = path.join(workspaceRoot, '.forgeai', 'agent-cache');
+    this.indexPath = path.join(this.cacheDir, 'file-index.json');
     this.ensureCacheDir();
+    this.loadGitignore(workspaceRoot);
+    void this.loadIndex();
+  }
+
+  private loadGitignore(workspaceRoot: string): void {
+    const gitignorePath = path.join(workspaceRoot, '.gitignore');
+    if (!fs.existsSync(gitignorePath)) return;
+    try {
+      const content = fs.readFileSync(gitignorePath, 'utf-8');
+      this.gitignorePatterns = content
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#'));
+    } catch {
+      this.gitignorePatterns = [];
+    }
+  }
+
+  private isIgnored(filePath: string): boolean {
+    const relative = path.relative(this.workspaceRoot, filePath);
+    return this.gitignorePatterns.some((pattern) => {
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\//g, '[/\\\\]') + '$');
+      return regex.test(relative);
+    });
+  }
+
+  private loadIndex(): void {
+    try {
+      if (fs.existsSync(this.indexPath)) {
+        const raw = fs.readFileSync(this.indexPath, 'utf-8');
+        const entries = JSON.parse(raw) as Array<{ path: string; mtimeMs: number; tokens: number; content: string }>;
+        this.fileIndex = new Map(entries.map((entry) => [entry.path, entry]));
+      }
+    } catch {
+      this.fileIndex = new Map();
+    }
+  }
+
+  private persistIndex(): void {
+    try {
+      const entries = Array.from(this.fileIndex.entries()).map(([key, value]) => ({
+        path: key,
+        mtimeMs: value.mtimeMs,
+        tokens: value.tokens,
+        content: value.content,
+      }));
+      fs.writeFileSync(this.indexPath, JSON.stringify(entries, null, 2));
+    } catch {
+      // ignore
+    }
+  }
+
+  private estimateTokens(content: string): number {
+    return Math.max(1, Math.ceil(content.length / 4));
+  }
+
+  public getRelevantFiles(query: string, limit = 20): string[] {
+    const keywords = query.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
+    const scored: Array<{ path: string; score: number }> = [];
+
+    for (const [relativePath, entry] of this.fileIndex.entries()) {
+      const content = entry.content.toLowerCase();
+      let score = 0;
+      for (const word of keywords) {
+        const matches = (content.match(new RegExp(this.escapeRegex(word), 'g')) || []).length;
+        score += matches;
+      }
+      scored.push({ path: relativePath, score });
+    }
+
+    return scored
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((item) => item.path);
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
@@ -45,7 +131,6 @@ export class ContextManager {
       return messages;
     }
 
-    // Keep system message + last N messages
     const systemMessages = messages.filter((m) => m.role === 'system');
     const otherMessages = messages.filter((m) => m.role !== 'system');
 
@@ -109,7 +194,6 @@ export class ContextManager {
         return null;
       }
 
-      // Get most recent
       const latest = matchingFiles.sort().pop();
       if (!latest) return null;
 
@@ -124,7 +208,6 @@ export class ContextManager {
 
   /**
    * Create summary of agent result for context
-   * Instead of passing full result, pass reference to cached file
    */
   public summarizeResult(cached: CachedAgentResult): string {
     return `[Agent Result Cached] ${cached.agentName} completed at ${new Date(cached.timestamp).toISOString()}. Result stored in: ${cached.filePath}. Summary: ${JSON.stringify(cached.result).slice(0, 200)}...`;

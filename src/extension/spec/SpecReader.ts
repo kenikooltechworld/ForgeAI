@@ -317,7 +317,7 @@ export class SpecReader {
           continue;
         }
 
-        // Match property test: **Property N: Name**
+        // Match: - [ ]* N.M Property test (marked with asterisk)
         const propMatch = trimmedLine.match(/^\*\*Property\s+(\d+)\s*:\s*(.+)\*\*$/);
         if (propMatch) {
           const prop: PropertyTest = {
@@ -326,6 +326,22 @@ export class SpecReader {
             validates: [],
           };
           currentTask.propertyTests.push(prop);
+          continue;
+        }
+
+        // Parse UI/UX spec metadata: **UI/UX Spec:** {json object}
+        const uxSpecMatch = trimmedLine.match(/^\*\*UI\/?UX\s+Spec:\*\*\s*([\s\S]*?)(?:\n|$)/i);
+        if (uxSpecMatch && currentTask) {
+          try {
+            const uxSpec = JSON.parse(uxSpecMatch[1].trim());
+            currentTask.uxSpec = {
+              expectedElements: uxSpec.expectedElements || [],
+              visualRules: uxSpec.visualRules || [],
+              componentSpecs: uxSpec.componentSpecs || {},
+            };
+          } catch {
+            // Invalid JSON - skip
+          }
           continue;
         }
 

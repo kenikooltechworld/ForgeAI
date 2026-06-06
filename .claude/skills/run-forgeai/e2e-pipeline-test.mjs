@@ -3,6 +3,7 @@ import { ArchitectAgent } from '../../../src/extension/spec/generators/Architect
 import { TaskDecomposerAgent } from '../../../src/extension/spec/generators/TaskDecomposerAgent';
 import { SpecTaskExecutor } from '../../../src/extension/spec/SpecTaskExecutor';
 import { ForgeBrowserSession } from '../../../src/extension/services/ForgeBrowserSession';
+import { PerTaskMultiAgentOrchestrator } from '../../../src/extension/spec/PerTaskMultiAgentOrchestrator';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -11,10 +12,13 @@ import * as path from 'path';
  * Verifies the flow: Requirements -> Plan -> Tasks -> (UI/UX Design -> Implement -> Mirror Verify)
  */
 async function runE2ETest() {
-  const specDir = path.join(process.cwd(), '.forgeai/specs/test-ui-feature');
-  if (!fs.existsSync(specDir)) {
-    fs.mkdirSync(specDir, { recursive: true });
+  const workspaceRoot = process.cwd();
+  const specDir = path.join(workspaceRoot, '.forgeai/specs/test-ui-feature');
+  if (fs.existsSync(specDir)) {
+    fs.rmSync(specDir, { recursive: true, force: true });
   }
+  fs.mkdirSync(specDir, { recursive: true });
+
 
   // 1. Mock Dependencies
   const mockDeps = {
@@ -22,18 +26,17 @@ async function runE2ETest() {
       console.log(`[LLM Call] Agent: ${systemPrompt.substring(0, 30)}...`);
 
       if (systemPrompt.includes('SpecWriter Agent')) {
-        return `# Requirements: Login Page\n- Req 1.1: User can enter email\n- Req 1.2: User can submit login`;
+        return `# Requirements: Login Page\n\n### Requirement 1.1: Email Input\n**User Story**: As a user, I want to enter my email\n#### Acceptance Criteria\n1. THE system SHALL provide a text field for email\n\n### Requirement 1.2: Submit Button\n**User Story**: As a user, I want to submit the form\n#### Acceptance Criteria\n1. THE system SHALL provide a submit button`;
       }
       if (systemPrompt.includes('Architect Agent')) {
         return `# Technical Plan: Login Page\n- Use React component\n- File: src/components/Login.tsx`;
       }
       if (systemPrompt.includes('TaskDecomposer Agent')) {
-        // Generate a UI task specifically to trigger the Tri-Agent loop
-        return `# Implementation Plan\n\n### Task 1.1: Implement Login UI\n**Description**: Create the login form UI\n**Instructions**: Create Login.tsx with an email field and submit button.\n**Expected Artifacts**: src/components/Login.tsx\n**RequirementIds**: ["1.1", "1.2"]\n**Phase**: 1`;
+        return `# Implementation Plan\n\n### Phase 1: Foundation\n\n- [ ] 1.1 Implement Login UI\n  - Create Login.tsx with an email field and submit button.\n  - Verify visual layout.\n  _Requirements: 1.1, 1.2_`;
       }
       if (systemPrompt.includes('Master UI/UX Architect')) {
         if (userPrompt.includes('Design the UI/UX')) {
-          return `## Design Blueprint\n- Use primary-blue for button\n- Layout: Centered card\n- Verdict: DESIGN COMPLETE`;
+          return `## Design Blueprint\n- Use primary-blue for button\n- Layout: Centered card\nVerdict: DESIGN COMPLETE`;
         }
         if (userPrompt.includes('Verify the implementation')) {
           return `## Verification Report\n- All elements present in semantic tree\n- Layout matches design\nVerdict: PASS`;
@@ -58,7 +61,21 @@ async function runE2ETest() {
       return 'Default response';
     },
     readConstitution: async () => 'Project Constitution: Standard react app.',
-    readMemory: async () => 'No memory available.',
+    readMemory: async (file) => `Memory for ${file}: Standard react app.`,
+    // Add generate method for the UIUXArchitectAgent
+    generate: async (systemPrompt, userPrompt) => {
+      return await mockDeps.executeLLM(systemPrompt, userPrompt);
+    },
+    logInfo: (msg) => console.log(`[INFO] ${msg}`),
+    logError: (msg, err) => console.error(`[ERROR] ${msg}`, err),
+    logWarn: (msg) => console.warn(`[WARN] ${msg}`),
+  };
+
+  const mockToolRegistry = {};
+  const mockLogger = {
+    info: (msg) => console.log(`[INFO] ${msg}`),
+    warn: (msg) => console.warn(`[WARN] ${msg}`),
+    error: (msg, err) => console.error(`[ERROR] ${msg}`, err),
   };
 
   // 2. Generate the Spec
@@ -74,7 +91,15 @@ async function runE2ETest() {
 
   // 3. Setup Execution Environment
   console.log('\n--- Stage 2: Executing Spec with Browser Mirror ---');
-  const executor = new SpecTaskExecutor();
+
+  const orchestrator = new PerTaskMultiAgentOrchestrator(
+    workspaceRoot,
+    mockToolRegistry,
+    mockDeps, // Use mockDeps as ollamaClient
+    mockLogger
+  );
+
+  const executor = new SpecTaskExecutor(orchestrator);
 
   // Mock AgentLoop that the executor uses to talk to LLMs
   const mockAgentLoop = {
@@ -104,8 +129,11 @@ async function runE2ETest() {
     console.log(`Completed: ${result.completed}/${result.spec.tasks.length}`);
     console.log(`Failed: ${result.failed}`);
 
-    if (result.failed === 0) {
+    if (result.failed === 0 && result.completed > 0) {
       console.log('\n✅ SUCCESS: The full spec-driven pipeline including UI/UX design and Browser Mirror verification worked flawlessly!');
+    } else if (result.completed === 0) {
+      console.error('\n❌ FAILURE: No tasks were parsed from the spec. Check TaskDecomposer mock format.');
+      process.exit(1);
     } else {
       console.error('\n❌ FAILURE: The pipeline failed. See logs above.');
       process.exit(1);

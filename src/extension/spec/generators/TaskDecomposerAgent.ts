@@ -58,6 +58,10 @@ Your job is to break a technical plan into atomic tasks that a junior engineer c
   - Test Files: specific file paths (e.g., "src/feature/__tests__/Component.test.ts")
   - Test Cases: specific test cases as bullet points
   - Coverage Target: minimum % (default 70%)
+- **UI/UX Spec** — REQUIRED for UI tasks (when task involves UI components, styling, layout):
+  - Expected elements: CSS selectors and descriptions
+  - Visual rules: styling, spacing, and layout requirements
+  - Component specs: props, states, and behavior definitions
 - Verification steps including: tests pass, TypeScript compiles, no lint errors
 - Requirement traceability (which requirements this task implements)
 
@@ -69,6 +73,7 @@ Your job is to break a technical plan into atomic tasks that a junior engineer c
 - Include "Phase Gate" tasks after each phase to validate all previous tasks pass 100%
 - Link each task to requirement IDs: _Requirements: 1.1, 1.3_
 - **CRITICAL: Write tests FIRST, then implement, then verify — for every task**
+- **CRITICAL: Include UI/UX Spec for any task that touches the frontend**
 
 ## Output Format
 \`\`\`markdown

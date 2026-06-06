@@ -50,6 +50,16 @@ export interface SpecRequirement {
 export type TaskStatus = 'pending' | 'in_progress' | 'complete' | 'failed' | 'skipped';
 
 /**
+ * Additional UI/UX specification for tasks
+ * Requirements: 13.1, 13.2, 13.3, 13.5, 13.6
+ */
+export interface UXSSpec {
+  expectedElements?: Array<{ selector: string; description: string }>;
+  visualRules?: Array<{ selector: string; property: string; value: string }>;
+  componentSpecs?: Record<string, any>;
+}
+
+/**
  * A single executable task parsed from tasks.md
  */
 export interface ExecutableTask {
@@ -109,6 +119,9 @@ export interface ExecutableTask {
 
   /** Actual artifacts produced */
   producedArtifacts: string[];
+
+  /** UI/UX specification (from UI/UX Architect Agent) */
+  uxSpec?: UXSSpec;
 }
 
 /**

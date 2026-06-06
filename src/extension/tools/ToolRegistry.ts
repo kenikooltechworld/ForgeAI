@@ -105,6 +105,10 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(uiuxTools.exportTokens());
     this.registerTool(uiuxTools.checkContrast());
 
+    // BrowserMirrorTools and VisualQATools are NOT registered globally.
+    // They require runtime dependencies (live ForgeBrowserSession, OllamaClient)
+    // and are created dynamically by PerTaskMultiAgentOrchestrator / BrowserMirrorStream.
+
     // Register Spec Tools (spec-driven development)
     const { SpecTools } = require('./SpecTools');
     const specTools = new SpecTools(
