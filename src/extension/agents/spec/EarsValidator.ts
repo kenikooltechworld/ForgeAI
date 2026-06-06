@@ -86,3 +86,4 @@ export function formatEarsReport(results: EarsValidationResult[]): string {
 
   return lines.join('\n');
 }
+

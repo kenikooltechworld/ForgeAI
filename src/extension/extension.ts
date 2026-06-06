@@ -139,6 +139,23 @@ export class ForgeAIExtension {
     toolRegistry.registerAllTools();
     this.services.set('toolRegistry', toolRegistry);
 
+    // Initialize SpecOrchestrator + specialized agents (RequirementsAgent, DesignAgent, TasksAgent, BugfixAgent)
+    let specOrchestrator: import('./agents/spec/SpecOrchestrator').SpecOrchestrator | undefined;
+    if (workspaceRoot) {
+      const { SpecOrchestrator } = await import('./agents/spec/SpecOrchestrator');
+      specOrchestrator = new SpecOrchestrator({
+        toolRegistry,
+        ollamaClient: ollama,
+        specManager: forgeaiWorkspace!.spec,
+        productManager: forgeaiWorkspace!.product,
+        memoryManager: forgeaiWorkspace!.memory,
+        researchAgent: researchAgent!,
+        logger,
+      });
+      this.services.set('specOrchestrator', specOrchestrator);
+      logger.info('SpecOrchestrator (RequirementsAgent + DesignAgent + TasksAgent + BugfixAgent) initialized');
+    }
+
     // Keep activation responsive: run non-critical checks in background.
     void this.checkOllamaAvailability(ollama, logger);
     void this.startOptionalRagBootstrap(storage, logger);

@@ -152,6 +152,119 @@ export abstract class BaseAgent implements IAgent {
   }
 
   /**
+   * Execute an LLM call with optional tool-calling loop.
+   *
+   * If the model returns tool_calls, this method executes each tool via
+   * ToolRegistry, feeds results back, and retries. Repeats until the model
+   * returns plain text or max iterations is reached.
+   *
+   * All agents MUST use this instead of calling `this.ollamaClient.chat` directly,
+   * so that tool awareness in prompts is matched by actual tool execution.
+   */
+  protected async executeWithTools<T>({
+    messages,
+    tools,
+    toolNames,          // optional — if omitted, uses tools from this.toolRegistry
+    model,
+    maxIterations = 16,
+    onToolStart,
+    onToolComplete,
+    onToolError,
+  }: {
+    messages: any[];
+    tools?: any[];
+    toolNames?: string[];
+    model?: string;
+    maxIterations?: number;
+    onToolStart?: (name: string) => void;
+    onToolComplete?: (name: string, durationMs: number) => void;
+    onToolError?: (name: string, error: Error) => void;
+  }): Promise<{ content: string; toolCallsMade: number }> {
+    const resolvedTools = tools ?? this.toolRegistry.getToolDefinitions();
+    const resolvedModel = model ?? this.ollamaClient
+      ? (this.ollamaClient as any).defaultModel
+      : undefined;
+
+    let conversation = [...messages];
+    let totalToolCalls = 0;
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+      const response = await this.ollamaClient.chat({
+        model: resolvedModel,
+        messages: conversation,
+        stream: false,
+        tools: resolvedTools,
+        options: { temperature: 0.3 },
+      });
+
+      // Safety: should never stream here
+      if (Symbol.asyncIterator in (response as any)) {
+        throw new Error('Unexpected streaming response during executeWithTools');
+      }
+
+      const msg: any = (response as any).message;
+      const toolCalls: any[] | undefined = msg.tool_calls;
+
+      // No tool calls → plain text response, we're done
+      if (!toolCalls || toolCalls.length === 0) {
+        return { content: msg.content || '', toolCallsMade: totalToolCalls };
+      }
+
+      // Process each tool call
+      conversation.push({ role: 'assistant', content: msg.content, tool_calls: toolCalls });
+
+      for (const call of toolCalls) {
+        const name = call.function?.name || '';
+        const args = call.function?.arguments || {};
+        totalToolCalls++;
+
+        try {
+          if (onToolStart) onToolStart(name);
+          const t0 = Date.now();
+
+          const result = await this.toolRegistry.executeTool(name, args);
+
+          const durationMs = Date.now() - t0;
+          if (onToolComplete) onToolComplete(name, durationMs);
+
+          conversation.push({
+            role: 'tool',
+            content: typeof result === 'string' ? result : JSON.stringify(result),
+            name,
+          });
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          if (onToolError) onToolError(name, error);
+          conversation.push({
+            role: 'tool',
+            content: JSON.stringify({ error: error.message }),
+            name,
+          });
+        }
+      }
+    }
+
+    // Max iterations reached: return whatever the model last produced
+    const last = conversation[conversation.length - 1];
+    return {
+      content: (last?.content as string) || '',
+      toolCallsMade: totalToolCalls,
+    };
+  }
+
+  /**
+   * Helper: resolve a lazy tool dependency (function or value).
+   * Supports { get: () => T } wrappers and raw values.
+   */
+  protected resolveDeps<T>(deps: T | (() => T) | { get: () => T } | null | undefined): T | null {
+    if (deps === null || deps === undefined) return null;
+    if (typeof deps === 'function') return (deps as () => T)();
+    if (typeof (deps as any).get === 'function') return (deps as any).get() as T;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (deps as any) as T;
+  }
+
+  /**
    * Reset metrics (useful for testing)
    */
   public resetMetrics(): void {

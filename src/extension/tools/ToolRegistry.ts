@@ -97,6 +97,18 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(browserTools.browserScroll());
     this.registerTool(browserTools.browserClose());
 
+    // Register Browser + Visual QA tools (global)
+    const { BrowserAndVisualTools } = require('./BrowserAndVisualTools');
+    const browserAndVisualTools = new BrowserAndVisualTools();
+    this.registerTool(browserAndVisualTools.browserNavigate());
+    this.registerTool(browserAndVisualTools.browserExtract());
+    this.registerTool(browserAndVisualTools.browserScreenshot());
+    this.registerTool(browserAndVisualTools.browserClick());
+    this.registerTool(browserAndVisualTools.browserFill());
+    this.registerTool(browserAndVisualTools.browserScroll());
+    this.registerTool(browserAndVisualTools.browserClose());
+    this.registerTool(browserAndVisualTools.analyzeScreenshot());
+
     // Register UI/UX Architect Agent tools (Phase 2.4)
     const { UIUXTools } = require('../agents/ui-ux-architect/tools/UIUXTools');
     const uiuxTools = new UIUXTools(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '');
