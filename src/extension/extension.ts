@@ -7,6 +7,8 @@ import { WebviewManager } from './utils/WebviewManager';
 import type { RagService } from './rag/RagService';
 import { SpecReader } from './spec/SpecReader';
 import { SpecTaskExecutor } from './spec/SpecTaskExecutor';
+import { HealthScanner } from './spec/HealthScanner';
+import { HealthScannerAgent, HealthFinding } from './agents/spec/HealthScannerAgent';
 import { DEFAULT_MODEL } from './config/ModelConfig';
 
 /**
@@ -139,6 +141,12 @@ export class ForgeAIExtension {
     toolRegistry.registerAllTools();
     this.services.set('toolRegistry', toolRegistry);
 
+    // Initialize SubAgentSpawner — the master AI spawns fresh contexts through this
+    const { initSubAgentSpawner } = await import('./agents/SubAgentSpawner');
+    initSubAgentSpawner(ollama, toolRegistry, logger, ragService);
+    this.services.set('subAgentSpawner', true);
+    logger.info('SubAgentSpawner initialized — forgeai_spawnAgent tool is now available');
+
     // Initialize SpecOrchestrator + specialized agents (RequirementsAgent, DesignAgent, TasksAgent, BugfixAgent)
     let specOrchestrator: import('./agents/spec/SpecOrchestrator').SpecOrchestrator | undefined;
     if (workspaceRoot) {
@@ -171,7 +179,9 @@ export class ForgeAIExtension {
         await import('./rag/embeddings/OllamaEmbeddingsProvider');
 
       const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
-      const embeddingsModel = 'nomic-embed-text:latest';
+        const embeddingsModel = vscode.workspace
+          .getConfiguration('forgeai')
+          .get<string>('embeddingsModel', 'nomic-embed-text:latest');
       const embeddings = new OllamaEmbeddingsProvider({
         ollama,
         logger,
@@ -218,7 +228,9 @@ export class ForgeAIExtension {
     try {
       const didInitialIngest = await storage.getGlobalValue('forgeai.rag.didInitialIngest', false);
       const dbPath = this.context.globalStorageUri.fsPath + '/lancedb';
-      const embeddingsModel = 'nomic-embed-text:latest';
+        const embeddingsModel = vscode.workspace
+          .getConfiguration('forgeai')
+          .get<string>('embeddingsModel', 'nomic-embed-text:latest');
 
       const allSourceIds = [
         'reactjs',
@@ -329,6 +341,9 @@ export class ForgeAIExtension {
 
     // Bug fix commands
     commandManager.registerCommand('forgeai.fixBug', () => this.fixBugCommand());
+
+    // Health Scanner — agent-based autonomous health analysis
+    commandManager.registerCommand('forgeai.scanHealth', () => this.scanProjectHealthAgent());
 
     // Spec task execution commands (called by SpecTools and TaskCodeLensProvider)
     commandManager.registerCommand('forgeai.spec.runAllTasks', () => this.runSpec());
@@ -919,6 +934,169 @@ export class ForgeAIExtension {
       const msg = error instanceof Error ? error.message : String(error);
       logger.error('Bug fix command failed', error);
       void vscode.window.showErrorMessage(`Bug fix failed: ${msg}`);
+    }
+  }
+
+  private async scanProjectHealth(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      void vscode.window.showWarningMessage('No workspace open to scan.');
+      return;
+    }
+
+    logger.info('Starting project health scan');
+    void vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Scanning project health...',
+        cancellable: false,
+      },
+      async (progress) => {
+        try {
+          const scanner = new HealthScanner(workspaceRoot);
+          const report = await scanner.runAll();
+
+          const channel = vscode.window.createOutputChannel('ForgeAI Health Scanner');
+          channel.show(true);
+          channel.appendLine(`Project Health Report — ${new Date().toLocaleString()}`);
+          channel.appendLine(`Root: ${report.projectRoot}`);
+          channel.appendLine(`Overall: ${report.overallHealthy ? '✅ Healthy' : '❌ Issues found'}`);
+          channel.appendLine('');
+
+          for (const check of report.checks) {
+            const icon = check.passed ? '✅' : '❌';
+            channel.appendLine(`${icon} ${check.name} (${check.durationMs}ms)`);
+            channel.appendLine(check.output);
+            channel.appendLine('');
+          }
+
+          channel.appendLine(`Summary: ${report.summary}`);
+
+          if (!report.overallHealthy) {
+            const failing = report.checks.filter((c) => !c.passed);
+            const actions = ['Open Output', ...(failing.some((c) => c.name === 'Tests') ? ['Run Tests'] : [])];
+            const choice = await vscode.window.showWarningMessage(
+              `Project health: ${failing.length} check(s) failed`,
+              ...actions
+            );
+            if (choice === 'Open Output') {
+              channel.show(true);
+            } else if (choice === 'Run Tests') {
+              await vscode.commands.executeCommand('workbench.actions.view.terminal');
+              const terminal = vscode.window.createTerminal('ForgeAI Tests');
+              terminal.sendText('npx jest --passWithNoTests --silent');
+              terminal.show();
+            }
+          } else {
+            void vscode.window.showInformationMessage('Project health: all checks passed ✅');
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          logger.error('Health scan failed', error);
+          void vscode.window.showErrorMessage(`Health scan failed: ${msg}`);
+        }
+      }
+    );
+  }
+
+  private async scanProjectHealthAgent(): Promise<void> {
+    const logger = this.services.get('logger') as Logger;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspaceRoot) {
+      void vscode.window.showWarningMessage('No workspace open to scan.');
+      return;
+    }
+
+    const autoFix = await vscode.window.showWarningMessage(
+      'HealthScannerAgent will scan the codebase, detect issues, generate a report, and offer fixes.',
+      'Scan (no auto-fix)',
+      'Scan + auto-fix approved issues'
+    );
+    if (!autoFix) return;
+
+    const mode: 'full' | 'quick' = autoFix === 'Scan + auto-fix approved issues' ? 'full' : 'quick';
+    const shouldAutoFix = autoFix === 'Scan + auto-fix approved issues';
+
+    try {
+      const toolRegistry = this.services.get('toolRegistry') as any;
+      const ollama = this.services.get('ollama');
+      const personaManager = this.services.get('forgeaiWorkspace')?.product
+        ? (this.services.get('forgeaiWorkspace') as any).product
+        : undefined;
+      const researchAgent = this.services.get('researchAgent');
+
+      // PersonaManager lives on ForgeAIWorkspace, not product. Use the workspace reference directly.
+      const forgeaiWorkspace = this.services.get('forgeaiWorkspace') as any;
+      const personaMgr = forgeaiWorkspace?.persona;
+
+      const agent = new HealthScannerAgent(
+        toolRegistry,
+        ollama,
+        logger,
+        personaMgr,
+        researchAgent,
+        workspaceRoot
+      );
+
+      void vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'HealthScannerAgent: scanning codebase...',
+          cancellable: false,
+        },
+        async () => {
+          const result = await agent.run({
+            workspaceRoot,
+            mode,
+            autoFix: shouldAutoFix,
+          });
+
+          const channel = vscode.window.createOutputChannel('ForgeAI HealthScannerAgent');
+          channel.show(true);
+          channel.appendLine(`Health Scan Complete — ${new Date().toLocaleString()}`);
+          channel.appendLine(`Report: ${result.reportPath}`);
+          channel.appendLine(`Mode: ${mode}`);
+          channel.appendLine(`Files scanned: ${result.stats.filesScanned} in ${result.stats.chunksAnalyzed} chunks`);
+          channel.appendLine(`Findings: ${result.findings.length}`);
+          channel.appendLine('');
+
+          const bySeverity: Record<string, HealthFinding[]> = { critical: [], high: [], medium: [], low: [] };
+          for (const f of result.findings) bySeverity[f.severity]?.push(f) || bySeverity[f.severity].push(f);
+
+          for (const sev of ['critical', 'high', 'medium', 'low'] as const) {
+            const items = bySeverity[sev];
+            if (items.length === 0) continue;
+            channel.appendLine(`## ${sev.toUpperCase()} (${items.length})`);
+            for (const f of items) {
+              channel.appendLine(`- [${f.category}] ${f.file}${f.line ? `:${f.line}` : ''}: ${f.message}`);
+              channel.appendLine(`  Fix: ${f.fixSuggestion}`);
+              if (f.fixCommand) channel.appendLine(`  Command: ${f.fixCommand}`);
+              channel.appendLine(`  Auto-fixable: ${f.autoFixable ? 'Yes' : 'No'}`);
+            }
+            channel.appendLine('');
+          }
+
+          channel.appendLine('## Summary');
+          channel.appendLine(result.summary);
+
+          const failing = result.findings.filter((f) => f.status === 'open' && !f.autoFixable);
+          if (failing.length > 0) {
+            await vscode.window.showWarningMessage(
+              `Health scan: ${result.findings.length} findings (${failing.length} need manual review). See output channel.`,
+              'Open Report'
+            );
+          } else if (result.findings.length > 0) {
+            void vscode.window.showInformationMessage(`Health scan: ${result.findings.length} issues found and fixed ✅`);
+          } else {
+            void vscode.window.showInformationMessage('Health scan: project healthy ✅');
+          }
+        }
+      );
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('HealthScannerAgent failed', error);
+      void vscode.window.showErrorMessage(`HealthScannerAgent failed: ${msg}`);
     }
   }
 }

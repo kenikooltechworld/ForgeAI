@@ -1,15 +1,23 @@
 /**
  * ProjectBuilderCommand
  *
- * Wizard: requirements → design.md (via UIUXArchitectAgent) → tasks.md → run spec.
+ * Wizard: requirements → design.md (via DesignAgent) → tasks.md → run spec.
+ * NOW USES: SpecOrchestrator with RequirementsAgent + DesignAgent + TasksAgent
+ * All output follows the Kiro template format exactly.
  */
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { SpecGenerator, ProjectBuilderInput, GeneratedSpec } from '../spec/SpecGenerator';
+import { SpecOrchestrator, SpecOrchestratorDeps } from '../agents/spec/SpecOrchestrator';
+import { ToolRegistry } from '../tools/ToolRegistry';
+import { OllamaClient } from '../ollama/OllamaClient';
+import { Logger } from '../utils/Logger';
+import { SpecManager } from '../forgeaiWorkspace/SpecManager';
+import { ProductManager } from '../forgeaiWorkspace/ProductManager';
+import { MemoryManager } from '../forgeaiWorkspace/MemoryManager';
+import { ResearchAgent } from '../agents/research/ResearchAgent';
 import { SpecTaskExecutor } from '../spec/SpecTaskExecutor';
 import { ForgeBrowserSession } from '../services/ForgeBrowserSession';
-import { Logger } from '../utils/Logger';
 
 export class ProjectBuilderCommand {
   constructor(private readonly logger: Logger) {}
@@ -28,53 +36,73 @@ export class ProjectBuilderCommand {
     if (!description) return;
 
     const projectName = await vscode.window.showInputBox({
-      prompt: 'Project name',
+      prompt: 'Project name (used as spec title)',
       placeHolder: 'my-dashboard',
       value: description.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40),
     });
     if (!projectName) return;
 
-    const techStack = (await vscode.window.showQuickPick(
-      ['React + TypeScript + Vite', 'Next.js', 'Node.js + Express', 'Vanilla TypeScript'],
-      { canPickMany: true, placeHolder: 'Select tech stack' }
-    )) || [];
-
-    const featuresInput = await vscode.window.showInputBox({
-      prompt: 'Key features (comma-separated)',
-      placeHolder: 'Authentication, Data visualization, Dark mode',
-    });
-    const features = featuresInput ? featuresInput.split(',').map((f) => f.trim()).filter(Boolean) : [];
-
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Building project from scratch',
+        title: 'Building project from scratch (Kiro template)',
         cancellable: false,
       },
       async (progress) => {
         try {
-          progress.report({ increment: 0, message: 'Generating requirements...' });
-          const ollama = await vscode.commands.executeCommand('forgeai.getOllama') as any;
-          if (!ollama) {
-            void vscode.window.showErrorMessage('Ollama client not available.');
+          progress.report({ increment: 0, message: 'Initializing services...' });
+
+          // Get services from extension globals (same pattern as extension.ts)
+          const ollama = (global as any).__FORGEAI_OLLAMA__ as OllamaClient | undefined;
+          const forgeaiWorkspace = (global as any).__FORGEAI_WORKSPACE__;
+          const researchAgent = (global as any).__FORGEAI_RESEARCH_AGENT__ as ResearchAgent | undefined;
+
+          if (!ollama || !forgeaiWorkspace) {
+            void vscode.window.showErrorMessage('ForgeAI services not ready. Please reload the window.');
             return;
           }
 
-          const generator = new SpecGenerator(ollama, this.logger, workspaceRoot);
-          const generated = await generator.generate({
+          const toolRegistry = new ToolRegistry(
+            {} as any,
+            this.logger
+          );
+
+          const orchestratorDeps: SpecOrchestratorDeps = {
+            toolRegistry,
+            ollamaClient: ollama,
+            specManager: forgeaiWorkspace.spec,
+            productManager: forgeaiWorkspace.product,
+            memoryManager: forgeaiWorkspace.memory,
+            researchAgent: researchAgent || ({} as ResearchAgent),
+            logger: this.logger,
+          };
+
+          const orchestrator = new SpecOrchestrator(orchestratorDeps);
+
+          progress.report({ increment: 10, message: 'Generating requirements (Kiro template)...' });
+
+          const result = await orchestrator.generate({
+            title: projectName,
             description,
-            techStack: techStack as string[],
-            features,
-            projectName,
+            mode: 'full',
+            workflow: 'requirements-first',
           });
 
-          progress.report({ increment: 50, message: 'Running spec...' });
+          if (!result.success) {
+            void vscode.window.showErrorMessage(`Spec generation failed: ${result.error}`);
+            return;
+          }
+
+          progress.report({ increment: 70, message: 'Running spec tasks...' });
+
+          const specDir = path.join(workspaceRoot, '.forgeai', 'specs', result.specId);
 
           const browserSession = new ForgeBrowserSession();
           await browserSession.initialize(
             (frame) => {},
             'about:blank'
           );
+
           const executor = new SpecTaskExecutor(
             undefined,
             undefined,
@@ -83,9 +111,20 @@ export class ProjectBuilderCommand {
             this.logger
           );
 
-          const result = await executor.executeSpec(
-            generated.specDir,
-            { execute: ollama.execute.bind(ollama) },
+           const executorResult = await executor.executeSpec(
+            specDir,
+            { execute: async (..._args: unknown[]) => {
+              const [systemPrompt, userPrompt] = _args as [string, string];
+              const response = await ollama.chat({
+                model: (ollama as any).defaultModel || 'gpt-oss:120b-cloud',
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt },
+                ],
+                stream: false,
+              });
+              return (response as any).message?.content || '';
+            }},
             {
               stopAtCheckpoints: false,
               autoRetry: true,
@@ -100,7 +139,7 @@ export class ProjectBuilderCommand {
           progress.report({ increment: 100, message: 'Done' });
 
           void vscode.window.showInformationMessage(
-            `Project built: ${result.completed}/${result.spec.tasks.length} tasks completed`
+            `Project built: ${executorResult.completed}/${executorResult.spec.tasks.length} tasks completed`
           );
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);

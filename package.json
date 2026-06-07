@@ -152,195 +152,234 @@
     ],
     "languageModelTools": [
       {
-        "name": "forgeai_readFile",
-        "displayName": "Read File",
-        "modelDescription": "Read the contents of a file in the workspace. Use this to understand existing code before making changes.",
+        "name": "forgeai_approveSpec",
+        "displayName": "Approve Spec",
+        "modelDescription": "Approve a pending phase.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "path"
+            "specId"
           ],
           "properties": {
-            "path": {
-              "type": "string",
-              "description": "Absolute path to the file"
+            "specId": {
+              "type": "string"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "approveSpec"
       },
       {
-        "name": "forgeai_writeFile",
-        "displayName": "Write File",
-        "modelDescription": "Write or update a file in the workspace. Use this to implement code changes.",
+        "name": "forgeai_browserClick",
+        "displayName": "Browser Click",
+        "modelDescription": "Click an element on the current page by selector. Use for pagination or interactions.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "path",
-            "content"
+            "selector"
           ],
           "properties": {
-            "path": {
+            "selector": {
               "type": "string",
-              "description": "Absolute path to the file"
+              "description": "CSS selector for the element to click"
             },
-            "content": {
-              "type": "string",
-              "description": "Content to write to the file"
-            }
-          }
-        }
-      },
-      {
-        "name": "forgeai_replaceText",
-        "displayName": "Replace Text",
-        "modelDescription": "Replace specific text in a file. Use this for targeted edits instead of rewriting entire files.",
-        "inputSchema": {
-          "type": "object",
-          "required": [
-            "path",
-            "oldText",
-            "newText"
-          ],
-          "properties": {
-            "path": {
-              "type": "string",
-              "description": "Absolute path to the file"
-            },
-            "oldText": {
-              "type": "string",
-              "description": "Exact text to replace"
-            },
-            "newText": {
-              "type": "string",
-              "description": "New text to insert"
-            }
-          }
-        }
-      },
-      {
-        "name": "forgeai_replaceRegex",
-        "displayName": "Replace Regex",
-        "modelDescription": "Replace text matching a regex pattern in a file. Use this for flexible code edits.",
-        "inputSchema": {
-          "type": "object",
-          "required": [
-            "path",
-            "pattern",
-            "replacement"
-          ],
-          "properties": {
-            "path": {
-              "type": "string",
-              "description": "Absolute path to the file"
-            },
-            "pattern": {
-              "type": "string",
-              "description": "Regular expression pattern to match"
-            },
-            "replacement": {
-              "type": "string",
-              "description": "Replacement text"
-            },
-            "flags": {
-              "type": "string",
-              "description": "Regex flags (e.g., 'g' for global)"
-            }
-          }
-        }
-      },
-      {
-        "name": "forgeai_listFiles",
-        "displayName": "List Files",
-        "modelDescription": "List files matching a glob pattern. Use this to discover files in the workspace.",
-        "inputSchema": {
-          "type": "object",
-          "required": [
-            "pattern"
-          ],
-          "properties": {
-            "pattern": {
-              "type": "string",
-              "description": "Glob pattern to match files (e.g., '**/*.ts')"
-            }
-          }
-        }
-      },
-      {
-        "name": "forgeai_findFile",
-        "displayName": "Find File",
-        "modelDescription": "Find a file by name across the workspace. Use this when you know the filename but need to locate its path.",
-        "inputSchema": {
-          "type": "object",
-          "required": [
-            "fileName"
-          ],
-          "properties": {
-            "fileName": {
-              "type": "string",
-              "description": "Exact filename to search for (e.g., 'extension.ts')"
-            },
-            "exactMatch": {
+            "waitForNavigation": {
               "type": "boolean",
-              "description": "If true, matches exact filename. If false, matches files containing the name (default: true)"
+              "description": "Wait for page navigation after click (default: true)"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserClick"
       },
       {
-        "name": "forgeai_listDirectory",
-        "displayName": "List Directory",
-        "modelDescription": "List contents of a directory. Use this to explore directory structure.",
+        "name": "forgeai_browserClose",
+        "displayName": "Browser Close",
+        "modelDescription": "Close the browser session and free resources.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserClose"
+      },
+      {
+        "name": "forgeai_browserExtract",
+        "displayName": "Browser Extract",
+        "modelDescription": "Extract text from the current browser page after navigation. Call after forgeai_browser_navigate.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector to extract specific element content"
+            },
+            "maxLength": {
+              "type": "number",
+              "description": "Maximum characters to return (default: 8000)"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserExtract"
+      },
+      {
+        "name": "forgeai_browserFill",
+        "displayName": "Browser Fill",
+        "modelDescription": "Fill an input field on the current page. Use to enter search queries or form data.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "path"
+            "selector",
+            "value"
           ],
           "properties": {
-            "path": {
+            "selector": {
               "type": "string",
-              "description": "Absolute path to the directory"
+              "description": "CSS selector for the input element"
+            },
+            "value": {
+              "type": "string",
+              "description": "Value to fill into the input field"
+            },
+            "pressEnter": {
+              "type": "boolean",
+              "description": "Press Enter after filling (default: true)"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserFill"
       },
       {
-        "name": "forgeai_createDirectory",
-        "displayName": "Create Directory",
-        "modelDescription": "Create a new directory. Use this when you need to create folder structure.",
+        "name": "forgeai_browserNavigate",
+        "displayName": "Browser Navigate",
+        "modelDescription": "Navigate to a URL using local Playwright browser. Requires 'npx playwright install chromium'.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "path"
+            "url"
           ],
           "properties": {
-            "path": {
+            "url": {
               "type": "string",
-              "description": "Absolute path for the new directory"
+              "description": "The URL to navigate to"
+            },
+            "waitForSelector": {
+              "type": "string",
+              "description": "Optional: Wait for a specific CSS selector"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserNavigate"
       },
       {
-        "name": "forgeai_deleteFile",
-        "displayName": "Delete File",
-        "modelDescription": "Delete a file or directory. Use this to remove files or folders.",
+        "name": "forgeai_browserScreenshot",
+        "displayName": "Browser Screenshot",
+        "modelDescription": "Take a screenshot of the current browser page. Returns base64-encoded PNG.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector for a specific element to screenshot"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserScreenshot"
+      },
+      {
+        "name": "forgeai_browserScroll",
+        "displayName": "Browser Scroll",
+        "modelDescription": "Scroll the current page up, down, top, or bottom.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "direction": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down",
+                "top",
+                "bottom"
+              ],
+              "description": "Direction to scroll"
+            },
+            "amount": {
+              "type": "number",
+              "description": "Pixels to scroll (default: 800)"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "browserScroll"
+      },
+      {
+        "name": "uiux_check_contrast",
+        "displayName": "Check Contrast",
+        "modelDescription": "Check WCAG color contrast compliance between foreground and background colors.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "path"
+            "foreground",
+            "background"
           ],
           "properties": {
-            "path": {
+            "foreground": {
               "type": "string",
-              "description": "Absolute path to the file or directory to delete"
+              "description": "Foreground color (hex, rgb, or hsl)"
+            },
+            "background": {
+              "type": "string",
+              "description": "Background color (hex, rgb, or hsl)"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "check_contrast"
+      },
+      {
+        "name": "forgeai_checkDrift",
+        "displayName": "Check Drift",
+        "modelDescription": "Run drift detection on requirements vs code.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "checkDrift"
+      },
+      {
+        "name": "forgeai_continueSpec",
+        "displayName": "Continue Spec",
+        "modelDescription": "Generate the next missing spec phase via AI.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "continueSpec"
       },
       {
         "name": "forgeai_copyFile",
         "displayName": "Copy File",
-        "modelDescription": "Copy a file from source to destination. Use this to duplicate files.",
+        "modelDescription": "Copy a file.",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -350,41 +389,45 @@
           "properties": {
             "source": {
               "type": "string",
-              "description": "Absolute path to the source file"
+              "description": "Source path"
             },
             "destination": {
               "type": "string",
-              "description": "Absolute path to the destination"
+              "description": "Destination path"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "copyFile"
       },
       {
-        "name": "forgeai_renameFile",
-        "displayName": "Rename File",
-        "modelDescription": "Rename or move a file. Use this to reorganize files.",
+        "name": "uiux_create_design_system",
+        "displayName": "Create Design System",
+        "modelDescription": "Create a design system with tokens, components, and themes. Use for UI/UX work.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "oldPath",
-            "newPath"
+            "name",
+            "primaryColor"
           ],
           "properties": {
-            "oldPath": {
+            "name": {
               "type": "string",
-              "description": "Current absolute path"
+              "description": "Design system name"
             },
-            "newPath": {
+            "primaryColor": {
               "type": "string",
-              "description": "New absolute path"
+              "description": "Primary brand color in hex format"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "create_design_system"
       },
       {
-        "name": "forgeai_getFileStats",
-        "displayName": "Get File Stats",
-        "modelDescription": "Get file metadata (size, timestamps, type). Use this to check file properties.",
+        "name": "forgeai_createDirectory",
+        "displayName": "Create Directory",
+        "modelDescription": "Create a directory (including parents).",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -393,32 +436,173 @@
           "properties": {
             "path": {
               "type": "string",
-              "description": "Absolute path to the file"
+              "description": "Directory path"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "createDirectory"
       },
       {
-        "name": "forgeai_watchFiles",
-        "displayName": "Watch Files",
-        "modelDescription": "Watch files for changes. Use this to monitor file system events.",
+        "name": "forgeai_createSpec",
+        "displayName": "Create Spec",
+        "modelDescription": "Create a new ForgeAI spec.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "pattern"
+            "title"
           ],
           "properties": {
-            "pattern": {
-              "type": "string",
-              "description": "Glob pattern to watch (e.g., '**/*.ts')"
+            "title": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "createSpec"
+      },
+      {
+        "name": "forgeai_createTerminal",
+        "displayName": "Create Terminal",
+        "modelDescription": "Open a persistent terminal panel.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "createTerminal"
+      },
+      {
+        "name": "forgeai_deleteFile",
+        "displayName": "Delete File",
+        "modelDescription": "Delete a file.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "deleteFile"
+      },
+      {
+        "name": "forgeai_deleteSpec",
+        "displayName": "Delete Spec",
+        "modelDescription": "Delete a spec directory.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "deleteSpec"
+      },
+      {
+        "name": "uiux_export_tokens",
+        "displayName": "Export Tokens",
+        "modelDescription": "Export design tokens to a file in the specified format.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "filePath"
+          ],
+          "properties": {
+            "filePath": {
+              "type": "string",
+              "description": "Output file path for the tokens"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "json",
+                "css",
+                "tailwind",
+                "scss",
+                "js"
+              ],
+              "description": "Export format (default: json)"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "export_tokens"
+      },
+      {
+        "name": "forgeai_fetchPage",
+        "displayName": "Fetch Page",
+        "modelDescription": "Fetch full HTML/text content of a URL.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "url"
+          ],
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "maxLength": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "fetchPage"
+      },
+      {
+        "name": "forgeai_findFile",
+        "displayName": "Find File",
+        "modelDescription": "Find a file by name.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "fileName"
+          ],
+          "properties": {
+            "fileName": {
+              "type": "string",
+              "description": "Filename to search for"
+            },
+            "exactMatch": {
+              "type": "boolean",
+              "description": "Exact match (default true)"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "findFile"
       },
       {
         "name": "forgeai_findFiles",
         "displayName": "Find Files",
-        "modelDescription": "Search for files with include/exclude patterns. Use this to find specific files.",
+        "modelDescription": "Find files with include/exclude patterns.",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -426,119 +610,73 @@
           ],
           "properties": {
             "include": {
-              "type": "string",
-              "description": "Glob pattern to include"
+              "type": "string"
             },
             "exclude": {
-              "type": "string",
-              "description": "Glob pattern to exclude (optional)"
+              "type": "string"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "findFiles"
       },
       {
-        "name": "forgeai_searchInFiles",
-        "displayName": "Search In Files",
-        "modelDescription": "Search for text content in files. Use this to find code patterns or specific text.",
+        "name": "uiux_generate_design_tokens",
+        "displayName": "Generate Design Tokens",
+        "modelDescription": "Generate design tokens (colors, spacing, typography) from a design system.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "query"
+            "format"
           ],
           "properties": {
-            "query": {
+            "format": {
               "type": "string",
-              "description": "Text to search for"
-            },
-            "filePattern": {
-              "type": "string",
-              "description": "Glob pattern to limit search (optional)"
+              "enum": [
+                "json",
+                "css",
+                "tailwind",
+                "all"
+              ],
+              "description": "Token export format"
             }
           }
-        }
-      },
-      {
-        "name": "forgeai_runCommand",
-        "displayName": "Run Command",
-        "modelDescription": "Execute a shell command and return stdout, stderr, and exit code. Use this to run commands programmatically and get the output.",
-        "inputSchema": {
-          "type": "object",
-          "required": [
-            "command"
-          ],
-          "properties": {
-            "command": {
-              "type": "string",
-              "description": "Shell command to execute (e.g., 'npm test', 'git status')"
-            },
-            "cwd": {
-              "type": "string",
-              "description": "Working directory for command execution (optional)"
-            },
-            "timeout": {
-              "type": "number",
-              "description": "Timeout in milliseconds (optional, defaults to 30000ms)"
-            }
-          }
-        }
-      },
-      {
-        "name": "forgeai_createTerminal",
-        "displayName": "Create Terminal",
-        "modelDescription": "Create a VS Code terminal for interactive command execution. Use this for long-running processes or commands that need user interaction.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "Terminal name (optional)"
-            },
-            "cwd": {
-              "type": "string",
-              "description": "Working directory (optional)"
-            },
-            "command": {
-              "type": "string",
-              "description": "Command to execute in the terminal (optional)"
-            }
-          }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "generate_design_tokens"
       },
       {
         "name": "forgeai_generateDiff",
         "displayName": "Generate Diff",
-        "modelDescription": "Generate a code diff to show proposed changes before applying them. Use this ONLY when the user explicitly asks to preview changes or see a diff. For normal code modifications, use forgeai_writeFile directly.",
+        "modelDescription": "Generate unified diff between file versions.",
         "inputSchema": {
           "type": "object",
           "required": [
-            "file",
             "originalContent",
             "newContent"
           ],
           "properties": {
             "file": {
-              "type": "string",
-              "description": "File path relative to workspace root"
+              "type": "string"
             },
             "originalContent": {
-              "type": "string",
-              "description": "Original file content"
+              "type": "string"
             },
             "newContent": {
-              "type": "string",
-              "description": "New file content with changes"
+              "type": "string"
             },
             "language": {
-              "type": "string",
-              "description": "Programming language for syntax highlighting (optional)"
+              "type": "string"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "generateDiff"
       },
       {
         "name": "forgeai_getDiagnostics",
         "displayName": "Get Diagnostics",
-        "modelDescription": "Get compilation errors, type errors, and warnings for specific files. Use this after modifying files to check for errors before running tests. This is CRITICAL for intelligent error detection.",
+        "modelDescription": "Get full diagnostics for specific files.",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -550,33 +688,46 @@
               "items": {
                 "type": "string"
               },
-              "description": "Array of absolute file paths to check for diagnostics"
+              "description": "File paths to check"
             }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "getDiagnostics"
       },
       {
         "name": "forgeai_getErrors",
         "displayName": "Get All Errors",
-        "modelDescription": "Get all compilation errors and warnings in the workspace. Use this to check overall project health.",
+        "modelDescription": "Get all workspace errors and warnings.",
         "inputSchema": {
           "type": "object",
           "properties": {}
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "getErrors"
       },
       {
-        "name": "forgeai_gitStatus",
-        "displayName": "Git Status",
-        "modelDescription": "Get current Git status including branch name, changes, staged files, and sync status (ahead/behind remote). Use this to understand the current state of the repository.",
+        "name": "forgeai_getFileStats",
+        "displayName": "Get File Stats",
+        "modelDescription": "Get file metadata.",
         "inputSchema": {
           "type": "object",
-          "properties": {}
-        }
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "getFileStats"
       },
       {
         "name": "forgeai_gitCommit",
         "displayName": "Git Commit",
-        "modelDescription": "Stage and commit changes with a commit message. Optionally stage only specific files. Use this to save changes to the repository.",
+        "modelDescription": "Stage files and commit.",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -591,38 +742,20 @@
               "type": "array",
               "items": {
                 "type": "string"
-              },
-              "description": "Optional: Array of file paths to stage. If not provided, stages all changes."
+              }
             },
             "amend": {
-              "type": "boolean",
-              "description": "Optional: Amend the previous commit instead of creating a new one"
+              "type": "boolean"
             }
           }
-        }
-      },
-      {
-        "name": "forgeai_gitPush",
-        "displayName": "Git Push",
-        "modelDescription": "Push commits to the remote repository. Use this to sync local commits with the remote.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {}
-        }
-      },
-      {
-        "name": "forgeai_gitPull",
-        "displayName": "Git Pull",
-        "modelDescription": "Pull commits from the remote repository. Use this to sync remote changes to local.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {}
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "gitCommit"
       },
       {
         "name": "forgeai_gitCreateBranch",
         "displayName": "Git Create Branch",
-        "modelDescription": "Create a new Git branch and optionally checkout to it. Use this to start working on a new feature or fix.",
+        "modelDescription": "Create and switch to a new branch.",
         "inputSchema": {
           "type": "object",
           "required": [
@@ -630,457 +763,494 @@
           ],
           "properties": {
             "name": {
-              "type": "string",
-              "description": "Branch name"
+              "type": "string"
             },
             "checkout": {
-              "type": "boolean",
-              "description": "Whether to checkout the new branch (default: true)"
+              "type": "boolean"
             }
-}
-      }
-    },
-    {
-      "name": "forgeai_webSearch",
-      "displayName": "Web Search",
-      "modelDescription": "Search the web using cloud APIs. No local browser required. Returns URLs with snippets and auto-fetches top pages.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["query"],
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "The search query (e.g., 'React useEffect documentation')"
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_webResearch",
-      "displayName": "Web Research",
-      "modelDescription": "Deep research with multiple queries and content aggregation. Use for comprehensive topic investigation.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["topic"],
-        "properties": {
-          "topic": {
-            "type": "string",
-            "description": "The research topic (e.g., 'Next.js App Router vs Pages Router')"
-          },
-          "subQueries": {
-            "type": "array",
-            "items": { "type": "string" },
-            "description": "Optional specific sub-queries (max 3)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "gitCreateBranch"
+      },
+      {
+        "name": "forgeai_gitPull",
+        "displayName": "Git Pull",
+        "modelDescription": "Pull from remote.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "remote": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_searchDocs",
-      "displayName": "Search Docs",
-      "modelDescription": "Search for official documentation of a library or framework. No local browser needed.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["library"],
-        "properties": {
-          "library": {
-            "type": "string",
-            "description": "Library or framework name (e.g., 'React', 'Django')"
-          },
-          "topic": {
-            "type": "string",
-            "description": "Specific topic within the library (optional)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "gitPull"
+      },
+      {
+        "name": "forgeai_gitPush",
+        "displayName": "Git Push",
+        "modelDescription": "Push commits to remote.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "remote": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_fetchPage",
-      "displayName": "Fetch Page",
-      "modelDescription": "Fetch the full HTML content of a URL. Use this after webSearch to get real documentation.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["url"],
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "Full URL to fetch (e.g., 'https://react.dev/learn/thinking-in-react')"
-          },
-          "maxLength": {
-            "type": "number",
-            "description": "Characters per chunk (default: 15000, max: 25000)"
-          },
-          "offset": {
-            "type": "number",
-            "description": "Character offset for pagination"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "gitPush"
+      },
+      {
+        "name": "forgeai_gitStatus",
+        "displayName": "Git Status",
+        "modelDescription": "Get git working tree status.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "gitStatus"
+      },
+      {
+        "name": "forgeai_listDirectory",
+        "displayName": "List Directory",
+        "modelDescription": "List directory contents.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Directory path"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_navigate",
-      "displayName": "Browser Navigate",
-      "modelDescription": "Navigate to a URL using local Playwright browser. Requires 'npx playwright install chromium'.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["url"],
-        "properties": {
-          "url": {
-            "type": "string",
-            "description": "The URL to navigate to"
-          },
-          "waitForSelector": {
-            "type": "string",
-            "description": "Optional: Wait for a specific CSS selector"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "listDirectory"
+      },
+      {
+        "name": "forgeai_listFiles",
+        "displayName": "List Files",
+        "modelDescription": "List files matching a glob pattern.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "pattern"
+          ],
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Glob pattern e.g. **/*.ts"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_extract",
-      "displayName": "Browser Extract",
-      "modelDescription": "Extract text from the current browser page after navigation. Call after forgeai_browser_navigate.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "selector": {
-            "type": "string",
-            "description": "CSS selector to extract specific element content"
-          },
-          "maxLength": {
-            "type": "number",
-            "description": "Maximum characters to return (default: 8000)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "listFiles"
+      },
+      {
+        "name": "forgeai_listSpecs",
+        "displayName": "List Specs",
+        "modelDescription": "List all specs with IDs, titles, statuses, and phases.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "listSpecs"
+      },
+      {
+        "name": "forgeai_readFile",
+        "displayName": "Read File",
+        "modelDescription": "Read the contents of a file.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute file path"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_click",
-      "displayName": "Browser Click",
-      "modelDescription": "Click an element on the current page by selector. Use for pagination or interactions.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["selector"],
-        "properties": {
-          "selector": {
-            "type": "string",
-            "description": "CSS selector for the element to click"
-          },
-          "waitForNavigation": {
-            "type": "boolean",
-            "description": "Wait for page navigation after click (default: true)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "readFile"
+      },
+      {
+        "name": "forgeai_readSpec",
+        "displayName": "Read Spec",
+        "modelDescription": "Read an existing spec (config + artifacts, truncated).",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_fill",
-      "displayName": "Browser Fill",
-      "modelDescription": "Fill an input field on the current page. Use to enter search queries or form data.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["selector", "value"],
-        "properties": {
-          "selector": {
-            "type": "string",
-            "description": "CSS selector for the input element"
-          },
-          "value": {
-            "type": "string",
-            "description": "Value to fill into the input field"
-          },
-          "pressEnter": {
-            "type": "boolean",
-            "description": "Press Enter after filling (default: true)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "readSpec"
+      },
+      {
+        "name": "forgeai_renameFile",
+        "displayName": "Rename File",
+        "modelDescription": "Rename or move a file.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "oldPath",
+            "newPath"
+          ],
+          "properties": {
+            "oldPath": {
+              "type": "string"
+            },
+            "newPath": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_screenshot",
-      "displayName": "Browser Screenshot",
-      "modelDescription": "Take a screenshot of the current browser page. Returns base64-encoded PNG.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "selector": {
-            "type": "string",
-            "description": "CSS selector for a specific element to screenshot"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "renameFile"
+      },
+      {
+        "name": "forgeai_replaceRegex",
+        "displayName": "Replace with Regex",
+        "modelDescription": "Regex-replace inside a file.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path",
+            "pattern",
+            "replacement"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "replacement": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_scroll",
-      "displayName": "Browser Scroll",
-      "modelDescription": "Scroll the current page up, down, top, or bottom.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "direction": {
-            "type": "string",
-            "enum": ["up", "down", "top", "bottom"],
-            "description": "Direction to scroll"
-          },
-          "amount": {
-            "type": "number",
-            "description": "Pixels to scroll (default: 800)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "replaceRegex"
+      },
+      {
+        "name": "forgeai_replaceText",
+        "displayName": "Replace Text",
+        "modelDescription": "Replace exact text in a file.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path",
+            "oldText",
+            "newText"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path"
+            },
+            "oldText": {
+              "type": "string"
+            },
+            "newText": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_browser_close",
-      "displayName": "Browser Close",
-      "modelDescription": "Close the browser session and free resources.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "forgeai_createDesignSystem",
-      "displayName": "Create Design System",
-      "modelDescription": "Create a design system with tokens, components, and themes. Use for UI/UX work.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["name", "primaryColor"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Design system name"
-          },
-          "primaryColor": {
-            "type": "string",
-            "description": "Primary brand color in hex format"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "replaceText"
+      },
+      {
+        "name": "forgeai_runAllTasks",
+        "displayName": "Run All Tasks",
+        "modelDescription": "Execute all pending tasks in a spec.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_generateDesignTokens",
-      "displayName": "Generate Design Tokens",
-      "modelDescription": "Generate design tokens (colors, spacing, typography) from a design system.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["format"],
-        "properties": {
-          "format": {
-            "type": "string",
-            "enum": ["json", "css", "tailwind", "all"],
-            "description": "Token export format"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "runAllTasks"
+      },
+      {
+        "name": "forgeai_runCommand",
+        "displayName": "Run Command",
+        "modelDescription": "Run a shell command and capture output.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "command"
+          ],
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "timeout": {
+              "type": "number"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_exportTokens",
-      "displayName": "Export Tokens",
-      "modelDescription": "Export design tokens to a file in the specified format.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["filePath"],
-        "properties": {
-          "filePath": {
-            "type": "string",
-            "description": "Output file path for the tokens"
-          },
-          "format": {
-            "type": "string",
-            "enum": ["json", "css", "tailwind", "scss", "js"],
-            "description": "Export format (default: json)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "runCommand"
+      },
+      {
+        "name": "forgeai_scanHealth",
+        "displayName": "Scan Project Health",
+        "modelDescription": "Autonomous project health scan: enumerate files, chunk-based LLM analysis + concrete checks (tsc, eslint, git), produce severity report, offer fixes, publish VS Code diagnostics.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "full",
+                "quick",
+                "auto"
+              ],
+              "description": "Scan mode"
+            },
+            "autoFix": {
+              "type": "boolean",
+              "description": "Apply auto-fixable issues after scan"
+            },
+            "maxFileCount": {
+              "type": "number"
+            },
+            "chunkSize": {
+              "type": "number"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_checkContrast",
-      "displayName": "Check Contrast",
-      "modelDescription": "Check WCAG color contrast compliance between foreground and background colors.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["foreground", "background"],
-        "properties": {
-          "foreground": {
-            "type": "string",
-            "description": "Foreground color (hex, rgb, or hsl)"
-          },
-          "background": {
-            "type": "string",
-            "description": "Background color (hex, rgb, or hsl)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "scanHealth"
+      },
+      {
+        "name": "forgeai_searchDocs",
+        "displayName": "Search Docs",
+        "modelDescription": "Search internal documentation RAG index.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "library"
+          ],
+          "properties": {
+            "library": {
+              "type": "string"
+            },
+            "topic": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_createSpec",
-      "displayName": "Create Spec",
-      "modelDescription": "Create a new specification for a feature or system. Starts the spec-driven development workflow.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["title"],
-        "properties": {
-          "title": {
-            "type": "string",
-            "description": "Spec title"
-          },
-          "description": {
-            "type": "string",
-            "description": "Spec description (optional)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "searchDocs"
+      },
+      {
+        "name": "forgeai_searchInFiles",
+        "displayName": "Search In Files",
+        "modelDescription": "Search text in files.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "query"
+          ],
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "filePattern": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_writeSpecArtifact",
-      "displayName": "Write Spec Artifact",
-      "modelDescription": "Write an artifact file for the current spec (requirements.md, tasks.md, design.md, etc.).",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId", "artifactId", "content"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier"
-          },
-          "artifactId": {
-            "type": "string",
-            "description": "Artifact name (requirements, tasks, design, plan, tests, implementation, etc.)"
-          },
-          "content": {
-            "type": "string",
-            "description": "Artifact content to write"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "searchInFiles"
+      },
+      {
+        "name": "forgeai_startTask",
+        "displayName": "Start Task",
+        "modelDescription": "Execute a single task via the task executor.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId",
+            "taskId"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            },
+            "taskId": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_readSpec",
-      "displayName": "Read Spec",
-      "modelDescription": "Read a spec and its artifacts. Returns spec metadata and file contents.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier to read"
-          },
-          "artifactId": {
-            "type": "string",
-            "description": "Specific artifact to read (optional, returns all if omitted)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "startTask"
+      },
+      {
+        "name": "forgeai_watchFiles",
+        "displayName": "Watch Files",
+        "modelDescription": "Watch files for changes.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "pattern"
+          ],
+          "properties": {
+            "pattern": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_listSpecs",
-      "displayName": "List Specs",
-      "modelDescription": "List all specs in the workspace.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "forgeai_continueSpec",
-      "displayName": "Continue Spec",
-      "modelDescription": "Continue spec development autonomously. Runs tasks and generates code.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier to continue"
-          },
-          "maxTasks": {
-            "type": "number",
-            "description": "Maximum tasks to run (optional)"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "watchFiles"
+      },
+      {
+        "name": "forgeai_webResearch",
+        "displayName": "Web Research",
+        "modelDescription": "Deep web research on a topic.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "topic"
+          ],
+          "properties": {
+            "topic": {
+              "type": "string"
+            },
+            "subQueries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_startTask",
-      "displayName": "Start Task",
-      "modelDescription": "Start executing a specific task from a spec.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId", "taskId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier"
-          },
-          "taskId": {
-            "type": "string",
-            "description": "Task ID to start"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "webResearch"
+      },
+      {
+        "name": "forgeai_webSearch",
+        "displayName": "Web Search",
+        "modelDescription": "Quick web search.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "query"
+          ],
+          "properties": {
+            "query": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_checkDrift",
-      "displayName": "Check Drift",
-      "modelDescription": "Check if the current code matches the spec requirements.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier to check"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "webSearch"
+      },
+      {
+        "name": "forgeai_writeFile",
+        "displayName": "Write File",
+        "modelDescription": "Write content to a file, creating it if needed.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "path",
+            "content"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Absolute file path"
+            },
+            "content": {
+              "type": "string",
+              "description": "File content to write"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_deleteSpec",
-      "displayName": "Delete Spec",
-      "modelDescription": "Delete a spec and all its artifacts.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier to delete"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "writeFile"
+      },
+      {
+        "name": "forgeai_writeSpecArtifact",
+        "displayName": "Write Spec Artifact",
+        "modelDescription": "Write markdown to a spec artifact.",
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "specId",
+            "type",
+            "content"
+          ],
+          "properties": {
+            "specId": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "requirements",
+                "design",
+                "tasks",
+                "bugfix"
+              ]
+            },
+            "content": {
+              "type": "string"
+            }
           }
-        }
-      }
-    },
-    {
-      "name": "forgeai_runAllTasks",
-      "displayName": "Run All Spec Tasks",
-      "modelDescription": "Run all tasks in a spec with autonomous execution.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier to run"
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "writeSpecArtifact"
+      },
+      {
+        "name": "uiux_analyzeScreenshot",
+        "displayName": "Analyze Screenshot",
+        "modelDescription": "Analyze the current Browser Mirror screenshot for visual defects using vision AI.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "fullPage": {
+              "type": "boolean",
+              "description": "Analyze full page screenshot"
+            }
           }
-        }
+        },
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "analyzeScreenshot"
       }
-    },
-    {
-      "name": "forgeai_approveSpec",
-      "displayName": "Approve Spec",
-      "modelDescription": "Approve a spec to mark it as complete and ready for implementation.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["specId"],
-        "properties": {
-          "specId": {
-            "type": "string",
-            "description": "Spec identifier to approve"
-          }
-        }
-      }
-    }
-  ],
+    ],
     "configuration": [
       {
         "title": "ForgeAI",
@@ -1152,6 +1322,11 @@
             "type": "string",
             "default": "gpt-oss:120b-cloud",
             "description": "Ollama model to use for AI responses. Must match an installed Ollama model name (e.g., 'llama3.2', 'gemma4:27b', 'gpt-oss:120b-cloud')."
+          },
+          "forgeai.embeddingsModel": {
+            "type": "string",
+            "default": "nomic-embed-text:latest",
+            "description": "Ollama embedding model for RAG vector search. Must be an installed Ollama embedding model (e.g., 'nomic-embed-text:latest', 'mxbai-embed-large'). Run 'ollama pull <model>' to install."
           },
           "forgeai.enableRagBootstrap": {
             "type": "boolean",

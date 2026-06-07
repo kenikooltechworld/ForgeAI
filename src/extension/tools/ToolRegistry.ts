@@ -32,6 +32,23 @@ export class ToolRegistry implements vscode.Disposable {
     private readonly logger: Logger
   ) {}
 
+  // Sub-agent helpers
+  public getToolDefinition(name: string): Tool | undefined {
+    return this.tools.get(name);
+  }
+
+  public listToolNames(): string[] {
+    return Array.from(this.tools.keys());
+  }
+
+  public static createSubRegistry(logger: Logger): ToolRegistry {
+    const registry = new ToolRegistry(null as unknown as vscode.ExtensionContext, logger);
+    registry['_isSubRegistry'] = true;
+    return registry;
+  }
+
+  private _isSubRegistry = false;
+
   /**
    * Register all tools from various tool providers
    * This will be called during extension activation
@@ -78,44 +95,13 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(diagnosticsTools.getErrors());
     this.registerTool(diagnosticsTools.getDiagnostics());
 
-    // Register web search tools (cloud-based, no local browser required)
-    const { WebSearchTools } = require('./WebSearchTools');
-    const webSearchTools = new WebSearchTools();
-    this.registerTool(webSearchTools.webSearch());
-    this.registerTool(webSearchTools.webResearch());
-    this.registerTool(webSearchTools.searchDocs());
-    this.registerTool(webSearchTools.fetchPage());
+    // NOTE: Web search tools are NO LONGER registered here.
+    // The master AI must use forgeai_spawnAgent(type="researcher") instead.
+    // ResearchAgent internally calls WebSearchTools and BrowserTools directly.
 
-    // Register browser tools (local Playwright — optional fallback)
-    const { BrowserTools } = require('./BrowserTools');
-    const browserTools = new BrowserTools();
-    this.registerTool(browserTools.browserNavigate());
-    this.registerTool(browserTools.browserExtract());
-    this.registerTool(browserTools.browserClick());
-    this.registerTool(browserTools.browserFill());
-    this.registerTool(browserTools.browserScreenshot());
-    this.registerTool(browserTools.browserScroll());
-    this.registerTool(browserTools.browserClose());
-
-    // Register Browser + Visual QA tools (global)
-    const { BrowserAndVisualTools } = require('./BrowserAndVisualTools');
-    const browserAndVisualTools = new BrowserAndVisualTools();
-    this.registerTool(browserAndVisualTools.browserNavigate());
-    this.registerTool(browserAndVisualTools.browserExtract());
-    this.registerTool(browserAndVisualTools.browserScreenshot());
-    this.registerTool(browserAndVisualTools.browserClick());
-    this.registerTool(browserAndVisualTools.browserFill());
-    this.registerTool(browserAndVisualTools.browserScroll());
-    this.registerTool(browserAndVisualTools.browserClose());
-    this.registerTool(browserAndVisualTools.analyzeScreenshot());
-
-    // Register UI/UX Architect Agent tools (Phase 2.4)
-    const { UIUXTools } = require('../agents/ui-ux-architect/tools/UIUXTools');
-    const uiuxTools = new UIUXTools(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '');
-    this.registerTool(uiuxTools.createDesignSystem());
-    this.registerTool(uiuxTools.generateDesignTokens());
-    this.registerTool(uiuxTools.exportTokens());
-    this.registerTool(uiuxTools.checkContrast());
+    // Browser, MCP, and UI/UX tools are NOT registered globally.
+    // They are scoped to individual sub-agents via SubAgentSpawner.buildScopedToolRegistry().
+    // The master AI must use forgeai_spawnAgent(type="researcher|browserMirror|uiux...") to access them.
 
     // BrowserMirrorTools and VisualQATools are NOT registered globally.
     // They require runtime dependencies (live ForgeBrowserSession, OllamaClient)
@@ -142,6 +128,11 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(specTools.startTask());
     this.registerTool(specTools.runAllTasks());
     this.registerTool(specTools.approveSpec());
+
+    // Register the master-agent spawn tool — the ONLY way the AI creates sub-agents
+    const { SubAgentSpawner } = require('../agents/SubAgentSpawner');
+    const spawnAgentTool = SubAgentSpawner.createSpawnAgentTool();
+    this.registerTool(spawnAgentTool);
   }
 
   /**
@@ -154,6 +145,10 @@ export class ToolRegistry implements vscode.Disposable {
   public registerTool(tool: Tool): void {
     // Store tool in registry
     this.tools.set(tool.name, tool);
+
+    if (this._isSubRegistry) {
+      return; // sub-registries only need the tool map, no VS Code LM registration
+    }
 
     // Register with VS Code LM Tools API
     // This makes the tool available in the native model picker

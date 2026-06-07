@@ -145,6 +145,8 @@ export class SpecOrchestrator {
         () => {}
       );
 
+      this.deps.researchAgent.compileResearchMarkdown(researchSession);
+
       const requirementsResult: RequirementsAgentOutput = await this.requirementsAgent.generate({
         title,
         description,

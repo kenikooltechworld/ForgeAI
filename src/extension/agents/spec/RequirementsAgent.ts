@@ -21,47 +21,75 @@ import { ResearchSession } from '../research/ResearchSession';
 import { renderToolSection } from '../../agents/ToolCatalog';
 import { getConfiguredModel } from '../../config/ModelConfig';
 
-const REQUIREMENTS_INTRO_PROMPT = `You are a senior product manager. Write ONLY the Introduction section.`;
+const REQUIREMENTS_INTRO_PROMPT = `You are a senior product manager. Write ONLY the Introduction section.
+
+# MANDATORY RULES
+- Write as many paragraphs as needed to comprehensively cover the feature — minimum 5, NO upper limit
+- Cover: what the feature is, why it exists, what problem it solves, the market/domain context, stakeholder landscape, technical approach, business value, constraints and dependencies
+- Every paragraph MUST be feature-specific with real detail — no generic filler
+- Be EXHAUSTIVE — the reader should understand the full picture after reading this section
+- Include exactly ONE bold "**Key Constraint:**" line stating the single most important constraint
+- Output starts with "## Introduction"
+- Do NOT include any other sections
+- Do NOT use placeholders like "TBD" or "{placeholder}"`;
 
 const REQUIREMENTS_GLOSSARY_PROMPT = `You are a senior product manager. Write ONLY the Glossary section.
 
-# RULES
-- Define 8-12 domain-specific terms relevant to THIS feature
-- Use format: "- **Term_Name**: Definition."
-- Each definition must be 1-2 sentences
+# MANDATORY RULES
+- Define AS MANY domain-specific terms as needed to comprehensively cover every concept, role, component, and technical term used in this feature — NO upper limit
+- Each definition must be 2-4 sentences with COMPLETE explanation of what the term is AND why it matters in the context of this specific feature
+- Include every acronym, domain term, component name, user role, and technical concept that appears in the requirements
+- Do NOT use generic/templated definitions — every definition must be specific to this feature
+- Use format: "- **Term_Name**: Full definition. Context-specific explanation of relevance."
+- Output starts with "## Glossary"
 - Do NOT include any other sections
-- Do NOT use placeholders
-- Minimum 8 terms`;
+- Do NOT use placeholders`;
 
 const REQUIREMENTS_REQUIREMENTS_PROMPT = `You are a senior product manager. Write ONLY the Requirements section using EARS notation.
 
-# RULES
-- Create 8-15 numbered requirements
-- EACH requirement MUST have:
-  - A clear title (user-facing capability, NOT implementation)
-  - A User Story (As a [role], I want [action], so that [benefit])
-  - 5-8 acceptance criteria using EARS notation
-- EACH criterion must be SPECIFIC and QUANTIFIED
-- Do NOT include implementation details (no "use PostgreSQL", "create API")
-- Do NOT include styling, deployment, testing, or CI/CD as requirements
-- Group related capabilities into ONE requirement
-- Use EARS notation EXCLUSIVELY (no "should", "might", "can", "may")
-- Separate each requirement with ---`;
+# MANDATORY RULES
+- Write AS MANY requirements as needed to cover EVERY capability, behavior, and constraint of the feature — NO upper limit
+- Each requirement must have a DETAILED paragraph (3-5 sentences minimum) explaining the user need, the specific behavior, edge cases, and how it relates to other requirements
+- Each requirement MUST have a User Story: "As a {role}, I want {action}, so that {benefit}"
+- Each requirement MUST have AS MANY acceptance criteria as needed to fully define the behavior — minimum 8, NO upper limit
+  - Mix of WHEN/THE, IF/THEN THE, WHILE/THE, and WHERE patterns
+  - Each criterion must be SPECIFIC, QUANTIFIED, and TESTABLE with concrete numbers, time limits, error codes, retry counts, thresholds
+  - Include boundary conditions, error paths, and exceptional scenarios
+- Each requirement must specify WHO is affected (end users, admins, system operators, external services)
+- Cover all functional behavior: user actions, system responses, data handling, integrations, error handling, edge cases
+- Separate each requirement with ---
+- Output starts with "## Requirements"
+- Do NOT include implementation details (no "use PostgreSQL", "create API endpoint", "write a function")
+- Do NOT include styling, deployment, testing infrastructure, or CI/CD as requirements
+- Be EXHAUSTIVE — if a behavior is part of the feature, it MUST have a requirement`;
 
 const REQUIREMENTS_OUT_OF_SCOPE_PROMPT = `You are a senior product manager. Write ONLY the Out of Scope section.
 
-# RULES
-- Include 5-8 out-of-scope items (MUST have at least 5)
-- Use format: "N. **{Item}** — {Why it's excluded}"
-- Each item must have a clear reason for exclusion
+# MANDATORY RULES
+- List AS MANY out-of-scope items as needed to clearly define the boundaries of this feature — NO upper limit
+- Each item must have a DETAILED explanation (2-3 sentences minimum) of WHY it's excluded, what it would require, and what phase/future work it belongs to
+- Be EXHAUSTIVE — it's better to over-define boundaries than to leave ambiguous scope creep
+- Security Constraints: AS MANY as needed (minimum 8) with FULL explanations of security principles and what violations would look like
+- Timeline Constraints: AS MANY as needed (minimum 6) explaining what's deferred to future phases, with detailed reasons (complexity, dependencies, ROI, risk)
+- Output starts with "## Out of Scope"
 - Do NOT include any other sections`;
+
 
 const REQUIREMENTS_NFR_PROMPT = `You are a senior product manager. Write ONLY the Non-Functional Requirements section.
 
-# RULES
-- Include all 5 categories: Reliability, Performance, Usability, Maintainability, Cost
-- Each category must have 2-3 bullets using EARS notation
-- All requirements must be QUANTIFIED`;
+# MANDATORY RULES
+- Include ALL 5 categories: Reliability, Performance, Usability, Maintainability, Cost
+- Each category must have AS MANY requirements as needed — NO upper limit, minimum 8 per category
+- Each requirement must include:
+  - A specific QUANTIFIED target with concrete numbers, percentages, time limits, error rates
+  - A clear measurement method (how to verify the requirement is met — tests, monitoring, benchmarks)
+  - Context-specific rationale tied to THIS feature's actual use cases
+- Every requirement must use EARS notation (WHEN/THE, IF/THEN, WHILE/THE)
+- Every requirement must be VERIFIABLE — a tester must be able to confirm it passes or fails with objective evidence
+- Cover every non-functional aspect: error rates, recovery times, data durability, response times (P50/P95/P99), throughput, memory usage, accessibility, code coverage, documentation, cost limits, resource efficiency
+- Be EXHAUSTIVE — non-functional requirements define the quality bar for the entire feature
+- Output starts with "## Non-Functional Requirements"
+- Do NOT include any other sections`;
 
 const REQUIREMENTS_CORRECTION_PROMPT = `CRITICAL: Your previous output was REJECTED.
 
@@ -289,22 +317,13 @@ Your output is a formal, EARS-notation requirements document.
       prompt += '\n';
     }
 
-    prompt += `Follow the EXACT template structure. Replace all {placeholder} content with real, specific content.\n`;
-    prompt += `Keep exact heading levels and horizontal rules (---). Do NOT invent new sections.\n\n`;
-    prompt += `--- EXACT TEMPLATE TO FOLLOW ---\n`;
-    prompt += this.specManager.requirementsTemplate().replace(/{SPEC_NAME}/g, title);
-    prompt += `\n--- END TEMPLATE ---\n`;
-
-    prompt += `\n# SPEC TOOLS AVAILABLE TO YOU\n`;
-    prompt += `You MAY reference specs in your document where appropriate. Example: "See spec ${context.existingSpecs[0]?.id || 'NNN-spec'} for related context."\n`;
-    prompt += `- forgeai_listSpecs, forgeai_readSpec, forgeai_writeSpecArtifact, forgeai_createSpec, forgeai_continueSpec\n`;
-
-    prompt += `\n# OUTPUT DISCIPLINE\n`;
-    prompt += `- Write ONLY the requirements document\n`;
-    prompt += `- Begin with "# Requirements Document: ${title}"\n`;
-    prompt += `- Use EARS notation for acceptance criteria\n`;
-    prompt += `- Do NOT write preamble, conclusion, code fences around output, or notes after finishing\n`;
-    prompt += `- Stop writing once the final section is complete\n`;
+    prompt += `You are generating ONE section of a requirements document.\n`;
+    prompt += `The full template has these mandatory sections:\n`;
+    prompt += `## Introduction | ## Glossary | ## Requirements | ## Out of Scope | ## Non-Functional Requirements\n`;
+    prompt += `You will receive ONLY the template for your assigned section.\n`;
+    prompt += `Fill every {placeholder} with specific, comprehensive content derived from the feature description.\n`;
+    prompt += `Use EARS notation for all acceptance criteria.\n`;
+    prompt += `Do NOT include placeholders like {placeholder} or "TBD" or "Continue for..." in your output.\n\n`;
 
     return prompt;
   }
@@ -316,9 +335,14 @@ Your output is a formal, EARS-notation requirements document.
     toolDefinitions: any[],
     baseSystemPrompt: string
   ): Promise<string> {
+    // Extract ONLY the relevant section from the template
+    const sectionTemplate = this.extractSectionTemplate(sectionName);
+
+    const sectionUserPrompt = `${baseUserPrompt}\n\n--- SECTION TEMPLATE (fill THIS exact structure) ---\n${sectionTemplate}\n--- END SECTION TEMPLATE ---\n\n--- SECTION INSTRUCTION ---\nWrite ONLY the "${sectionName}" section now.\nFill every {placeholder} with comprehensive, feature-specific content.\nFollow the EXACT heading levels and structure shown above.\nDo NOT include any other sections.\nDo NOT leave placeholders.\nBegin directly with the section heading (e.g., "## Introduction").`;
+
     const messages: any[] = [
       { role: 'system', content: baseSystemPrompt + '\n\n' + sectionSystemPrompt },
-      { role: 'user', content: `${baseUserPrompt}\n\n--- SECTION INSTRUCTION ---\nWrite ONLY the ${sectionName} section now.` },
+      { role: 'user', content: sectionUserPrompt },
     ];
 
     const result = await (this as any).executeWithTools({
@@ -332,6 +356,35 @@ Your output is a formal, EARS-notation requirements document.
       throw new Error(`Empty response for ${sectionName} section`);
     }
     return content;
+  }
+
+  private extractSectionTemplate(sectionName: string): string {
+    const fullTemplate = this.specManager.requirementsTemplate().replace(/{SPEC_NAME}/g, '{title}');
+    const lines = fullTemplate.split('\n');
+    const sectionHeaders: { [key: string]: string } = {
+      'Introduction': '## Introduction',
+      'Glossary': '## Glossary',
+      'Requirements': '## Requirements',
+      'Out of Scope': '## Out of Scope',
+      'Non-Functional Requirements': '## Non-Functional Requirements',
+    };
+
+    const targetHeader = sectionHeaders[sectionName];
+    if (!targetHeader) return fullTemplate;
+
+    const startIdx = lines.findIndex(l => l.trim() === targetHeader);
+    if (startIdx === -1) return fullTemplate;
+
+    // Find the next ## section or end of document
+    let endIdx = lines.length;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      if (lines[i].trim().startsWith('## ') && i > startIdx) {
+        endIdx = i;
+        break;
+      }
+    }
+
+    return lines.slice(startIdx, endIdx).join('\n');
   }
 
   private buildContext(title: string, description: string) {

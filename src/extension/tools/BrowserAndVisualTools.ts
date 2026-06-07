@@ -11,12 +11,31 @@
 import { Tool } from './ToolRegistry';
 
 /**
- * Get the active BrowserMirrorStream instance (set by extension.ts activation).
- * Falls back gracefully if no session exists — the tool returns a clear error
- * explaining what the AI should do instead.
+ * Get the active BrowserMirrorStream instance.
+ * Auto-creates and opens the panel on first use if none exists yet.
  */
 function getBrowserMirror(): any {
-  return (global as any).__FORGEAI_BROWSER_MIRROR__;
+  const existing = (global as any).__FORGEAI_BROWSER_MIRROR__;
+  if (existing && existing.dispose) return existing;
+
+  try {
+    // Dynamically import to avoid circular deps at module load
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { BrowserMirrorStream } = require('../spec/BrowserMirrorStream');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { ForgeBrowserSession } = require('../services/ForgeBrowserSession');
+    const session = new ForgeBrowserSession();
+    const mirror = new BrowserMirrorStream(
+      {} as any,
+      (global as any).__FORGEAI_WORKSPACE__?.workspaceRoot || process.cwd(),
+      session
+    );
+    (global as any).__FORGEAI_BROWSER_MIRROR__ = mirror;
+    void mirror.open('about:blank');
+    return mirror;
+  } catch {
+    return null;
+  }
 }
 
 /**

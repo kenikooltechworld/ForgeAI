@@ -1,4 +1,4 @@
-import * as fs from 'fs';
+﻿import * as fs from 'fs';
 import * as path from 'path';
 import { DiscoverySession } from '../discovery/DiscoverySession';
 import { ResearchCache } from './ResearchCache';
@@ -39,7 +39,6 @@ interface ResearchAgentDeps {
 }
 
 const SIMILARITY_THRESHOLD = 0.7;
-const RAG_PASS_THRESHOLD = 0.75; // need 75% topics answered by RAG to skip web
 
 /**
  * ResearchAgent — RAG-first, web-second research before spec generation.
@@ -91,6 +90,7 @@ export class ResearchAgent {
     const session: ResearchSession = {
       sessionId,
       discoverySession,
+      topics,
       reports: {},
       status: 'researching',
       workspaceRoot,
@@ -145,6 +145,9 @@ export class ResearchAgent {
     // Persist full session
     this.persistSession(session);
 
+    // Compile all research into a single markdown file
+    this.compileResearchMarkdown(session);
+
     return session;
   }
 
@@ -198,7 +201,7 @@ Generate research topics:`;
   private async researchTopic(
     sessionId: string,
     topic: ResearchTopic,
-    discoverySession: DiscoverySession
+    _discoverySession: DiscoverySession
   ): Promise<ResearchReport> {
     // Check cache (session-scoped)
     const cached = this.cache.get(sessionId, topic.slug);
@@ -223,7 +226,7 @@ Generate research topics:`;
 
     // 2. Web fallback if RAG is thin
     const topRagScore = ragResults[0]?.score ?? 0;
-    const needsWeb = topRagScore < SIMILARITY_THRESHOLD || ragResults.length < 3;
+    const needsWeb = topRagScore > SIMILARITY_THRESHOLD || ragResults.length < 3;
 
     if (needsWeb) {
       try {
@@ -320,18 +323,111 @@ Generate research topics:`;
       generatedAt: Date.now(),
     };
 
-// 5. Cache (session-scoped)
-     this.cache.set(sessionId, topic.slug, topic.query, report);
+    // 5. Cache (session-scoped)
+    this.cache.set(sessionId, topic.slug, topic.query, report);
 
-     return report;
-   }
+    return report;
+  }
 
-   /**
-    * Persist the research session to disk.
-    */
-   private persistSession(session: ResearchSession): void {
-     this.cache.persistSession(session);
-   }
+  /**
+   * Persist the research session to disk.
+   */
+  private persistSession(session: ResearchSession): void {
+    this.cache.persistSession(session);
+  }
+
+  /**
+   * Compile all research into a single markdown file at `.forgeai/research/sessions/{sessionId}/research.md`.
+   * This replaces scattered per-topic cache files with one authoritative document
+   * containing findings, sources, and coverage metrics ordered by priority.
+   */
+  compileResearchMarkdown(session: ResearchSession): string {
+    const lines: string[] = [];
+    const now = new Date(session.generatedAt).toISOString();
+    const userRequest = session.discoverySession.userRequest;
+
+    lines.push(`# Research Report: ${userRequest}`);
+    lines.push('');
+    lines.push(`**Session:** ${session.sessionId}`);
+    lines.push(`**Generated:** ${now}`);
+    lines.push(`**Topics:** ${session.topics.length}`);
+    lines.push(
+      `**Answered by RAG:** ${session.topics.filter((t) => {
+        const report = session.reports[t.slug];
+        if (!report) return false;
+        const bestRag = report.findings
+          .filter((f) => f.source === 'rag')
+          .sort((a, b) => b.relevanceScore - a.relevanceScore)[0];
+        return bestRag && bestRag.relevanceScore >= SIMILARITY_THRESHOLD;
+      }).length} / ${session.topics.length}`
+    );
+    lines.push('');
+
+    for (const topic of session.topics) {
+      const report = session.reports[topic.slug];
+      lines.push(`## ${topic.priority}. ${topic.query}  \`(priority: ${topic.priority})\``);
+      lines.push('');
+      lines.push(`> ${topic.rationale}`);
+      lines.push('');
+
+      if (report) {
+        const sourceCounts: Record<string, number> = {};
+        for (const f of report.findings) {
+          sourceCounts[f.source] = (sourceCounts[f.source] || 0) + 1;
+        }
+        const coverage = `${Math.round(report.ragCoverage * 100)}%`;
+        lines.push(`**Coverage:** ${coverage} RAG | **Sources:** ${JSON.stringify(sourceCounts)} | **Web queries:** ${report.webQueriesRun}`);
+        lines.push('');
+
+        const sources = ['rag', 'web-page', 'web', 'learning-store'];
+        for (const src of sources) {
+          const srcFindings = report.findings.filter((f) => f.source === src);
+          if (srcFindings.length === 0) continue;
+
+          const label =
+            src === 'rag'
+              ? '### Local Documentation (RAG)'
+              : src === 'web-page'
+                ? '### Official Docs & Pages (Fetched)'
+                : src === 'web'
+                  ? '### Web Search Results'
+                  : '### User Corrections';
+          lines.push(label);
+          lines.push('');
+
+          for (const f of srcFindings.slice(0, 5)) {
+            lines.push(`#### ${f.text.split('\n')[0].slice(0, 120)}`);
+            lines.push('');
+            lines.push(f.text.slice(0, 8000));
+            lines.push('');
+            if (f.url) {
+              lines.push(`**Source:** <${f.url}>`);
+              lines.push('');
+            }
+          }
+        }
+      } else {
+        lines.push('_No research findings collected._');
+        lines.push('');
+      }
+    }
+
+    const markdown = lines.join('\n');
+
+    const slug = session.discoverySession.userRequest
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'research';
+    const filename = `${slug}-2026.md`;
+    const researchDir = path.join(session.workspaceRoot, '.forgeai', 'research');
+    if (!fs.existsSync(researchDir)) {
+      fs.mkdirSync(researchDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(researchDir, filename), markdown, 'utf-8');
+
+    return markdown;
+  }
 
   /**
    * Build an enriched prompt context from research for the spec generator.

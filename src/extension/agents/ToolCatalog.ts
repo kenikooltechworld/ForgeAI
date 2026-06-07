@@ -476,6 +476,22 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
 
   {
+    name: 'forgeai_scanHealth',
+    category: 'file',
+    description: 'Scan the project for TypeScript errors, lint issues, failing tests, dirty git status, and dependency problems.',
+    whenToUse: 'Whenever the user asks about project health, before committing, or when diagnosing build/test failures.',
+    howToUse: 'args: { timeoutMs?: number } (optional overall timeout in ms, default 120000)',
+    availableTo: ['ForgeAIAgent', 'ChatParticipant', 'PlannerAgent', 'ExecutorAgent', 'CriticAgent'],
+  },
+  {
+    name: 'forgeai_scanHealth',
+    category: 'file',
+    description: 'Autonomous project health scan: enumerate files, chunk-based LLM analysis + concrete checks (tsc, eslint, git), produce severity report, offer fixes, publish VS Code diagnostics.',
+    whenToUse: 'User asks to scan project health, check for bugs/deprecated APIs/security issues, or before committing. Also triggered automatically on workspace open for new projects.',
+    howToUse: 'args: { mode: "full"|"quick"|"auto", autoFix: boolean, maxFileCount?: number, chunkSize?: number }',
+    availableTo: ['HealthScannerAgent', 'ChatParticipant', 'PlannerAgent', 'ExecutorAgent', 'CriticAgent', 'SpecOrchestrator'],
+  },
+  {
     name: 'forgeai_getErrors',
     category: 'file',
     description: 'Get workspace diagnostics (errors and warnings) from VS Code.',

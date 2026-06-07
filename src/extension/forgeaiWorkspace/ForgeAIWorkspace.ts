@@ -11,6 +11,7 @@ import { TaskManager } from './TaskManager';
 import { DriftDetector } from './DriftDetector';
 import { ModelRouter } from '../ollama/ModelRouter';
 import { Logger } from '../utils/Logger';
+import { PersonaManager } from '../persona/PersonaManager';
 
 /**
  * Main entry point for managing the .forgeai/ workspace.
@@ -35,6 +36,7 @@ export class ForgeAIWorkspace {
   readonly tasks: TaskManager;
   readonly drift: DriftDetector;
   readonly modelRouter: ModelRouter;
+  readonly persona: PersonaManager;
 
   constructor(workspaceRoot: string, logger: Logger, context: vscode.ExtensionContext) {
     this.directoryManager = new DirectoryManager(workspaceRoot);
@@ -49,6 +51,7 @@ export class ForgeAIWorkspace {
     this.tasks = new TaskManager(workspaceRoot);
     this.drift = new DriftDetector(workspaceRoot);
     this.modelRouter = new ModelRouter();
+    this.persona = new PersonaManager(workspaceRoot);
   }
 
   /**

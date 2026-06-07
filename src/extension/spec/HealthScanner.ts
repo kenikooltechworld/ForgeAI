@@ -27,6 +27,43 @@ export interface HealthReport {
 export class HealthScanner {
   constructor(private readonly projectRoot: string) {}
 
+  static createTool() {
+    return {
+      name: 'forgeai_scanHealth',
+      description: 'Scan the project for TypeScript errors, lint issues, failing tests, dirty git status, and dependency problems.',
+      inputSchema: {
+        type: 'object',
+        required: [],
+        properties: {
+          timeoutMs: { type: 'number', description: 'Overall timeout in milliseconds (default 120000)' },
+        },
+      },
+      execute: async (_args: { timeoutMs?: number }, _token?: any) => {
+        const projectRoot: string | undefined =
+          (typeof globalThis !== 'undefined'
+            ? (globalThis as any).__FORGEAI_WORKSPACE__?.workspaceRoot
+            : undefined) || process.cwd();
+
+        if (!projectRoot) {
+          return { overallHealthy: false, summary: 'No workspace open', checks: [] };
+        }
+
+        const scanner = new HealthScanner(projectRoot);
+        const report = await scanner.runAll();
+        return {
+          overallHealthy: report.overallHealthy,
+          summary: report.summary,
+          checks: report.checks.map((c) => ({
+            name: c.name,
+            passed: c.passed,
+            durationMs: c.durationMs,
+            output: c.output,
+          })),
+        };
+      },
+    };
+  }
+
   public async runAll(): Promise<HealthReport> {
     const checks = await Promise.all([
       this.runCheck('TypeScript', async () => this.runCommand('npx tsc --noEmit', 60000)),

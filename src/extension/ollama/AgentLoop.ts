@@ -122,8 +122,7 @@ export class AgentLoop {
     const config = vscode.workspace.getConfiguration('forgeai');
     const language = config.get<string>('language', 'English');
 
-    // Skip classification — always use tools and the base system prompt.
-    // The model decides autonomously when tools are needed.
+    const classification = await this.messageRouter.route(initialMessages, options?.conversationId);
     const userMessage = initialMessages.find((m) => m.role === 'user')?.content;
 
     // Always keep ragChunks available for the final systemPrompt as well.

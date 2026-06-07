@@ -73,7 +73,7 @@ export class ResearchCache {
 
     try {
       const raw = fs.readFileSync(filePath, 'utf-8');
-      const entry: CacheEntry = JSON.parse(raw);
+      const entry: CacheEntry = JSON.parse(raw) as CacheEntry;
 
       // Version mismatch → invalidate
       if (entry.version !== CACHE_VERSION) {
@@ -92,38 +92,15 @@ export class ResearchCache {
 
   /**
    * Check cache for any topic matching the query hash.
-   * Used when user wants to reuse cached results across sessions.
+   * DEPRECATED: legacy path, unused by the main ResearchAgent flow.
+   * Kept for API consumers. Will be removed in a future version.
    */
   getAny(
     sessionId: string,
     topicSlug: string,
-    query: string
+    _query: string
   ): { report: ResearchReport; stale: boolean } | null {
-    // First try session-scoped cache
-    const sessionDir = this.getSessionCacheDir(sessionId);
-    const sessionFile = path.join(sessionDir, `${topicSlug}.json`);
-    if (fs.existsSync(sessionFile)) {
-      const cached = this.get(sessionId, topicSlug);
-      if (cached) return cached;
-    }
-
-    // Then try query-hash-based cache (legacy compatibility)
-    const hash = ResearchCache.hashQuery(query);
-    const hashFile = path.join(this.baseCacheDir, `${hash}.json`);
-    if (fs.existsSync(hashFile)) {
-      try {
-        const raw = fs.readFileSync(hashFile, 'utf-8');
-        const entry: CacheEntry = JSON.parse(raw);
-        if (entry.version !== CACHE_VERSION) return null;
-        const now = Date.now();
-        const expiry = entry.createdAt + entry.ttlDays * 24 * 60 * 60 * 1000;
-        return { report: entry.report, stale: now > expiry };
-      } catch {
-        return null;
-      }
-    }
-
-    return null;
+    return this.get(sessionId, topicSlug);
   }
 
   /**

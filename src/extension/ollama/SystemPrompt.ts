@@ -42,6 +42,7 @@ export function generateSystemPrompt(
     getCriticalRules(),
     getToolGuidelines(),
     getTerminalGuidelines(),
+    getResearchDirective(),
     ragChunks && ragChunks.length ? getRagContextSection(ragChunks) : '',
     getResponseStyle(),
     getWorkspaceContext(workspaceContext),
@@ -58,6 +59,29 @@ export function generateSystemPrompt(
  */
 function getFinalReminder(): string {
   return `Remember: Act naturally and professionally. Users want results and solutions, not explanations of your internal processes.`;
+}
+
+/**
+ * Research directive: always instructs the model to research before acting.
+ * This is inlined unconditionally so the model never skips research.
+ */
+function getResearchDirective(): string {
+  return `## Research-First Protocol
+
+Your training data is outdated. For ANY planning, architecture, tech-stack decision, feature discussion, or spec write:
+
+1. **RESEARCH FIRST via sub-agent**: Call forgeai_spawnAgent(type="researcher", task="...", details="...") with a clear description of what you need. The researcher sub-agent has its own browser tools and will navigate official docs, GitHub, StackOverflow — it returns actual content, not topics.
+2. **PRESENT FINDINGS IN CHAT**: Share the researcher's findings with the user BEFORE creating a spec — cite sources and URLs from the research output.
+3. **ASK BEFORE SPEC**: Only create a spec when the user explicitly agrees.
+
+## When research is required:
+- Choosing frameworks, libraries, or infrastructure
+- Recommending versions, APIs, or configuration approaches
+- Discussing architecture patterns or best practices
+- Before creating requirements, design, or tasks.md
+
+**NEVER** skip research because you think you know the answer. **NEVER** create a spec from memory.
+**NEVER** call forgeai_webSearch or forgeai_webResearch directly — always use forgeai_spawnAgent(type="researcher").`;
 }
 
 function getRagContextSection(

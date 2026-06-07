@@ -34,6 +34,7 @@ export interface ResearchSession {
   sessionId: string;
   discoverySession: DiscoverySession;
   reports: Record<string, ResearchReport>; // keyed by topic slug
+  topics: ResearchTopic[]; // ordered by priority, from generateTopics
   status: 'researching' | 'complete' | 'failed';
   workspaceRoot: string;
   generatedAt: number;
