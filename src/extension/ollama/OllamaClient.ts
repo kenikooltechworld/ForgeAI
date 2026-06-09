@@ -143,7 +143,7 @@ export class OllamaClient {
     const contextWindows: Record<string, number> = {
       // ── Cloud models ──────────────────────────────────────────────────────
       'gpt-oss-120b-cloud': 131_072, // 131K — OpenAI GPT-OSS 120B
-      'gemma4-31b-cloud': 256_000, // 256K — Google Gemma 4 31B
+      'gemma4:31b-cloud': 256_000, // 256K — Google Gemma 4 31B
       'qwen3.5-397b-cloud': 128_000, // 128K — Qwen 3.5 397B
       'deepseek-v3.1-671b-cloud': 128_000, // 128K — DeepSeek V3.1
       'kimi-k2.5-cloud': 256_000, // 256K — Kimi K2.5
@@ -478,6 +478,7 @@ export class OllamaClient {
    */
   private async nonStreamChat(request: OllamaChatRequest): Promise<OllamaChatResponse> {
     const url = `${this.baseUrl}/api/chat`;
+    this.logger.debug(`[OllamaClient] nonStreamChat model=${request.model} url=${url}`);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -492,7 +493,7 @@ export class OllamaClient {
           thinking: msg.thinking,
           tool_calls: msg.tool_calls,
           name: msg.name,
-          images: msg.images, // Include images for vision models
+          images: msg.images,
         })),
         stream: false,
         think: request.think ?? false,
@@ -502,7 +503,9 @@ export class OllamaClient {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const body = await response.text().catch(() => '(no body)');
+      this.logger.error(`[OllamaClient] HTTP ${response.status} ${response.statusText} body=${body.slice(0, 500)}`);
+      this.handleError(new Error(`HTTP ${response.status}: ${response.statusText}`));
     }
 
     const data: OllamaChatResponse = await response.json();
@@ -515,6 +518,7 @@ export class OllamaClient {
    */
   private async *streamChat(request: OllamaChatRequest): AsyncGenerator<OllamaStreamChunk> {
     const url = `${this.baseUrl}/api/chat`;
+    this.logger.debug(`[OllamaClient] streamChat model=${request.model} url=${url} tools=${request.tools?.length ?? 0}`);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -529,7 +533,7 @@ export class OllamaClient {
           thinking: msg.thinking,
           tool_calls: msg.tool_calls,
           name: msg.name,
-          images: msg.images, // Include images for vision models
+          images: msg.images,
         })),
         stream: true,
         think: request.think ?? false,
@@ -539,7 +543,9 @@ export class OllamaClient {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const body = await response.text().catch(() => '(no body)');
+      this.logger.error(`[OllamaClient] HTTP ${response.status} ${response.statusText} body=${body.slice(0, 500)}`);
+      this.handleError(new Error(`HTTP ${response.status}: ${response.statusText}`));
     }
 
     if (!response.body) {

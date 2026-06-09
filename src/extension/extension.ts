@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as path from 'path';
 import { StorageManager } from './storage/StorageManager';
 import { Logger } from './utils/Logger';
@@ -29,7 +29,6 @@ export class ForgeAIExtension {
     this.context.subscriptions.push(new vscode.Disposable(() => this.deactivate()));
 
     const logger = this.services.get('logger') as Logger;
-    logger.info('ForgeAI extension activated successfully');
   }
 
   private async initializeServices(): Promise<void> {
@@ -60,7 +59,6 @@ export class ForgeAIExtension {
       await forgeaiWorkspace.maybeAutoInitialize();
       this.services.set('forgeaiWorkspace', forgeaiWorkspace);
       (global as any).__FORGEAI_WORKSPACE__ = forgeaiWorkspace;
-      logger.info('ForgeAIWorkspace initialized at ' + workspaceRoot);
     } else {
       logger.warn('No workspace open - ForgeAIWorkspace not initialized');
     }
@@ -69,7 +67,6 @@ export class ForgeAIExtension {
     const ragService = await this.createRagService(logger, ollama);
     if (ragService) {
       this.services.set('ragService', ragService);
-      logger.info('RAG service initialized for chat retrieval');
     } else {
       logger.warn('RAG service unavailable - chat will run without retrieval grounding');
     }
@@ -132,7 +129,6 @@ export class ForgeAIExtension {
       });
       this.services.set('researchAgent', researchAgent);
       (global as any).__FORGEAI_RESEARCH_AGENT__ = researchAgent;
-      logger.info('ResearchAgent initialized');
     }
 
     // Initialize Tool Registry (Task 4.1)
@@ -145,7 +141,6 @@ export class ForgeAIExtension {
     const { initSubAgentSpawner } = await import('./agents/SubAgentSpawner');
     initSubAgentSpawner(ollama, toolRegistry, logger, ragService);
     this.services.set('subAgentSpawner', true);
-    logger.info('SubAgentSpawner initialized — forgeai_spawnAgent tool is now available');
 
     // Initialize SpecOrchestrator + specialized agents (RequirementsAgent, DesignAgent, TasksAgent, BugfixAgent)
     let specOrchestrator: import('./agents/spec/SpecOrchestrator').SpecOrchestrator | undefined;
@@ -161,14 +156,12 @@ export class ForgeAIExtension {
         logger,
       });
       this.services.set('specOrchestrator', specOrchestrator);
-      logger.info('SpecOrchestrator (RequirementsAgent + DesignAgent + TasksAgent + BugfixAgent) initialized');
     }
 
     // Keep activation responsive: run non-critical checks in background.
     void this.checkOllamaAvailability(ollama, logger);
     void this.startOptionalRagBootstrap(storage, logger);
 
-    logger.info('Core services initialized');
   }
 
   private async createRagService(logger: Logger, ollama: any): Promise<RagService | undefined> {
@@ -204,7 +197,6 @@ export class ForgeAIExtension {
     try {
       const isAvailable = await ollama.isAvailable();
       if (isAvailable) {
-        logger.info('Ollama is available and ready');
       } else {
         logger.warn('Ollama is not running. Please start Ollama to use AI features.');
       }
@@ -257,7 +249,6 @@ export class ForgeAIExtension {
       ];
 
       if (!didInitialIngest) {
-        logger.info('RAG ingestion: first install — prompting user to select sources');
 
         const action = await vscode.window.showInformationMessage(
           'ForgeAI: Choose which documentation sources to index for AI context.',
@@ -352,7 +343,6 @@ export class ForgeAIExtension {
     );
 
     this.context.subscriptions.push(commandManager);
-    logger.info('Commands registered');
   }
 
   private async registerProviders(): Promise<void> {
@@ -384,7 +374,6 @@ export class ForgeAIExtension {
       );
 
       this.context.subscriptions.push(webviewDisposable);
-      logger.info('Webview provider registered successfully for view ID: forgeai.chatView');
 
       // Register theme change listener (Task 14.1)
       this.registerThemeChangeListener(logger);
@@ -408,7 +397,6 @@ export class ForgeAIExtension {
   private registerThemeChangeListener(logger: Logger): void {
     // Listen for theme changes (Task 14.1)
     const themeChangeDisposable = vscode.window.onDidChangeActiveColorTheme((theme) => {
-      logger.info(`Theme changed to: ${theme.kind}`);
 
       // Forward theme change to webview
       if (this.webviewManager) {
@@ -417,7 +405,6 @@ export class ForgeAIExtension {
     });
 
     this.context.subscriptions.push(themeChangeDisposable);
-    logger.info('Theme change listener registered');
   }
 
   private async registerLanguageModelChatProvider(
@@ -437,7 +424,6 @@ export class ForgeAIExtension {
       );
 
       this.context.subscriptions.push(disposable);
-      logger.info('Language Model Chat Provider registered successfully');
     } catch (error) {
       logger.error('Failed to register Language Model Chat Provider', error);
       // Don't throw - this is optional functionality
@@ -483,7 +469,6 @@ export class ForgeAIExtension {
       };
 
       this.context.subscriptions.push(participant);
-      logger.info('Chat Participant registered successfully with AgentLoop integration');
     } catch (error) {
       logger.error('Failed to register Chat Participant', error);
       // Don't throw - this is optional functionality
@@ -492,7 +477,6 @@ export class ForgeAIExtension {
 
   private async openForgeAI(): Promise<void> {
     const logger = this.services.get('logger') as Logger;
-    logger.info('Opening ForgeAI view');
 
     if (this.webviewManager) {
       await this.webviewManager.reveal();
@@ -507,7 +491,6 @@ export class ForgeAIExtension {
 
   private async openRagSettings(): Promise<void> {
     const logger = this.services.get('logger') as Logger;
-    logger.info('Opening RAG Settings view');
     if (this.webviewManager) {
       await this.webviewManager.reveal();
       this.webviewManager.showRagSettings();
@@ -517,8 +500,6 @@ export class ForgeAIExtension {
   private async resetOnboarding(): Promise<void> {
     const logger = this.services.get('logger') as Logger;
     const storage = this.services.get('storage') as StorageManager;
-
-    logger.info('Resetting onboarding tooltips');
 
     await storage.setGlobalValue('forgeai.onboarding', {
       hasSeenThinkingTooltip: false,
@@ -532,7 +513,6 @@ export class ForgeAIExtension {
       );
     }
 
-    logger.info('Onboarding tooltips reset successfully');
   }
 
   // ─── UI/UX Architect Agent Commands (Phase 2.5) ────────────────────────
@@ -567,7 +547,6 @@ export class ForgeAIExtension {
 
     if (result.success) {
       vscode.window.showInformationMessage(`Design system "${name}" created successfully!`);
-      logger.info('UI/UX: Design system created', result);
     } else {
       vscode.window.showErrorMessage(`Failed: ${result.error || 'Unknown error'}`);
     }
@@ -619,21 +598,18 @@ export class ForgeAIExtension {
     this.ensureWebviewOpen();
     this.webviewManager?.postMessage({ type: 'openSpecReview' });
     const logger = this.services.get('logger') as Logger;
-    logger.info('Opening Spec Review panel');
   }
 
   private openTaskTracker(): void {
     this.ensureWebviewOpen();
     this.webviewManager?.postMessage({ type: 'openTaskTracker' });
     const logger = this.services.get('logger') as Logger;
-    logger.info('Opening Task Tracker panel');
   }
 
   private openDesignSystem(): void {
     this.ensureWebviewOpen();
     this.webviewManager?.postMessage({ type: 'openDesignSystem' });
     const logger = this.services.get('logger') as Logger;
-    logger.info('Opening Design System panel');
   }
 
   private ensureWebviewOpen(): void {
@@ -674,7 +650,6 @@ export class ForgeAIExtension {
     }
 
     const specDir = specUris[0].fsPath;
-    logger.info(`Loading spec from: ${specDir}`);
 
     try {
       const specReader = new SpecReader();
@@ -690,7 +665,6 @@ export class ForgeAIExtension {
       void vscode.window.showInformationMessage(
         `Loaded spec "${spec.id}": ${spec.requirements.length} requirements, ${spec.tasks.length} tasks, ${spec.progress}% complete`
       );
-      logger.info(`Spec loaded: ${spec.id} with ${spec.tasks.length} tasks`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.error('Failed to load spec', error);
@@ -728,7 +702,6 @@ export class ForgeAIExtension {
     }
 
     const specDir = specUris[0].fsPath;
-    logger.info(`Running spec from: ${specDir}`);
 
     try {
       const executor = new SpecTaskExecutor();
@@ -746,11 +719,9 @@ export class ForgeAIExtension {
           maxRetries: 2,
           continueOnFailure: true,
           onTaskProgress: (task, progress) => {
-            logger.info(`Spec progress: ${progress}% — Task ${task.id}: ${task.description}`);
             void this.webviewManager?.updateTaskInPanel(task);
           },
           onTaskComplete: (task, compliance) => {
-            logger.info(`Task ${task.id} completed with score ${compliance.score}`);
             void this.webviewManager?.updateTaskInPanel(task);
           },
           onTaskFail: (task, error) => {
@@ -759,7 +730,6 @@ export class ForgeAIExtension {
           },
           onPhaseGate: (phase, passed, output) => {
             if (passed) {
-              logger.info(`Phase ${phase.number} gate PASSED: all tests at 100%`);
               void this.webviewManager?.postMessage({
                 type: 'showTerminal',
                 data: { output: `Phase ${phase.number} Gate: PASSED\n${output}` },
@@ -790,7 +760,6 @@ export class ForgeAIExtension {
       void vscode.window.showInformationMessage(
         `Spec execution complete: ${result.completed}/${result.spec.tasks.length} tasks completed, ${result.failed} failed`
       );
-      logger.info(`Spec run finished: ${result.completed} completed, ${result.failed} failed`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       logger.error('Failed to run spec', error);
@@ -817,8 +786,6 @@ export class ForgeAIExtension {
       return;
     }
 
-    logger.info(`Running task ${taskId} from spec ${specId}`);
-
     try {
       const specDir = path.join(workspaceRoot, '.forgeai', 'specs', specId);
       const executor = new SpecTaskExecutor();
@@ -835,11 +802,9 @@ export class ForgeAIExtension {
           continueOnFailure: false,
           taskFilter: (task) => task.id === taskId,
           onTaskProgress: (task, progress) => {
-            logger.info(`Task ${task.id} progress: ${progress}%`);
             void this.webviewManager?.updateTaskInPanel(task);
           },
           onTaskComplete: (task, compliance) => {
-            logger.info(`Task ${task.id} completed with score ${compliance.score}`);
             void this.webviewManager?.updateTaskInPanel(task);
           },
           onTaskFail: (task, error) => {
@@ -878,7 +843,6 @@ export class ForgeAIExtension {
     // Use a synthetic conversation ID for the command-based flow
     const conversationId = `spec-gen-${Date.now()}`;
     await this.webviewManager?.generateSpec(conversationId, userRequest.trim());
-    logger.info(`Command-triggered spec generation for: ${userRequest}`);
   }
 
   private async registerUIUXDesignSystemView(logger: Logger): Promise<void> {
@@ -892,7 +856,6 @@ export class ForgeAIExtension {
         provider
       );
       this.context.subscriptions.push(disposable);
-      logger.info('UI/UX Design System webview registered');
     } catch (error) {
       logger.error('Failed to register UI/UX webview', error);
     }
@@ -900,7 +863,6 @@ export class ForgeAIExtension {
 
   private deactivate(): void {
     const logger = this.services.get('logger') as Logger;
-    logger.info('Deactivating ForgeAI extension');
 
     this.services.forEach((service) => {
       if ('dispose' in service && typeof service.dispose === 'function') {
@@ -945,7 +907,6 @@ export class ForgeAIExtension {
       return;
     }
 
-    logger.info('Starting project health scan');
     void vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,

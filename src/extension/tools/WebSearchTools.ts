@@ -1,6 +1,5 @@
 ﻿import * as vscode from 'vscode';
 import { Tool } from './ToolRegistry';
-import { ResearchCache } from '../agents/research/ResearchCache';
 import { ContentCleaner } from '../utils/ContentCleaner';
 
 /**
@@ -26,28 +25,7 @@ interface SearchResponse {
 }
 
 export class WebSearchTools {
-  private researchCache: ResearchCache | null = null;
-
-  /**
-   * Lazily initialize ResearchCache using the current VS Code workspace root.
-   */
-  private getResearchCache(): ResearchCache | null {
-    if (this.researchCache) {
-      return this.researchCache;
-    }
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!workspaceRoot) {
-      return null;
-    }
-    this.researchCache = new ResearchCache(workspaceRoot);
-    return this.researchCache;
-  }
-
-  /**
-   * DEPRECATED: WebSearchTools no longer writes to ResearchCache.
-   * ResearchAgent is the sole writer for research reports to avoid
-   * duplicate/topic-only entries. Kept for API compatibility only.
-   */
+  constructor() {}
 
   /**
    * Score a URL by domain authority for research purposes.
@@ -644,25 +622,6 @@ export class WebSearchTools {
       throw new Error(`Unsupported protocol: ${urlObj.protocol}`);
     }
 
-    // Check cache first (no expiration, per-project)
-    const cache = this.getResearchCache();
-    if (cache) {
-      const cachedContent = cache.getPageContent(url);
-      if (cachedContent) {
-        const truncated = cachedContent.length > maxLength;
-        const content = truncated
-          ? cachedContent.slice(0, maxLength) + '\n\n... [truncated]'
-          : cachedContent;
-        return {
-          url,
-          title: url,
-          content,
-          truncated,
-          method: 'fetch',
-        };
-      }
-    }
-
     let fetchedContent: string | null = null;
     let fetchedTitle: string | null = null;
     let fetchMethod: 'fetch' | 'playwright' = 'fetch';
@@ -793,14 +752,6 @@ export class WebSearchTools {
             `Playwright error: ${playwrightErr instanceof Error ? playwrightErr.message : String(playwrightErr)}`
         );
       }
-    }
-
-    // Clean content before caching
-    const cleanedContent = ContentCleaner.cleanContent(fetchedContent || '');
-
-    // Cache cleaned content (no expiration, per-project)
-    if (cache && cleanedContent) {
-      cache.setPageContent(url, cleanedContent);
     }
 
     // Return result

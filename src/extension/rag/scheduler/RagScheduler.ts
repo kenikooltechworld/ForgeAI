@@ -1,4 +1,4 @@
-import type { Logger } from '../../utils/Logger';
+﻿import type { Logger } from '../../utils/Logger';
 import type { DocSourceId } from '../types';
 import type { CancellationToken } from '../scraper/DocSource';
 import { RagIngestionService } from '../RagIngestionService';
@@ -39,15 +39,12 @@ export class RagScheduler {
 
     // If we ran recently, skip.
     if (lastRun && now - lastRun < effectiveRefreshMs) {
-      logger.info(`RAG refresh skipped (lastRun=${lastRun}, now=${now})`);
       return;
     }
 
     if (token?.isCancellationRequested) {
       return;
     }
-
-    logger.info(`RAG refresh starting... sourceIds=${params.sourceIds.join(', ')}`);
 
     await new RagIngestionService({
       logger,
@@ -58,6 +55,5 @@ export class RagScheduler {
     if (!token?.isCancellationRequested) {
       await storage.setGlobalValue('forgeai.rag.lastRefreshAtMs', now);
     }
-    logger.info('RAG refresh complete');
   }
 }

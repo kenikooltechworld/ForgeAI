@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Multi-Agent Coordinator
  * Handles handoff between agents when context limit is reached
  * Passes summary + last 3 messages to next agent for seamless continuation
@@ -38,7 +38,6 @@ export class MultiAgentCoordinator {
     };
 
     this.activeHandoffs.set(conversationId, handoff);
-    this.logger.info(`Handoff registered for conversation ${conversationId}`);
   }
 
   /**
@@ -106,7 +105,6 @@ Continue working on the task immediately.`;
    */
   public clearHandoff(conversationId: string): void {
     this.activeHandoffs.delete(conversationId);
-    this.logger.info(`Handoff cleared for conversation ${conversationId}`);
   }
 
   /**
@@ -114,7 +112,6 @@ Continue working on the task immediately.`;
    */
   public clearAllHandoffs(): void {
     this.activeHandoffs.clear();
-    this.logger.info('All handoffs cleared');
   }
 
   /**

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MobileMirror
  *
  * Mobile emulator integration for iOS/Android testing in VS Code.
@@ -207,7 +207,6 @@ export class MobileMirror {
 
     // Open in browser with mobile user agent / viewport
     const mobileUrl = `${url}`;
-    this.logger.info(`Mobile Mirror: React Native dev server at ${mobileUrl} on ${deviceName}`);
     return mobileUrl;
   }
 
@@ -251,7 +250,6 @@ export class MobileMirror {
     this.state.devServerUrl = url;
     this.state.isRunning = true;
     await this.finalizeLaunch();
-    this.logger.info(`Mobile Mirror: Flutter app launched on ${deviceName}`);
     return url;
   }
 
@@ -265,9 +263,6 @@ export class MobileMirror {
     }
     this.state.isRunning = true;
     await this.finalizeLaunch();
-    this.logger.info(
-      `Mobile Mirror: Native iOS project detected. Open the project in Xcode to run on ${deviceName}.`
-    );
     return `ios-simulator://${deviceName}`;
   }
 
@@ -285,7 +280,6 @@ export class MobileMirror {
     }
     this.state.isRunning = true;
     await this.finalizeLaunch();
-    this.logger.info('Mobile Mirror: Native Android project detected. Use adb install to deploy.');
     return `android-emulator://${deviceName}`;
   }
 
@@ -296,9 +290,6 @@ export class MobileMirror {
     // For web-based mobile (Expo/Flutter web), we adjust the viewport
     // For native, we send adb/xcrun commands where possible
     if (this.state.projectType === 'expo' || this.state.projectType === 'flutter') {
-      this.logger.info(
-        `Mobile Mirror: Simulating rotation to ${orientation} on ${this.state.activeDevice}`
-      );
     } else if (this.state.projectType === 'native-android') {
       const rotation = orientation === 'landscape' ? '1' : '0';
       try {
@@ -317,7 +308,6 @@ export class MobileMirror {
   public async simulateNetworkCondition(
     condition: 'online' | 'offline' | 'slow' | 'lossy'
   ): Promise<void> {
-    this.logger.info(`Mobile Mirror: Simulating network condition: ${condition}`);
     // For web-based mobile, this would be implemented via Playwright route interception
     // For native, we use adb shell commands
     if (this.state.projectType === 'native-android') {
@@ -342,7 +332,6 @@ export class MobileMirror {
   }
 
   public async simulateGpsLocation(latitude: number, longitude: number): Promise<void> {
-    this.logger.info(`Mobile Mirror: Simulating GPS location: ${latitude}, ${longitude}`);
     if (this.state.projectType === 'native-android') {
       try {
         cp.execSync(`adb emu geo fix ${longitude} ${latitude}`, {
@@ -509,7 +498,6 @@ export class MobileMirror {
         });
       } else if (this.state.projectType === 'flutter') {
         // Flutter hot reload is handled by `flutter run` automatically
-        this.logger.info('Mobile Mirror: Flutter hot reload triggered by file change');
       }
     } catch {
       // ignore reload failures
@@ -547,7 +535,6 @@ export class MobileMirror {
 
     this.state.logs = [];
     this.outputChannel.hide();
-    this.logger.info('Mobile Mirror stopped');
   }
 
   private async waitForDevServer(port: number, timeoutMs = 30000): Promise<string> {

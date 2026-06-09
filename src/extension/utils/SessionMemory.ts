@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Session Memory Manager
  * Saves last 3 messages + summary to disk for cross-session continuity
  * When user reopens conversation, AI loads this and continues from where it left off
@@ -80,7 +80,6 @@ export class SessionMemory {
       const filePath = this.getSessionMemoryPath(conversationId);
       fs.writeFileSync(filePath, JSON.stringify(sessionData, null, 2));
 
-      this.logger.info(`Session memory saved for conversation ${conversationId}`);
     } catch (error) {
       this.logger.error(`Failed to save session memory for ${conversationId}`, error);
     }
@@ -101,7 +100,6 @@ export class SessionMemory {
       const data = fs.readFileSync(filePath, 'utf-8');
       const sessionData = JSON.parse(data) as SessionMemoryData;
 
-      this.logger.info(`Session memory loaded for conversation ${conversationId}`);
       return sessionData;
     } catch (error) {
       this.logger.error(`Failed to load session memory for ${conversationId}`, error);
@@ -153,7 +151,6 @@ Continue from where you left off. Use the context above to understand what was h
 
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
-        this.logger.info(`Session memory deleted for conversation ${conversationId}`);
       }
     } catch (error) {
       this.logger.error(`Failed to delete session memory for ${conversationId}`, error);
@@ -193,7 +190,6 @@ Continue from where you left off. Use the context above to understand what was h
         fs.unlinkSync(filePath);
       }
 
-      this.logger.info(`Cleared ${files.length} session memories`);
     } catch (error) {
       this.logger.error('Failed to clear session memories', error);
     }

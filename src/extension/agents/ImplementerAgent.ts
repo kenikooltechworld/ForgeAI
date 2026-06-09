@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Implementer Agent
  * Writes code, makes modifications
  * Uses full model with tool access
@@ -20,7 +20,6 @@ export class ImplementerAgent {
    */
   public async execute(task: string, explorerContext: string): Promise<string> {
     try {
-      this.logger.info(`Implementer: Starting task: ${task}`);
 
       const systemPrompt = `You are a code implementer. Your job is to:
 1. Write clean, production-ready code
@@ -45,7 +44,6 @@ Be concise. Return only code changes, no explanations.`;
       const chatResponse = response as { message: { content: string } };
       const result = chatResponse.message.content;
 
-      this.logger.info(`Implementer: Task completed`);
       return result;
     } catch (error) {
       this.logger.error('Implementer task failed', error);

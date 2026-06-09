@@ -110,6 +110,20 @@ export class AgentLoop {
     this.isRunning = true;
     this.shouldStop = false;
 
+    // CRITICAL DEBUG: Log master agent tools
+    this.logger.info(`[AgentLoop.execute] Master agent starting with ${tools.length} tools`);
+    if (tools.length > 0) {
+      const toolNames = tools.map((t: any) => t.function?.name || t.name || '?').join(', ');
+      this.logger.info(`[AgentLoop.execute] Tool names: ${toolNames}`);
+      if (!toolNames.includes('forgeai_spawnAgent')) {
+        this.logger.error(
+          '[AgentLoop.execute] CRITICAL: forgeai_spawnAgent NOT found in master tools!'
+        );
+      }
+    } else {
+      this.logger.error('[AgentLoop.execute] CRITICAL: Master agent has NO tools!');
+    }
+
     // Reset web research tracking for this session
     this.webResearchUrls.clear();
     this.fetchedPageUrls.clear();
@@ -122,8 +136,8 @@ export class AgentLoop {
     const config = vscode.workspace.getConfiguration('forgeai');
     const language = config.get<string>('language', 'English');
 
-    const classification = await this.messageRouter.route(initialMessages, options?.conversationId);
     const userMessage = initialMessages.find((m) => m.role === 'user')?.content;
+    const classification = await this.messageRouter.route({ userMessage: userMessage ?? '' }, '');
 
     // Always keep ragChunks available for the final systemPrompt as well.
     const ragChunks: Array<{ text: string; score?: number; url?: string; sourceId?: string }> = [];
@@ -229,95 +243,100 @@ Remember: Wasting time on unresolved errors costs credits. Solve them right the 
         // Get response from Ollama with streaming
         const streamHandler = new StreamHandler(this.logger);
 
-try {
-           const result = await this.ollamaClient.chat({
-             model,
-             messages,
-             stream: true,
-             think: true,
-             tools: effectiveTools,
-             // Do NOT set num_ctx here — let the model use its full context window.
-             // The applySlidingWindow in OllamaClient handles context budget.
-           });
+        try {
+          const result = await this.ollamaClient.chat({
+            model,
+            messages,
+            stream: true,
+            think: true,
+            tools: effectiveTools,
+            // Do NOT set num_ctx here — let the model use its full context window.
+            // The applySlidingWindow in OllamaClient handles context budget.
+          });
 
-           // Type guard: result should be AsyncGenerator when stream=true
-           if (Symbol.asyncIterator in result) {
-             // Process stream chunks
-             for await (const chunk of result) {
-               if (this.shouldStop) {
-                 break;
-               }
+          // Type guard: result should be AsyncGenerator when stream=true
+          if (Symbol.asyncIterator in result) {
+            // Process stream chunks
+            for await (const chunk of result) {
+              if (this.shouldStop) {
+                break;
+              }
 
-               streamHandler.processChunk(chunk);
+              streamHandler.processChunk(chunk);
 
-               // Get token usage for this chunk
-               const tokenUsage = streamHandler.getTokenUsage();
+              // Get token usage for this chunk
+              const tokenUsage = streamHandler.getTokenUsage();
 
-               // Send chunk update to webview
-               onUpdate({
-                 type: 'chunk',
-                 thinking: streamHandler.getThinking(),
-                 content: streamHandler.getContent(),
-                 toolCalls: streamHandler.getToolCalls(),
-                 tokenUsage,
-                 done: streamHandler.isDone(),
-               });
+              // Send chunk update to webview
+              onUpdate({
+                type: 'chunk',
+                thinking: streamHandler.getThinking(),
+                content: streamHandler.getContent(),
+                toolCalls: streamHandler.getToolCalls(),
+                tokenUsage,
+                done: streamHandler.isDone(),
+              });
 
-               if (streamHandler.isDone()) {
-                 break;
-               }
-             }
-           }
-         } catch (error) {
-           // Handle context overflow gracefully
-           if (error instanceof Error && error.message.includes('Context overflow')) {
-             // Context limit reached - prepare handoff to next agent
-             this.contextLimitReached = true;
-             this.contextSummary = await this.generateContextSummary(
-               messages,
-               'Context limit reached during execution'
-             );
+              if (streamHandler.isDone()) {
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          // Handle context overflow gracefully
+          if (error instanceof Error && error.message.includes('Context overflow')) {
+            // Context limit reached - prepare handoff to next agent
+            this.contextLimitReached = true;
+            this.contextSummary = await this.generateContextSummary(
+              messages,
+              'Context limit reached during execution'
+            );
 
-             onUpdate({
-               type: 'complete',
-               message: `Context limit reached. Preparing handoff to next agent with summary and last 3 messages.`,
-             });
+            onUpdate({
+              type: 'complete',
+              message: `Context limit reached. Preparing handoff to next agent with summary and last 3 messages.`,
+            });
 
-             break; // Exit the main loop gracefully
-           }
+            break; // Exit the main loop gracefully
+          }
 
-           // Handle HTTP 503/400 (often context-related) with aggressive trimming
-           if (error instanceof Error && (error.message.includes('503') || error.message.includes('400'))) {
-             this.logger.warn(`Ollama returned ${error.message.includes('503') ? '503' : '400'} - likely context overflow, attempting recovery`);
+          // Handle HTTP 503/400 (often context-related) with aggressive trimming
+          if (
+            error instanceof Error &&
+            (error.message.includes('503') || error.message.includes('400'))
+          ) {
+            this.logger.warn(
+              `Ollama returned ${error.message.includes('503') ? '503' : '400'} - likely context overflow, attempting recovery`
+            );
 
-             // Aggressively trim messages to last 10
-             const systemMessages = messages.filter((m) => m.role === 'system');
-             const otherMessages = messages.filter((m) => m.role !== 'system');
-             const trimmedCount = otherMessages.length - 10;
+            // Aggressively trim messages to last 10
+            const systemMessages = messages.filter((m) => m.role === 'system');
+            const otherMessages = messages.filter((m) => m.role !== 'system');
+            const trimmedCount = otherMessages.length - 10;
 
-             if (trimmedCount > 0) {
-               // Replace messages with trimmed version
-               (messages as OllamaMessage[]).length = 0;
-               messages.push(...systemMessages, ...otherMessages.slice(-10));
+            if (trimmedCount > 0) {
+              // Replace messages with trimmed version
+              messages.length = 0;
+              messages.push(...systemMessages, ...otherMessages.slice(-10));
 
-               this.contextLimitReached = true;
-               this.contextSummary = await this.generateContextSummary(
-                 messages,
-                 `Recovered from ${error.message.includes('503') ? '503' : '400'} by trimming ${trimmedCount} oldest messages`
-               );
+              this.contextLimitReached = true;
+              this.contextSummary = await this.generateContextSummary(
+                messages,
+                `Recovered from ${error.message.includes('503') ? '503' : '400'} by trimming ${trimmedCount} oldest messages`
+              );
 
-               onUpdate({
-                 type: 'complete',
-                 message: `Context recovery: Trimmed ${trimmedCount} old messages. Continuing with summary.`,
-               });
+              onUpdate({
+                type: 'complete',
+                message: `Context recovery: Trimmed ${trimmedCount} old messages. Continuing with summary.`,
+              });
 
-               break;
-             }
-           }
+              break;
+            }
+          }
 
-           // Re-throw other errors
-           throw error;
-         }
+          // Re-throw other errors
+          throw error;
+        }
 
         // Get accumulated response
         const accumulated = streamHandler.getAccumulatedMessage();
@@ -368,6 +387,28 @@ try {
             break;
           }
 
+          if (!effectiveTools.some((t) => t.function?.name === toolCall.function.name)) {
+            const available = effectiveTools
+              .map((t) => t.function?.name)
+              .filter(Boolean)
+              .join(', ');
+            this.logger.warn(
+              `[AgentLoop] Blocked unauthorized tool call: ${toolCall.function.name}. Allowed: ${available}`
+            );
+            messages.push({
+              role: 'tool',
+              name: toolCall.function.name,
+              content: JSON.stringify({
+                error: `Tool '${toolCall.function.name}' is not available in this context. Use forgeai_spawnAgent to delegate specialized work.`,
+              }),
+            });
+            onUpdate({
+              type: 'toolError',
+              error: `Blocked unauthorized tool: ${toolCall.function.name}`,
+            });
+            continue;
+          }
+
           // CRITICAL: Prevent blind command retries
           // If this is a runCommand tool and it's a blind retry, force error analysis first
           if (toolCall.function.name === 'forgeai_runCommand') {
@@ -411,9 +452,13 @@ try {
 
             if (this.toolRegistry) {
               // Use ToolRegistry to execute tool
+              // Pass onUpdate callback so sub-agents can stream their updates
               result = await this.toolRegistry.executeTool(
                 toolCall.function.name,
-                toolCall.function.arguments
+                toolCall.function.arguments,
+                undefined, // cancellation token
+                onUpdate, // pass onUpdate callback for sub-agent streaming
+                toolCall.function.name === 'forgeai_spawnAgent' ? toolExecutionId : undefined // agentId for sub-agents
               );
             } else {
               // Fallback: placeholder result (for backward compatibility)
@@ -803,7 +848,7 @@ ${userMessages
 **Continue with:** The next agent should continue from where this agent left off using the last 3 messages below.
 `;
 
-return summary;
+    return summary;
   }
 
   /**

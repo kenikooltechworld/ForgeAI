@@ -1,9 +1,10 @@
 ﻿import * as fs from 'fs';
 import * as path from 'path';
 import { DiscoverySession } from '../discovery/DiscoverySession';
-import { ResearchCache } from './ResearchCache';
 import { ResearchLearningStore } from './ResearchLearningStore';
 import { ResearchFinding, ResearchReport, ResearchSession, ResearchTopic } from './ResearchSession';
+import { ToolRegistry } from '../../tools/ToolRegistry';
+import { BrowserTools } from '../../tools/BrowserTools';
 
 interface RagServiceLike {
   retrieve(
@@ -23,17 +24,10 @@ interface WebSearchLike {
 
 interface ResearchAgentDeps {
   ragService: RagServiceLike;
+  browserTools?: BrowserTools;
+  toolRegistry?: ToolRegistry;
   webSearch: WebSearchLike;
-  fetchPage?: (
-    url: string
-  ) => Promise<{
-    title: string;
-    content: string;
-    url: string;
-    method?: string;
-    truncated?: boolean;
-    status?: number | null;
-  }>;
+  fetchPage?: (url: string) => Promise<{ title: string; content: string; url: string; method?: string }>;
   executeLLM: (systemPrompt: string, userPrompt: string) => Promise<string>;
   workspaceRoot: string;
 }
@@ -159,11 +153,20 @@ export class ResearchAgent {
 
     const systemPrompt = `You are a technical research planner. Given a user request and extracted constraints/preferences, generate 3-5 focused research topics.
 
+## SOURCE QUALITY RULES
+- Target OFFICIAL documentation first: docs.react.dev, docs.python.org, nodejs.org, typescriptlang.org, learn.microsoft.com
+- Target GitHub repositories and READMEs: github.com/{org}/{repo}
+- Target StackOverflow for real-world problems and solutions: stackoverflow.com
+- Target NPM/PyPI/Maven for version numbers and package metadata
+- Target YouTube for video tutorials and conference talks
+- NEVER target social media (Facebook, Twitter/X) or blogs without an authoritative author
+
 Each topic must be a JSON object with:
 - "slug": kebab-case identifier
-- "query": the actual search query string
-- "rationale": why this matters for the spec
+- "query": the actual search query string (include "official docs" or "github" or "stackoverflow" to bias results)
+- "rationale": why this matters for the user's project
 - "priority": 1-10 (higher = more critical)
+- "sources": array of preferred source types ["official-docs","github","stackoverflow","npm","youtube"]
 
 Return ONLY a JSON array. No markdown, no explanation.`;
 
@@ -190,6 +193,7 @@ Generate research topics:`;
           query: userRequest,
           rationale: 'Primary user request',
           priority: 10,
+          sources: ['official-docs', 'github', 'stackoverflow'],
         },
       ];
     }
@@ -259,9 +263,10 @@ Generate research topics:`;
                 query: topic.query,
                 text: `📄 ${page.title} (${page.method || 'fetch'})\n${page.content}`,
                 url: page.url,
-                relevanceScore: 0.85, // full page content is more valuable
+                relevanceScore: 0.85,
                 retrievedAt: Date.now(),
               });
+              this.cache.setPageContent(page.url, page.content);
               pagesFetched++;
             } catch (fetchErr) {
               pagesFailed++;
@@ -342,84 +347,157 @@ Generate research topics:`;
    * containing findings, sources, and coverage metrics ordered by priority.
    */
   compileResearchMarkdown(session: ResearchSession): string {
-    const lines: string[] = [];
-    const now = new Date(session.generatedAt).toISOString();
+    const now = new Date(session.generatedAt);
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().slice(0, 8);
     const userRequest = session.discoverySession.userRequest;
+    const lines: string[] = [];
 
-    lines.push(`# Research Report: ${userRequest}`);
+    const allFindings = session.topics.flatMap((t) => {
+      const report = session.reports[t.slug];
+      return report ? report.findings : [];
+    });
+
+    const webFindings = allFindings.filter((f) => f.source === 'web-page' || f.source === 'web');
+    const urls = [...new Set(webFindings.map((f) => f.url).filter((u): u is string => !!u))];
+
+    lines.push(`# ${userRequest} — ${dateStr}`);
     lines.push('');
-    lines.push(`**Session:** ${session.sessionId}`);
-    lines.push(`**Generated:** ${now}`);
-    lines.push(`**Topics:** ${session.topics.length}`);
+    lines.push(`**Project:** ForgeAI - Autonomous AI Coding Assistant`);
+    lines.push(`**Research Date:** ${dateStr}`);
+    lines.push(`**Research Time:** ${timeStr}`);
+    lines.push(`**Primary Sources:**`);
+    for (const url of urls.slice(0, 15)) {
+      lines.push(`- <${url}>`);
+    }
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+
+    const ragFindings = allFindings.filter((f) => f.source === 'rag');
+    const webContentFindings = allFindings.filter((f) => f.source === 'web-page');
+    const webSnippetFindings = allFindings.filter((f) => f.source === 'web');
+
+    lines.push('## Executive Summary');
+    lines.push('');
     lines.push(
-      `**Answered by RAG:** ${session.topics.filter((t) => {
-        const report = session.reports[t.slug];
-        if (!report) return false;
-        const bestRag = report.findings
-          .filter((f) => f.source === 'rag')
-          .sort((a, b) => b.relevanceScore - a.relevanceScore)[0];
-        return bestRag && bestRag.relevanceScore >= SIMILARITY_THRESHOLD;
-      }).length} / ${session.topics.length}`
+      `Research completed on ${dateStr}. ` +
+      `${session.topics.length} topics investigated across ` +
+      `${new Set(allFindings.map((f) => f.source)).size} source types. ` +
+      `${webContentFindings.length} pages fetched with full content. ` +
+      `Sources: official docs, GitHub, StackOverflow, NPM.`
     );
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('## Key Findings');
     lines.push('');
 
     for (const topic of session.topics) {
       const report = session.reports[topic.slug];
-      lines.push(`## ${topic.priority}. ${topic.query}  \`(priority: ${topic.priority})\``);
+      if (!report) continue;
+      lines.push(`### ${topic.query}`);
       lines.push('');
-      lines.push(`> ${topic.rationale}`);
-      lines.push('');
-
-      if (report) {
-        const sourceCounts: Record<string, number> = {};
-        for (const f of report.findings) {
-          sourceCounts[f.source] = (sourceCounts[f.source] || 0) + 1;
+      const topFindings = report.findings
+        .filter((f) => f.relevanceScore >= 0.5)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, 3);
+      for (const f of topFindings) {
+        const firstLine = f.text.split('\n')[0].slice(0, 150);
+        lines.push(`- **${firstLine}**`);
+        if (f.url) {
+          lines.push(`  - Source: <${f.url}>`);
         }
-        const coverage = `${Math.round(report.ragCoverage * 100)}%`;
-        lines.push(`**Coverage:** ${coverage} RAG | **Sources:** ${JSON.stringify(sourceCounts)} | **Web queries:** ${report.webQueriesRun}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push('');
+    lines.push('## Table of Contents');
+    lines.push('');
+    for (const topic of session.topics) {
+      lines.push(`- [${topic.query}](#${topic.query.toLowerCase().replace(/[^a-z0-9]+/g, '-')})`);
+    }
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+
+    for (const topic of session.topics) {
+      const report = session.reports[topic.slug];
+      lines.push(`## ${topic.query}`);
+      lines.push('');
+      lines.push(`> Priority: ${topic.priority}/10 | ${topic.rationale}`);
+      lines.push('');
+
+      if (!report || report.findings.length === 0) {
+        lines.push('_No findings collected._');
         lines.push('');
+        continue;
+      }
 
-        const sources = ['rag', 'web-page', 'web', 'learning-store'];
-        for (const src of sources) {
-          const srcFindings = report.findings.filter((f) => f.source === src);
-          if (srcFindings.length === 0) continue;
+      const officialDocs = report.findings.filter((f) => f.source === 'web-page');
+      const webResults = report.findings.filter((f) => f.source === 'web');
+      const ragDocs = report.findings.filter((f) => f.source === 'rag');
 
-          const label =
-            src === 'rag'
-              ? '### Local Documentation (RAG)'
-              : src === 'web-page'
-                ? '### Official Docs & Pages (Fetched)'
-                : src === 'web'
-                  ? '### Web Search Results'
-                  : '### User Corrections';
-          lines.push(label);
+      if (officialDocs.length > 0) {
+        lines.push('### Official Documentation & API Reference');
+        lines.push('');
+        for (const f of officialDocs.slice(0, 5)) {
+          lines.push(f.text.slice(0, 6000));
           lines.push('');
-
-          for (const f of srcFindings.slice(0, 5)) {
-            lines.push(`#### ${f.text.split('\n')[0].slice(0, 120)}`);
+          if (f.url) {
+            lines.push(`**Source:** <${f.url}>`);
             lines.push('');
-            lines.push(f.text.slice(0, 8000));
-            lines.push('');
-            if (f.url) {
-              lines.push(`**Source:** <${f.url}>`);
-              lines.push('');
-            }
           }
         }
-      } else {
-        lines.push('_No research findings collected._');
-        lines.push('');
       }
+
+      if (webResults.length > 0) {
+        lines.push('### Web Search Results & Code Examples');
+        lines.push('');
+        for (const f of webResults.slice(0, 5)) {
+          lines.push(f.text.slice(0, 4000));
+          lines.push('');
+          if (f.url) {
+            lines.push(`**Source:** <${f.url}>`);
+            lines.push('');
+          }
+        }
+      }
+
+      if (ragDocs.length > 0) {
+        lines.push('### Local Documentation (RAG)');
+        lines.push('');
+        for (const f of ragDocs.slice(0, 3)) {
+          lines.push(f.text.slice(0, 3000));
+          lines.push('');
+          if (f.url) {
+            lines.push(`**Source:** <${f.url}>`);
+            lines.push('');
+          }
+        }
+      }
+
+      lines.push('---');
+      lines.push('');
     }
+
+    lines.push('## Sources');
+    lines.push('');
+    for (const url of urls) {
+      lines.push(`- <${url}>`);
+    }
+    lines.push('');
 
     const markdown = lines.join('\n');
 
-    const slug = session.discoverySession.userRequest
+    const slug = userRequest
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'research';
-    const filename = `${slug}-2026.md`;
+    const filename = `${slug}-${dateStr.slice(0, 4)}.md`;
     const researchDir = path.join(session.workspaceRoot, '.forgeai', 'research');
     if (!fs.existsSync(researchDir)) {
       fs.mkdirSync(researchDir, { recursive: true });

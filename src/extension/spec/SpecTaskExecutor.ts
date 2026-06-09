@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SpecTaskExecutor — Sequential task runner that replaces the LangGraph orchestrator
  *
  * Core principle: Read the spec, execute tasks one by one, verify, repeat.
@@ -128,9 +128,6 @@ export class SpecTaskExecutor {
     // Parse the spec
     const spec = await this.specReader.parseSpecDirectory(specDir);
     console.log(`[SpecTaskExecutor] Parsed spec ${spec.id} with ${spec.tasks.length} tasks`);
-    this.logger.info(
-      `Starting spec execution: ${spec.id} (${spec.tasks.length} tasks, ${spec.progress}% already complete)`
-    );
 
     // Build spec context (will be injected into every task)
     const specContext = this.buildSpecContext(spec, specDir);
@@ -160,9 +157,6 @@ export class SpecTaskExecutor {
         if (nextTask.isCheckpoint && opts.stopAtCheckpoints) {
           const phase = spec.phases.find((p) => p.number === nextTask.phase);
           if (phase) {
-            this.logger.info(
-              `Phase Gate reached: Phase ${nextTask.phase} — running full test suite`
-            );
 
             // Run ALL tests for this phase before proceeding
             const phaseTestResult = this.runPhaseTests(phase);
@@ -188,8 +182,6 @@ export class SpecTaskExecutor {
               this.specReader.saveStatus(spec);
               continue;
             }
-
-            this.logger.info(`Phase ${nextTask.phase} gate PASSED. All tests pass at 100%.`);
 
             if (opts.onCheckpoint) {
               const shouldContinue = await opts.onCheckpoint(phase);
@@ -262,9 +254,6 @@ export class SpecTaskExecutor {
       }
     }
 
-    this.logger.info(
-      `Spec execution finished: ${completed}/${spec.tasks.length} completed, ${failed} failed, ${spec.progress}%`
-    );
     return { spec, completed, failed };
   }
 
@@ -286,7 +275,6 @@ export class SpecTaskExecutor {
     browserSession?: any
   ): Promise<ComplianceResult> {
     console.log(`[SpecTaskExecutor] Entering executeTask for ${task.id}`);
-    this.logger.info(`Executing task ${task.id}: ${task.description}`);
     task.status = 'in_progress';
     task.startedAt = Date.now();
 
@@ -333,7 +321,6 @@ export class SpecTaskExecutor {
           );
 
           if (bugFixResult.success) {
-            this.logger.info(`Bug fix successful for task ${task.id}. Retrying compliance check.`);
             // Re-verify after fix
             return await this.verifyCompliance(task, pipelineResult, specContext);
           } else {
@@ -366,7 +353,6 @@ export class SpecTaskExecutor {
           );
 
           if (bugFixResult.success) {
-            this.logger.info(`Bug fix successful for task ${task.id}. Retrying pipeline.`);
             // Retry the entire task
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
             return this.executeTask(task, specContext, agentLoop, _options, browserSession);
@@ -409,7 +395,6 @@ export class SpecTaskExecutor {
         );
 
         if (bugFixResult.success) {
-          this.logger.info(`Bug fix successful for task ${task.id}. Retrying.`);
           return this.executeTask(task, specContext, agentLoop, {} as SpecExecutionOptions, browserSession);
         }
       }

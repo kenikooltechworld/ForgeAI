@@ -9,9 +9,12 @@ const DEFAULT_TTL_DAYS = 30;
 interface CacheEntry {
   version: string;
   queryHash: string;
-  report: ResearchReport;
-  createdAt: number; // timestamp
+  createdAt: number;
   ttlDays: number;
+  findingCount: number;
+  sourceTypes: string[];
+  webQueriesRun: number;
+  markdownPath: string;
 }
 
 /**
@@ -60,10 +63,11 @@ export class ResearchCache {
   }
 
   /**
-   * Look up a cached report by query string, scoped to a session.
+   * Look up a cached entry by session and topic slug.
+   * Returns metadata only — the actual content is in the markdown file.
    * Returns `null` if not found or expired.
    */
-  get(sessionId: string, topicSlug: string): { report: ResearchReport; stale: boolean } | null {
+  get(sessionId: string, topicSlug: string): { stale: boolean; markdownPath: string } | null {
     const sessionDir = this.getSessionCacheDir(sessionId);
     const filePath = path.join(sessionDir, `${topicSlug}.json`);
 
@@ -114,18 +118,22 @@ export class ResearchCache {
     ttlDays: number = DEFAULT_TTL_DAYS
   ): void {
     const sessionDir = this.getSessionCacheDir(sessionId);
-    const filePath = path.join(sessionDir, `${topicSlug}.json`);
+    const markdownFilename = `${sessionId}-${topicSlug}.md`;
+    const markdownPath = path.join(this.baseCacheDir, '..', markdownFilename);
 
     const entry: CacheEntry = {
       version: CACHE_VERSION,
       queryHash: ResearchCache.hashQuery(query),
-      report,
       createdAt: Date.now(),
       ttlDays,
+      findingCount: report.findings.length,
+      sourceTypes: report.sourceTypes,
+      webQueriesRun: report.webQueriesRun,
+      markdownPath,
     };
 
     this.ensureDir(sessionDir);
-    fs.writeFileSync(filePath, JSON.stringify(entry, null, 2), 'utf-8');
+    fs.writeFileSync(path.join(sessionDir, `${topicSlug}.json`), JSON.stringify(entry, null, 2), 'utf-8');
   }
 
   /**
@@ -169,7 +177,7 @@ export class ResearchCache {
    */
   getPageContent(url: string): string | null {
     const contentCacheDir = path.join(this.baseCacheDir, 'page-content');
-    const urlHash = this.hashUrl(url);
+    const urlHash = ResearchCache.hashUrl(url);
     const filePath = path.join(contentCacheDir, `${urlHash}.json`);
 
     if (!fs.existsSync(filePath)) {
@@ -192,7 +200,7 @@ export class ResearchCache {
    */
   setPageContent(url: string, cleanedContent: string): void {
     const contentCacheDir = path.join(this.baseCacheDir, 'page-content');
-    const urlHash = this.hashUrl(url);
+    const urlHash = ResearchCache.hashUrl(url);
     const filePath = path.join(contentCacheDir, `${urlHash}.json`);
 
     const entry = {
@@ -217,13 +225,6 @@ export class ResearchCache {
       hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
     }
     return (hash >>> 0).toString(16);
-  }
-
-  /**
-   * Wrapper for static hashUrl method for use in instance methods.
-   */
-  private hashUrl(url: string): string {
-    return ResearchCache.hashUrl(url);
   }
 
   /**

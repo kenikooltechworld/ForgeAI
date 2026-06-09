@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Explorer Agent
  * Fast codebase analysis and file discovery
  * Uses lightweight model (Haiku) for speed
@@ -20,7 +20,6 @@ export class ExplorerAgent {
    */
   public async execute(task: string): Promise<string> {
     try {
-      this.logger.info(`Explorer: Starting task: ${task}`);
 
       const systemPrompt = `You are a code explorer. Your job is to:
 1. Analyze codebase structure
@@ -42,7 +41,6 @@ Be brief and factual. Return only findings, no explanations.`;
       const chatResponse = response as { message: { content: string } };
       const result = chatResponse.message.content;
 
-      this.logger.info(`Explorer: Task completed`);
       return result;
     } catch (error) {
       this.logger.error('Explorer task failed', error);

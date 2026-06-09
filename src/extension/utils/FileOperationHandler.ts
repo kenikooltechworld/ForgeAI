@@ -1,4 +1,4 @@
-/**
+﻿/**
  * File operation handlers: apply changes, open file, undo changes.
  */
 
@@ -26,7 +26,6 @@ export class FileOperationHandler {
       const buffer = Buffer.from(content, 'utf8');
       await vscode.workspace.fs.writeFile(fileUri, buffer);
 
-      this.logger.info(`File written successfully: ${fileUri.fsPath}`);
       vscode.window.showInformationMessage(`Changes applied to ${filePath}`);
 
       this.view?.webview.postMessage({ type: 'applyChangesSuccess', filePath });
@@ -70,7 +69,6 @@ export class FileOperationHandler {
         );
       }
 
-      this.logger.info(`Opened file in editor: ${fileUri.fsPath}`);
     } catch (error) {
       this.logger.error(`Failed to open file ${filePath}`, error);
       vscode.window.showErrorMessage(
@@ -94,7 +92,6 @@ export class FileOperationHandler {
       const buffer = Buffer.from(originalContent, 'utf8');
       await vscode.workspace.fs.writeFile(fileUri, buffer);
 
-      this.logger.info(`Changes undone successfully: ${fileUri.fsPath}`);
       vscode.window.showInformationMessage(`Changes undone for ${filePath}`);
 
       this.view?.webview.postMessage({ type: 'undoChangesSuccess', filePath });

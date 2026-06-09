@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SpecReader — Parses spec documents (requirements.md, tasks.md) into executable tasks
  *
  * Replaces the LangGraph orchestrator's implicit task generation with explicit
@@ -102,10 +102,6 @@ export class SpecReader {
       failedCount,
       pendingCount,
     };
-
-    this.logger.info(
-      `Parsed spec: ${requirements.length} requirements, ${tasks.length} tasks, ${phases.length} phases, ${progress}% complete`
-    );
 
     return spec;
   }

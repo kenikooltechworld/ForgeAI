@@ -11,17 +11,32 @@
  * to the calling (parent) agent. The full sub-agent context is discarded.
  *
  * This is the Claude Code pattern: context isolation through fresh LLM sessions.
+ *
+ * CRITICAL FIX: Sub-agent streaming updates are NOW forwarded to WebviewManager
+ * so users see real-time feedback from spawned agents.
  */
 
-import { AgentLoop } from '../ollama/AgentLoop';
+import { AgentLoop, type AgentLoopUpdate } from '../ollama/AgentLoop';
+import type { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import type { Tool } from '../tools/ToolRegistry';
-import type { AgentDefinition, SpawnAgentArgs, AgentExecutionResult } from './AgentRegistry';
+import { Logger } from '../utils/Logger';
+import type { RagService } from '../rag/RagService';
+import {
+  getAgentDefinition,
+  type AgentDefinition,
+  type SpawnAgentArgs,
+  type AgentExecutionResult,
+} from './AgentRegistry';
+import { getConfiguredModel } from '../config/ModelConfig';
+import { WebSearchTools } from '../tools/WebSearchTools';
+import { BrowserTools } from '../tools/BrowserTools';
 import * as path from 'path';
 import * as fs from 'fs';
 
 let spawnerInstance: SubAgentSpawner | null = null;
 let lastSpawnerError: string | null = null;
+let streamingCallbacks: Map<string, (update: AgentLoopUpdate) => void> = new Map();
 
 export function initSubAgentSpawner(
   ollamaClient: any,
@@ -36,15 +51,42 @@ export function getSubAgentSpawner(): SubAgentSpawner | null {
   return spawnerInstance;
 }
 
+/**
+ * Register a streaming callback for a spawned agent.
+ * This is called by ToolRegistry when forgeai_spawnAgent is invoked,
+ * passing the parent agent's onUpdate callback so sub-agent updates reach the UI.
+ */
+export function registerStreamingCallback(
+  agentId: string,
+  callback: (update: AgentLoopUpdate) => void
+): void {
+  streamingCallbacks.set(agentId, callback);
+}
+
+/**
+ * Get and remove the streaming callback for a spawned agent.
+ */
+export function getStreamingCallback(
+  agentId: string
+): ((update: AgentLoopUpdate) => void) | undefined {
+  const callback = streamingCallbacks.get(agentId);
+  if (callback) {
+    streamingCallbacks.delete(agentId);
+  }
+  return callback;
+}
+
 export class SubAgentSpawner {
   private static readonly SESSION_STORE = path.join(process.env.APPDATA || '', 'ForgeAI', 'agents');
   private static activeSessions: Map<string, { agentName: string; startedAt: number }> = new Map();
+  private static readonly webSearchTools = new WebSearchTools();
+  private static readonly browserTools = new BrowserTools();
 
   constructor(
     private readonly ollamaClient: OllamaClient,
     private readonly toolRegistry: ToolRegistry,
     private readonly logger: Logger,
-    private readonly ragService?: RagService,
+    private readonly ragService?: RagService
   ) {}
 
   /**
@@ -58,16 +100,32 @@ export class SubAgentSpawner {
    * When the agent finishes, its full context is discarded. Only the
    * summary is returned to the parent.
    */
-  public async spawnAgent(args: SpawnAgentArgs,ParentContext?: { userMessage?: string; workspaceRoot?: string }): Promise<AgentExecutionResult> {
-    const definition = getAgentDefinition(args.type);
+  public async spawnAgent(
+    args: SpawnAgentArgs,
+    ParentContext?: { userMessage?: string; workspaceRoot?: string }
+  ): Promise<AgentExecutionResult> {
+    const agentType = args.type?.trim();
+    if (!agentType) {
+      return {
+        success: false,
+        agentType: args.type || 'unknown',
+        agentName: 'unknown',
+        summary: '',
+        durationMs: 0,
+        error:
+          'forgeai_spawnAgent requires a "type" field. Available types: researcher, spec, requirements, design, tasks, browserMirror, code, review.',
+      };
+    }
+
+    const definition = getAgentDefinition(agentType);
     if (!definition) {
       return {
         success: false,
-        agentType: args.type,
-        agentName: args.type,
+        agentType: agentType,
+        agentName: agentType,
         summary: '',
         durationMs: 0,
-        error: `Unknown agent type: ${args.type}. Available: ${Object.keys(definition ? {} : { researcher: 1, spec: 1, requirements: 1, design: 1, tasks: 1, browserMirror: 1, code: 1, review: 1 })}`,
+        error: `Unknown agent type: "${agentType}". Available: researcher, spec, requirements, design, tasks, browserMirror, code, review`,
       };
     }
 
@@ -81,7 +139,7 @@ export class SubAgentSpawner {
       // Build messages: system prompt + user task (with optional details and context files)
       const userPrompt = this.buildUserPrompt(args, ParentContext);
 
-      const messages = [
+      const messages: OllamaMessage[] = [
         { role: 'system', content: definition.systemPrompt },
         { role: 'user', content: userPrompt },
       ];
@@ -101,21 +159,44 @@ export class SubAgentSpawner {
         startedAt: startTime,
       });
 
-      this.logger.info(`[SubAgentSpawner] Spawning ${definition.name} (${agentId}) task: ${args.task.slice(0, 80)}`);
-
       let fullOutput = '';
       let toolCallsMade = 0;
 
+      // Get the streaming callback from the parent agent (if registered)
+      // This allows sub-agent updates to be forwarded to the WebviewManager
+      const parentStreamingCallback = getStreamingCallback(agentId);
+
       try {
-        // Run the agent loop
-        await agentLoop.execute(messages, (update) => {
-          if (update.type === 'toolStart' && update.toolCall) {
-            toolCallsMade++;
-          }
-          if (update.type === 'complete' && update.content) {
-            fullOutput = update.content;
-          }
-        }, [], definition.defaultModel);
+        // Run the agent loop - NOW WITH FULL STREAMING SUPPORT
+        await agentLoop.execute(
+          messages,
+          (update: AgentLoopUpdate) => {
+            // Forward ALL updates to parent agent (if callback is registered)
+            // This enables real-time UI feedback for sub-agent execution
+            if (parentStreamingCallback) {
+              // Create a modified update with agent type prefix for clarity
+              const forwardedUpdate = { ...update };
+              if (forwardedUpdate.toolCall) {
+                forwardedUpdate.toolCall = { ...forwardedUpdate.toolCall };
+                forwardedUpdate.toolCall.function = {
+                  ...forwardedUpdate.toolCall.function,
+                  name: `[${agentType}] ${forwardedUpdate.toolCall.function.name}`,
+                };
+              }
+              parentStreamingCallback(forwardedUpdate);
+            }
+
+            // Track completion and tool calls for result summary
+            if (update.type === 'toolStart' && update.toolCall) {
+              toolCallsMade++;
+            }
+            if (update.type === 'complete' && update.content) {
+              fullOutput = update.content;
+            }
+          },
+          agentToolRegistry.getToolDefinitions(),
+          getConfiguredModel()
+        );
       } finally {
         SubAgentSpawner.activeSessions.delete(agentId);
       }
@@ -124,8 +205,6 @@ export class SubAgentSpawner {
 
       // Compress the output into a summary for the parent agent
       const summary = this.compressOutput(fullOutput, definition, args);
-
-      this.logger.info(`[SubAgentSpawner] ${definition.name} completed in ${durationMs}ms (${toolCallsMade} tool calls)`);
 
       return {
         success: true,
@@ -147,7 +226,7 @@ export class SubAgentSpawner {
         agentName: definition.name,
         summary: `Agent failed after ${durationMs}ms.`,
         durationMs,
-        error: errorMessage,
+        error: `${errorMessage}. Do NOT call forgeai_webResearch or forgeai_webSearch directly — the main AI does not have those tools. Re-spawn this agent or escalate to user.`,
       };
     }
   }
@@ -158,18 +237,43 @@ export class SubAgentSpawner {
    * but only exposes the tools named in the agent's allowedTools list.
    */
   private buildScopedToolRegistry(allowedTools: string[]): ToolRegistry {
-    const scoped = new ToolRegistry(this.logger);
+    const scoped = ToolRegistry.createSubRegistry(this.logger);
 
     for (const toolName of allowedTools) {
-      const toolDef = this.toolRegistry.getToolDefinition(toolName);
+      let toolDef = this.toolRegistry.getToolDefinition(toolName);
+
+      if (!toolDef) {
+        toolDef = SubAgentSpawner.lookupExtraTool(toolName);
+      }
+
       if (toolDef) {
         scoped.registerTool(toolDef);
       } else {
-        this.logger.warn(`[SubAgentSpawner] Tool "${toolName}" not found in parent registry — skipping for sub-agent`);
+        this.logger.warn(`[SubAgentSpawner] Tool "${toolName}" not found — skipping for sub-agent`);
       }
     }
 
     return scoped;
+  }
+
+  private static readonly EXTRA_TOOL_METHODS: Record<string, () => Tool> = {
+    forgeai_webSearch: () => SubAgentSpawner.webSearchTools.webSearch(),
+    forgeai_webResearch: () => SubAgentSpawner.webSearchTools.webResearch(),
+    forgeai_searchDocs: () => SubAgentSpawner.webSearchTools.searchDocs(),
+    forgeai_fetchPage: () => SubAgentSpawner.webSearchTools.fetchPage(),
+    forgeai_browserNavigate: () => SubAgentSpawner.browserTools.browserNavigate(),
+    forgeai_browserExtract: () => SubAgentSpawner.browserTools.browserExtract(),
+    forgeai_browserClick: () => SubAgentSpawner.browserTools.browserClick(),
+    forgeai_browserScreenshot: () => SubAgentSpawner.browserTools.browserScreenshot(),
+    forgeai_browserFill: () => SubAgentSpawner.browserTools.browserFill(),
+    forgeai_browserScroll: () => SubAgentSpawner.browserTools.browserScroll(),
+    forgeai_browserClose: () => SubAgentSpawner.browserTools.browserClose(),
+  };
+
+  private static lookupExtraTool(toolName: string): Tool | undefined {
+    const factory = SubAgentSpawner.EXTRA_TOOL_METHODS[toolName];
+    if (factory) return factory();
+    return undefined;
   }
 
   /**
@@ -179,7 +283,10 @@ export class SubAgentSpawner {
    * - Context file contents (optional, read from disk)
    * - Research output path hint (for spec-related agents)
    */
-  private buildUserPrompt(args: SpawnAgentArgs, parentContext?: { userMessage?: string; workspaceRoot?: string }): string {
+  private buildUserPrompt(
+    args: SpawnAgentArgs,
+    parentContext?: { userMessage?: string; workspaceRoot?: string }
+  ): string {
     const parts: string[] = [];
 
     if (parentContext?.userMessage) {
@@ -210,7 +317,7 @@ export class SubAgentSpawner {
     }
 
     if (args.constraints && args.constraints.length > 0) {
-      parts.push(`## Constraints\n${args.constraints.map(c => `- ${c}`).join('\n')}`);
+      parts.push(`## Constraints\n${args.constraints.map((c) => `- ${c}`).join('\n')}`);
     }
 
     return parts.join('\n\n');
@@ -220,7 +327,11 @@ export class SubAgentSpawner {
    * Compress the full agent output into a summary suitable for the parent agent.
    * Target: 200-400 tokens. Preserves key findings, file paths, and verdicts.
    */
-  private compressOutput(output: string, definition: AgentDefinition, args: SpawnAgentArgs): string {
+  private compressOutput(
+    output: string,
+    definition: AgentDefinition,
+    args: SpawnAgentArgs
+  ): string {
     const maxChars = definition.maxContextTokens * 2; // rough: 1 token ≈ 2 chars for English
 
     if (output.length <= maxChars) {
@@ -316,16 +427,19 @@ export class SubAgentSpawner {
           },
           task: {
             type: 'string',
-            description: 'The concrete task for the agent. Be specific: what you want, why, what format you need back.',
+            description:
+              'The concrete task for the agent. Be specific: what you want, why, what format you need back.',
           },
           details: {
             type: 'string',
-            description: 'Optional extra context the agent needs (requirements, constraints, expected output format).',
+            description:
+              'Optional extra context the agent needs (requirements, constraints, expected output format).',
           },
           contextFiles: {
             type: 'array',
             items: { type: 'string' },
-            description: 'Optional list of workspace-relative file paths the agent should read before starting.',
+            description:
+              'Optional list of workspace-relative file paths the agent should read before starting.',
           },
           constraints: {
             type: 'array',

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Routes incoming webview messages to the appropriate handlers.
  */
 
@@ -60,7 +60,6 @@ export class WebviewMessageRouter {
     const msg = raw as Record<string, unknown>;
     const msgType = typeof msg.type === 'string' ? msg.type : '';
     try {
-      this.logger.info(`Handling message type: ${msgType}`);
       switch (msgType) {
         case 'sendMessage':
           await this.handleSendMessage(msg);
@@ -607,9 +606,6 @@ export class WebviewMessageRouter {
       autonomyLevel ||
       this.storageManager.getGlobalValue<string>('forgeai.autonomyLevel', 'semi-autonomous');
 
-    this.logger.info(`Sending message for conversation ${conversationId}`);
-    this.logger.info(`Using model: ${selectedModel}, autonomy: ${selectedAutonomy}`);
-
     const agentLoop = new AgentLoop(
       this.ollamaClient,
       this.logger,
@@ -651,8 +647,6 @@ export class WebviewMessageRouter {
     const selectedModel =
       model ||
       this.storageManager.getGlobalValue<string>('forgeai.selectedModel', getConfiguredModel());
-
-    this.logger.info(`Retrying after error for conversation ${conversationId}`);
 
     const agentLoop = new AgentLoop(
       this.ollamaClient,

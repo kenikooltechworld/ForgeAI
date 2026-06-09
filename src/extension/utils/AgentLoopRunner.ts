@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent loop execution and streaming update handling.
  */
 
@@ -23,10 +23,8 @@ export class AgentLoopRunner {
   }
 
   stopAgentLoop(conversationId: string): void {
-    this.logger.info(`Stopping agent loop for conversation: ${conversationId}`);
     if (this.currentAgentLoop) {
       this.currentAgentLoop.stop();
-      this.logger.info('Agent loop stop requested');
 
       this.view?.webview.postMessage({ type: 'agentLoopStopped', conversationId });
       this.view?.webview.postMessage({
@@ -65,7 +63,6 @@ export class AgentLoopRunner {
       );
     } finally {
       this.currentAgentLoop = undefined;
-      this.logger.info('Agent loop instance cleared');
     }
   }
 
@@ -84,9 +81,6 @@ export class AgentLoopRunner {
           done: update.done || false,
         });
         if (update.tokenUsage) {
-          this.logger.info(
-            `\ud83c\udf10\ud83c\udf10\ud83c\udf10 POSTING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(update.tokenUsage)}`
-          );
         }
         break;
 
@@ -107,7 +101,6 @@ export class AgentLoopRunner {
         break;
 
       case 'complete':
-        this.logger.info('Agent loop complete');
         this.view?.webview.postMessage({
           type: 'streamChunk',
           conversationId,
@@ -132,7 +125,6 @@ export class AgentLoopRunner {
   }
 
   private handleTerminalOutput(update: AgentLoopUpdate, conversationId: string): void {
-    this.logger.info('Sending terminal output to webview');
     if (!update.terminalData) return;
 
     const { command, stdout, stderr, exitCode } = update.terminalData;
@@ -146,12 +138,8 @@ export class AgentLoopRunner {
       command.includes('pytest');
 
     if (isTestCommand) {
-      this.logger.info('Detected test command, attempting to parse results');
       const testResults = TestResultsParser.parse(output, exitCode);
       if (testResults) {
-        this.logger.info(
-          `Parsed test results: ${testResults.totalPassed} passed, ${testResults.totalFailed} failed`
-        );
         this.view?.webview.postMessage({
           type: 'showTestResults',
           conversationId,
@@ -174,7 +162,6 @@ export class AgentLoopRunner {
   }
 
   private handleToolStart(update: AgentLoopUpdate, conversationId: string): void {
-    this.logger.info(`Tool started: ${update.toolCall?.function.name}`);
     if (update.toolCall && update.toolExecutionId) {
       this.view?.webview.postMessage({
         type: 'toolExecutionStart',
@@ -190,7 +177,6 @@ export class AgentLoopRunner {
   }
 
   private handleToolComplete(update: AgentLoopUpdate, conversationId: string): void {
-    this.logger.info(`Tool completed: ${update.toolCall?.function.name}`);
     if (update.toolCall && update.toolExecutionId) {
       this.view?.webview.postMessage({
         type: 'toolExecutionComplete',
@@ -207,7 +193,6 @@ export class AgentLoopRunner {
     }
 
     if (update.toolCall?.function.name === 'forgeai_readFile' && update.result) {
-      this.logger.info('File read completed, sending to preview panel');
       const args =
         typeof update.toolCall.function.arguments === 'string'
           ? JSON.parse(update.toolCall.function.arguments)
@@ -218,7 +203,6 @@ export class AgentLoopRunner {
         filePath.includes('.forgeai/specs/') ||
         /\/(requirements|design|tasks|bugfix)\.md$/.test(filePath)
       ) {
-        this.logger.info(`Skipping spec file preview: ${filePath}`);
       } else {
         const fileContent =
           typeof update.result === 'string'
@@ -233,7 +217,6 @@ export class AgentLoopRunner {
     }
 
     if (update.toolCall?.function.name === 'forgeai_generateDiff' && update.result) {
-      this.logger.info('Diff generated, sending to preview panel');
       this.view?.webview.postMessage({
         type: 'showDiff',
         conversationId,

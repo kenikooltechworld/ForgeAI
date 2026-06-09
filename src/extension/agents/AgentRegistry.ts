@@ -19,7 +19,6 @@ export interface AgentDefinition {
   allowedTools: string[];
   outputFormat: string;
   maxContextTokens: number;
-  defaultModel?: string;
 }
 
 export interface SpawnAgentArgs {
@@ -78,22 +77,26 @@ Given a research task, find the ACTUAL official documentation, navigate inside i
 - For APIs: search "{api} official docs" and navigate to the API reference pages
 
 ## Output Format
-After completing research, produce TWO things:
+WRITE THE MARKDOWN FILE AS YOU GO — do NOT wait until the end.
 
-1. A markdown file at .forgeai/research/{topic-slug}-2026.md with this structure:
-   # Research: {Topic}
-   ## 1. {Subtopic} (priority: 1)
-   ### Official Documentation & API Reference
-   {real content from pages}
-   ### Code Examples
-   {real code from official docs}
-   ### Sources
-   - [{title}]({url})
+After EACH page you extract content from, immediately write/update:
+  .forgeai/research/{topic-slug}-2026.md
 
-2. A 200-400 word summary for the master AI covering:
-   - Key findings (versions, APIs, code patterns found)
-   - File path where full research is saved
-   - Confidence level (high/medium/low)
+Use forgeai_writeFile to save the file after every major finding.
+The file structure:
+  # Research: {Topic}
+  ## 1. {Subtopic} (priority: 1)
+  ### Official Documentation & API Reference
+  {real content from pages as you extract them}
+  ### Code Examples
+  {real code from official docs}
+  ### Sources
+  - [{title}]({url})
+
+Also maintain a 200-400 word running summary for the master AI covering:
+  - Key findings (versions, APIs, code patterns found)
+  - File path where full research is saved
+  - Confidence level (high/medium/low)
 
 ## Rules
 - NEVER return topics only. ALWAYS return actual content with URLs.
@@ -103,16 +106,26 @@ After completing research, produce TWO things:
 - If you get stuck on a page, try navigating to the sitemap or docs index.`,
     allowedTools: [
       'forgeai_webSearch',
+      'forgeai_webResearch',
+      'forgeai_fetchPage',
+      'forgeai_searchDocs',
       'forgeai_browserNavigate',
       'forgeai_browserExtract',
       'forgeai_browserClick',
       'forgeai_browserScroll',
       'forgeai_browserFill',
       'forgeai_browserScreenshot',
+      'forgeai_browserClose',
+      'forgeai_listFiles',
+      'forgeai_listDirectory',
+      'forgeai_createDirectory',
+      'forgeai_writeFile',
+      'forgeai_readFile',
+      'forgeai_replaceText',
+      'forgeai_deleteFile',
     ],
     outputFormat: 'markdown file in .forgeai/research/ + 200-400 word summary',
     maxContextTokens: 8000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   spec: {
@@ -144,7 +157,6 @@ You receive a task description from the master AI. You break it into stages and 
     allowedTools: ['forgeai_spawnAgent', 'forgeai_writeFile', 'forgeai_readFile'],
     outputFormat: 'spec directory with requirements.md, design.md, tasks.md + summary',
     maxContextTokens: 12000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   requirements: {
@@ -171,7 +183,6 @@ Given a task description, produce a complete requirements.md with these sections
     allowedTools: ['forgeai_readFile', 'forgeai_spawnAgent'],
     outputFormat: 'requirements.md content',
     maxContextTokens: 16000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   design: {
@@ -198,7 +209,6 @@ Given requirements, produce a complete technical design document with:
     allowedTools: ['forgeai_readFile', 'forgeai_spawnAgent'],
     outputFormat: 'design.md content',
     maxContextTokens: 16000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   tasks: {
@@ -230,7 +240,6 @@ Each task must have:
     allowedTools: ['forgeai_readFile'],
     outputFormat: 'tasks.md content',
     maxContextTokens: 12000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   browserMirror: {
@@ -250,10 +259,9 @@ Each task must have:
 - Be specific about what you see and where it appears
 - Include coordinates or element descriptions when possible
 - Distinguish between bugs and design decisions you don't understand`,
-    allowedTools: ['forgeai_browserScreenshot', 'forgeai_browserGetHTML'],
+    allowedTools: ['forgeai_browserScreenshot', 'forgeai_browserExtract', 'forgeai_browserClose'],
     outputFormat: 'visual QA report',
     maxContextTokens: 4000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   code: {
@@ -274,10 +282,9 @@ Given a task or spec, you:
 - Never break existing tests
 - Write new tests when adding features
 - Report any blockers or ambiguities`,
-    allowedTools: ['forgeai_readFile', 'forgeai_writeFile', 'forgeai_edit', 'forgeai_terminal'],
+    allowedTools: ['forgeai_readFile', 'forgeai_writeFile', 'forgeai_replaceText', 'forgeai_replaceRegex', 'forgeai_runCommand'],
     outputFormat: 'code changes summary',
     maxContextTokens: 16000,
-    defaultModel: 'qwen3-vl-8b',
   },
 
   review: {
@@ -308,7 +315,6 @@ One paragraph: overall assessment
     allowedTools: ['forgeai_readFile'],
     outputFormat: 'structured review report',
     maxContextTokens: 16000,
-    defaultModel: 'qwen3-vl-8b',
   },
 };
 

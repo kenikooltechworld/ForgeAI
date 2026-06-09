@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SpecComplianceChecker — Adversarial verification agent
  *
  * Checks task output against acceptance criteria from the spec.
@@ -107,10 +107,6 @@ export class SpecComplianceChecker {
         : this.generateCorrectionInstructions(criterionResults, task),
       durationMs,
     };
-
-    this.logger.info(
-      `Compliance check for task ${task.id}: ${passed ? 'PASSED' : 'FAILED'} (${score}%, ${durationMs}ms)`
-    );
 
     return result;
   }

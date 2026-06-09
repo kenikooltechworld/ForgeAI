@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import { StorageManager } from '../storage/StorageManager';
 import { Logger } from './Logger';
 import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
@@ -38,14 +38,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     private readonly researchAgent?: ResearchAgent,
     private readonly ragService?: RagService
   ) {
-    this.logger.info(
-      'WebviewManager initialized' +
-        (toolRegistry ? ' with ToolRegistry support' : '') +
-        (forgeaiWorkspace ? ' and ForgeAIWorkspace' : '') +
-        (ragService ? ' and RAG' : '') +
-        ' and context management'
-    );
-
     // Initialize context management components
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd();
     this.contextManager = new ContextManager(workspaceRoot);
@@ -71,8 +63,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       return;
     }
 
-    this.logger.info(`Notifying webview of theme change: ${theme.kind}`);
-
     // Send theme change message to webview
     this.view.webview.postMessage({
       type: 'themeChanged',
@@ -87,7 +77,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ): void {
-    this.logger.info('resolveWebviewView called - starting webview initialization');
     this.view = webviewView;
 
     webviewView.webview.options = {
@@ -98,9 +87,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       ],
     };
 
-    this.logger.info('Webview options configured, generating HTML');
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
-    this.logger.info('HTML set successfully');
 
     // Register message handler with proper disposal
     this.disposables.push(
@@ -115,16 +102,12 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     this.disposables.push(
       webviewView.onDidDispose(() => this.onViewDisposed(), null, this.disposables)
     );
-
-    this.logger.info('Webview resolved successfully - all handlers registered');
   }
 
   private async handleMessage(message: any): Promise<void> {
-    this.logger.info(`Received message from webview: ${JSON.stringify(message)}`);
     try {
       switch (message.type) {
         case 'sendMessage': {
-          this.logger.info('Handling sendMessage');
           await this.handleSendMessage(
             message.conversationId,
             message.content,
@@ -140,7 +123,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'generateSpec': {
-          this.logger.info('Handling generateSpec from webview');
           await this.handleGenerateSpec(
             message.title as string,
             message.description as string,
@@ -149,23 +131,16 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'openExternal': {
-          this.logger.info(`Handling openExternal: ${message.url}`);
           await vscode.env.openExternal(vscode.Uri.parse(message.url));
           break;
         }
         case 'getSettings': {
-          this.logger.info('Handling getSettings message');
           const showThinking = this.storageManager.getWorkspaceValue('forgeai.showThinking', true);
-          this.logger.info(`Sending settings response: showThinking=${showThinking}`);
           this.view?.webview.postMessage({ type: 'settings', payload: { showThinking } });
           break;
         }
         case 'getWorkspaceState': {
-          this.logger.info(`Handling getWorkspaceState: ${message.key}`);
           const value = this.storageManager.getWorkspaceValue(message.key, null);
-          this.logger.info(
-            `Sending workspaceState response: ${message.key} = ${JSON.stringify(value)}`
-          );
           this.view?.webview.postMessage({
             type: 'workspaceState',
             key: message.key,
@@ -174,9 +149,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'setWorkspaceState': {
-          this.logger.info(
-            `Handling setWorkspaceState: ${message.key} = ${JSON.stringify(message.value)}`
-          );
           try {
             await this.storageManager.setWorkspaceValue(message.key, message.value);
             // Send success response
@@ -209,104 +181,84 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'getOnboardingState': {
-          this.logger.info('Handling getOnboardingState message');
           const onboardingState = this.storageManager.getGlobalValue('forgeai.onboarding', {
             hasSeenThinkingTooltip: false,
             hasSeenToolTooltip: false,
             hasSeenCodeChangeTooltip: false,
             hasSeenWelcomeScreen: false,
           });
-          this.logger.info(`Sending onboarding state: ${JSON.stringify(onboardingState)}`);
           this.view?.webview.postMessage({ type: 'onboardingState', payload: onboardingState });
           break;
         }
         case 'getLanguage': {
-          this.logger.info('Handling getLanguage message');
           const config = vscode.workspace.getConfiguration('forgeai');
           const language = config.get<string>('language', 'English');
-          this.logger.info(`Sending language setting: ${language}`);
           this.view?.webview.postMessage({ type: 'language', language });
           break;
         }
         case 'getSelectedModel': {
-          this.logger.info('Handling getSelectedModel message');
           const selectedModel = this.storageManager.getGlobalValue(
             'forgeai.selectedModel',
             DEFAULT_MODEL
           );
-          this.logger.info(`Sending selected model: ${selectedModel}`);
           this.view?.webview.postMessage({ type: 'selectedModel', model: selectedModel });
           break;
         }
         case 'getAutonomyLevel': {
-          this.logger.info('Handling getAutonomyLevel message');
           const autonomyLevel = this.storageManager.getGlobalValue(
             'forgeai.autonomyLevel',
             'semi-autonomous'
           );
-          this.logger.info(`Sending autonomy level: ${autonomyLevel}`);
           this.view?.webview.postMessage({ type: 'autonomyLevel', level: autonomyLevel });
           break;
         }
         case 'setOnboardingState': {
-          this.logger.info(`Handling setOnboardingState: ${JSON.stringify(message.payload)}`);
           await this.storageManager.setGlobalValue('forgeai.onboarding', message.payload);
           break;
         }
         case 'setLanguage': {
-          this.logger.info(`Handling setLanguage: ${message.language}`);
           // Update VS Code configuration
           const config = vscode.workspace.getConfiguration('forgeai');
           await config.update('language', message.language, vscode.ConfigurationTarget.Global);
           break;
         }
         case 'setShowThinking': {
-          this.logger.info(`Handling setShowThinking: ${message.show}`);
           // Persist to globalState (Requirement 49.5)
           await this.storageManager.setGlobalValue('forgeai.showThinking', message.show);
           break;
         }
         case 'setSelectedModel': {
-          this.logger.info(`Handling setSelectedModel: ${message.model}`);
           // Persist to globalState (should persist across sessions)
           await this.storageManager.setGlobalValue('forgeai.selectedModel', message.model);
           break;
         }
         case 'setAutonomyLevel': {
-          this.logger.info(`Handling setAutonomyLevel: ${message.level}`);
           // Persist to globalState (Task 10.4)
           await this.storageManager.setGlobalValue('forgeai.autonomyLevel', message.level);
           break;
         }
         case 'getSplitScreenWidth': {
-          this.logger.info('Handling getSplitScreenWidth message');
           const width = this.storageManager.getWorkspaceValue('forgeai.splitScreenWidth', 50);
-          this.logger.info(`Sending splitScreenWidth response: ${width}`);
           this.view?.webview.postMessage({ type: 'splitScreenWidth', width });
           break;
         }
         case 'setSplitScreenWidth': {
-          this.logger.info(`Handling setSplitScreenWidth: ${message.width}`);
           await this.storageManager.setWorkspaceValue('forgeai.splitScreenWidth', message.width);
           break;
         }
         case 'applyChanges': {
-          this.logger.info(`Handling applyChanges: ${message.filePath}`);
           await this.handleApplyChanges(message.filePath, message.content);
           break;
         }
         case 'openFile': {
-          this.logger.info(`Handling openFile: ${message.filePath}`);
           await this.handleOpenFile(message.filePath, message.lineNumber);
           break;
         }
         case 'undoChanges': {
-          this.logger.info(`Handling undoChanges: ${message.filePath}`);
           await this.handleUndoChanges(message.filePath, message.originalContent);
           break;
         }
         case 'runCommand': {
-          this.logger.info(`Handling runCommand: ${message.command}`);
           await this.handleSendMessage(
             message.conversationId,
             `Run this command: ${message.command}${message.cwd ? ` in directory ${message.cwd}` : ''}`
@@ -314,7 +266,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'continueAfterMaxIterations': {
-          this.logger.info('Handling continueAfterMaxIterations');
           await this.handleContinueAfterMaxIterations(
             message.conversationId,
             message.conversationHistory || []
@@ -322,7 +273,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'cancelAfterMaxIterations': {
-          this.logger.info('Handling cancelAfterMaxIterations');
           // Just send a completion message - the agent loop has already stopped
           this.view?.webview.postMessage({
             type: 'streamChunk',
@@ -337,22 +287,18 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'fetchOllamaModels': {
-          this.logger.info('Handling fetchOllamaModels');
           await this.handleFetchOllamaModels();
           break;
         }
         case 'stopAgentLoop': {
-          this.logger.info('Handling stopAgentLoop');
           this.handleStopAgentLoop(message.conversationId);
           break;
         }
         case 'retryAfterError': {
-          this.logger.info('Handling retryAfterError');
           await this.handleRetryAfterError(message.conversationId, message.errorMessage);
           break;
         }
         case 'conversationHistoryForRetry': {
-          this.logger.info('Handling conversationHistoryForRetry');
           // Extract the last user message and resend it
           const history = message.conversationHistory || [];
           const model = message.model || DEFAULT_MODEL;
@@ -361,7 +307,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           const lastUserMessage = [...history].reverse().find((msg: any) => msg.role === 'user');
 
           if (lastUserMessage) {
-            this.logger.info(`Retrying last user message: ${lastUserMessage.content}`);
             // Remove the error message from history before retrying
             const cleanHistory = history.filter((msg: any) => msg.role !== 'error');
             await this.handleSendMessage(
@@ -377,13 +322,10 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
           break;
         }
         case 'skipAfterError': {
-          this.logger.info('Handling skipAfterError');
           // Just log the skip action - no further action needed
-          this.logger.info(`User skipped error in conversation ${message.conversationId}`);
           break;
         }
         case 'openSettings': {
-          this.logger.info('Handling openSettings');
           // Send message to webview to open settings panel
           this.view?.webview.postMessage({
             type: 'openSettings',
@@ -407,24 +349,61 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     images: Array<{ name: string; dataUrl: string }> = [],
     options: { isTaskExecution?: boolean; specId?: string; taskId?: string } = {}
   ): Promise<void> {
-    this.logger.info(`Sending message to Ollama: ${message}`);
-    this.logger.info(`Using model: ${model}`);
-    this.logger.info(`Conversation history length: ${conversationHistory.length}`);
-    this.logger.info(`Attached images: ${images.length}`);
     if (options.isTaskExecution) {
-      this.logger.info(`Task execution mode: specId=${options.specId}, taskId=${options.taskId}`);
     }
 
     try {
-      // Get tool definitions from ToolRegistry
-      const tools = this.toolRegistry ? this.toolRegistry.getToolDefinitions() : [];
+      // Get ALL tool definitions from ToolRegistry
+      const allTools = this.toolRegistry ? this.toolRegistry.getToolDefinitions() : [];
 
-      this.logger.info(`Available tools: ${tools.length}`);
-      if (tools.length > 0) {
-        this.logger.info(`Tool names: ${tools.map((t) => t.function.name).join(', ')}`);
-        this.logger.info(`Tool definitions: ${JSON.stringify(tools, null, 2)}`);
+      // PATTERN: Filter to MASTER AGENT SCOPE ONLY (orchestration tools)
+      // Following Kiro/Claude Code pattern: master agent gets limited tools, sub-agents get specialized tools
+      // Master agent's job: orchestrate work and delegate to specialists via forgeai_spawnAgent
+      const masterAgentToolNames = [
+        'forgeai_spawnAgent', // CRITICAL: spawn and orchestrate sub-agents
+        'forgeai_createSpec',
+        'forgeai_readSpec',
+        'forgeai_writeSpecArtifact',
+        'forgeai_listSpecs',
+        'forgeai_continueSpec',
+        'forgeai_checkDrift',
+        'forgeai_deleteSpec',
+        'forgeai_startTask',
+        'forgeai_runAllTasks',
+        'forgeai_approveSpec',
+        'forgeai_getDiagnostics',
+        'forgeai_getErrors',
+      ];
+
+      // Filter tools to master agent scope
+      const tools = allTools.filter((t: any) => masterAgentToolNames.includes(t.function?.name));
+
+      // DEBUG: Log tool scoping decision
+      this.logger.info(
+        `[WebviewManager] Master agent tool scoping: ${allTools.length} total tools → ${tools.length} master scope tools`
+      );
+      this.logger.debug(
+        `[WebviewManager] Master agent tools: ${tools.map((t: any) => t.function?.name).join(', ')}`
+      );
+
+      // CRITICAL: Verify master agent has forgeai_spawnAgent tool
+      if (tools.length === 0) {
+        this.logger.error(
+          '[WebviewManager] NO TOOLS AVAILABLE - Master agent tool scope is empty!'
+        );
+      } else if (!tools.some((t: any) => t.function?.name === 'forgeai_spawnAgent')) {
+        this.logger.error(
+          `[WebviewManager] CRITICAL: Master agent missing forgeai_spawnAgent! Available tools: ${tools.map((t: any) => t.function?.name).join(', ')}`
+        );
       } else {
-        this.logger.warn('NO TOOLS AVAILABLE - ToolRegistry might not be initialized!');
+        this.logger.info(
+          `[WebviewManager] Master agent tools OK: ${tools.length} tools including forgeai_spawnAgent`
+        );
+      }
+
+      if (tools.length > 0) {
+      } else {
+        this.logger.warn('NO TOOLS AVAILABLE - Master agent tool scope may be misconfigured!');
       }
 
       // Use AgentLoop for autonomous tool execution with full context management
@@ -493,12 +472,9 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
       // Only add images if there are any and model supports vision
       if (imageData.length > 0 && isVisionModel) {
         userMessage.images = imageData;
-        this.logger.info(`Added ${imageData.length} images to user message`);
       }
 
       messages.push(userMessage);
-
-      this.logger.info(`Total messages to send: ${messages.length}`);
 
       // Build spec context for task execution
       let specContext: import('../spec/types').SpecContext | undefined;
@@ -550,7 +526,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
                   summary: `Completed: ${t.description}`,
                 })),
             };
-            this.logger.info(`Loaded spec context for task execution: ${spec.id}`);
           }
         } catch (err) {
           this.logger.warn(`Failed to load spec context for task execution: ${err}`);
@@ -657,11 +632,28 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
     conversationId: string,
     conversationHistory: any[] = []
   ): Promise<void> {
-    this.logger.info('Continuing agent loop after max iterations');
-
     try {
-      // Get tool definitions from ToolRegistry
-      const tools = this.toolRegistry ? this.toolRegistry.getToolDefinitions() : [];
+      // Get ALL tools and filter to master agent scope (same as handleSendMessage)
+      const allTools = this.toolRegistry ? this.toolRegistry.getToolDefinitions() : [];
+
+      const masterAgentToolNames = [
+        'forgeai_spawnAgent', // CRITICAL: spawn and orchestrate sub-agents
+        'forgeai_createSpec',
+        'forgeai_readSpec',
+        'forgeai_writeSpecArtifact',
+        'forgeai_listSpecs',
+        'forgeai_continueSpec',
+        'forgeai_checkDrift',
+        'forgeai_deleteSpec',
+        'forgeai_startTask',
+        'forgeai_runAllTasks',
+        'forgeai_approveSpec',
+        'forgeai_getDiagnostics',
+        'forgeai_getErrors',
+      ];
+
+      // Filter tools to master agent scope
+      const tools = allTools.filter((t: any) => masterAgentToolNames.includes(t.function?.name));
 
       // Use AgentLoop for autonomous tool execution
       const { AgentLoop } = await import('../ollama/AgentLoop');
@@ -695,9 +687,7 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
         role: 'user',
         content:
           'Continue working on the task. You have 20 more iterations. Focus on completing the most important remaining work.',
-});
-
-      this.logger.info(`Continuing with ${messages.length} messages`);
+      });
 
       // Execute agent loop with streaming updates
       await this.executeAgentLoop(agentLoop, conversationId, messages, tools, DEFAULT_MODEL);
@@ -760,15 +750,10 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
               // Log when token usage is being sent
               if (update.tokenUsage) {
-                this.logger.info(
-                  `🌐🌐🌐 POSTING TOKEN USAGE TO WEBVIEW: ${JSON.stringify(update.tokenUsage)}`
-                );
               }
               break;
 
             case 'terminalOutput':
-              this.logger.info('Sending terminal output to webview');
-
               // Check if this is test output and parse it (Task 9.1)
               if (update.terminalData) {
                 const { command, stdout, stderr, exitCode } = update.terminalData;
@@ -783,16 +768,10 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
                   command.includes('pytest');
 
                 if (isTestCommand) {
-                  this.logger.info('Detected test command, attempting to parse results');
-
                   // Try to parse test results
                   const testResults = TestResultsParser.parse(output, exitCode);
 
                   if (testResults) {
-                    this.logger.info(
-                      `Parsed test results: ${testResults.totalPassed} passed, ${testResults.totalFailed} failed`
-                    );
-
                     // Send test results to webview
                     this.view?.webview.postMessage({
                       type: 'showTestResults',
@@ -805,7 +784,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
                       },
                     });
                   } else {
-                    this.logger.info('Could not parse test results, showing as terminal output');
                     // Fall back to showing as terminal output
                     this.view?.webview.postMessage({
                       type: 'showTerminalOutput',
@@ -825,7 +803,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
               break;
 
             case 'toolStart':
-              this.logger.info(`Tool started: ${update.toolCall?.function.name}`);
               // Send tool start notification to webview for live feedback
               if (update.toolCall && update.toolExecutionId) {
                 this.view?.webview.postMessage({
@@ -842,8 +819,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
               break;
 
             case 'toolComplete':
-              this.logger.info(`Tool completed: ${update.toolCall?.function.name}`);
-
               // Send tool completion notification to webview for live feedback
               if (update.toolCall && update.toolExecutionId) {
                 this.view?.webview.postMessage({
@@ -862,7 +837,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
               // Check if this is a readFile tool - send file data to preview panel (Task 4.6)
               if (update.toolCall?.function.name === 'forgeai_readFile' && update.result) {
-                this.logger.info('File read completed, sending to preview panel');
                 const args =
                   typeof update.toolCall.function.arguments === 'string'
                     ? JSON.parse(update.toolCall.function.arguments)
@@ -881,7 +855,6 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
 
               // Check if this is a generateDiff tool - send diff to webview (Task 5.2)
               if (update.toolCall?.function.name === 'forgeai_generateDiff' && update.result) {
-                this.logger.info('Sending diff data to webview');
                 this.view?.webview.postMessage({
                   type: 'showDiff',
                   data: {
@@ -923,69 +896,71 @@ export class WebviewManager implements vscode.WebviewViewProvider, vscode.Dispos
               }
               break;
 
-case 'complete':
-               this.logger.info('Agent loop complete');
-               // Send final completion message
-               this.view?.webview.postMessage({
-                 type: 'streamChunk',
-                 conversationId,
-                 data: {
-                   content: '',
-                   thinking: '',
-                   toolCalls: [],
-                 },
-                 done: true,
-               });
+            case 'complete':
+              // Send final completion message
+              this.view?.webview.postMessage({
+                type: 'streamChunk',
+                conversationId,
+                data: {
+                  content: '',
+                  thinking: '',
+                  toolCalls: [],
+                },
+                done: true,
+              });
 
-               // Notify webview that agent loop stopped
-               this.view?.webview.postMessage({
-                 type: 'agentLoopStopped',
-                 conversationId,
-               });
+              // Notify webview that agent loop stopped
+              this.view?.webview.postMessage({
+                type: 'agentLoopStopped',
+                conversationId,
+              });
 
-               // Save session memory for conversation continuity
-               try {
-                 // Extract user and assistant messages for session memory
-                 const userMessages = messages
-                   .filter((msg: OllamaMessage) => msg.role === 'user')
-                   .map((msg) => ({ role: 'user' as const, content: msg.content || '' }));
-                 
-                 const assistantMessages = messages
-                   .filter((msg: OllamaMessage) => msg.role === 'assistant')
-                   .map((msg) => ({ role: 'assistant' as const, content: msg.content || '' }));
-                 
-                 // Combine and take last 10 exchanges (20 messages) for context
-                 const combinedMessages: Array<{ role: string; content: string }> = [];
-                 for (let i = 0; i < Math.max(userMessages.length, assistantMessages.length); i++) {
-                   if (i < userMessages.length) combinedMessages.push(userMessages[i]);
-                   if (i < assistantMessages.length) combinedMessages.push(assistantMessages[i]);
-                 }
-                 
-                 // Take last 20 messages (or fewer if conversation is shorter)
-                 const recentMessages = combinedMessages.slice(-20);
-                 
-                 // Generate simple summary and next steps
-                 const lastUserMessage = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
-                 const lastAssistantMessage = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
-                 
-                 const summary = `Conversation about: ${lastUserMessage.substring(0, 100)}${lastUserMessage.length > 100 ? '...' : ''}`;
-                 const nextSteps = lastAssistantMessage.length > 0 
-                   ? `Continue from: ${lastAssistantMessage.substring(0, 100)}${lastAssistantMessage.length > 100 ? '...' : ''}`
-                   : 'No specific next steps';
-                 
-                 await this.sessionContextInjector.saveSessionMemory(
-                   conversationId,
-                   recentMessages,
-                   summary,
-                   nextSteps,
-                   {} // empty context for now
-                 );
-                 
-                 this.logger.info(`Session memory saved for conversation ${conversationId}`);
-               } catch (error) {
-                 this.logger.error(`Failed to save session memory for ${conversationId}`, error);
-               }
-               break;
+              // Save session memory for conversation continuity
+              try {
+                // Extract user and assistant messages for session memory
+                const userMessages = messages
+                  .filter((msg: OllamaMessage) => msg.role === 'user')
+                  .map((msg) => ({ role: 'user' as const, content: msg.content || '' }));
+
+                const assistantMessages = messages
+                  .filter((msg: OllamaMessage) => msg.role === 'assistant')
+                  .map((msg) => ({ role: 'assistant' as const, content: msg.content || '' }));
+
+                // Combine and take last 10 exchanges (20 messages) for context
+                const combinedMessages: Array<{ role: string; content: string }> = [];
+                for (let i = 0; i < Math.max(userMessages.length, assistantMessages.length); i++) {
+                  if (i < userMessages.length) combinedMessages.push(userMessages[i]);
+                  if (i < assistantMessages.length) combinedMessages.push(assistantMessages[i]);
+                }
+
+                // Take last 20 messages (or fewer if conversation is shorter)
+                const recentMessages = combinedMessages.slice(-20);
+
+                // Generate simple summary and next steps
+                const lastUserMessage =
+                  userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
+                const lastAssistantMessage =
+                  assistantMessages.length > 0
+                    ? assistantMessages[assistantMessages.length - 1].content
+                    : '';
+
+                const summary = `Conversation about: ${lastUserMessage.substring(0, 100)}${lastUserMessage.length > 100 ? '...' : ''}`;
+                const nextSteps =
+                  lastAssistantMessage.length > 0
+                    ? `Continue from: ${lastAssistantMessage.substring(0, 100)}${lastAssistantMessage.length > 100 ? '...' : ''}`
+                    : 'No specific next steps';
+
+                await this.sessionContextInjector.saveSessionMemory(
+                  conversationId,
+                  recentMessages,
+                  summary,
+                  nextSteps,
+                  {} // empty context for now
+                );
+              } catch (error) {
+                this.logger.error(`Failed to save session memory for ${conversationId}`, error);
+              }
+              break;
 
             case 'maxIterations':
               this.logger.warn('Agent loop reached max iterations');
@@ -1003,12 +978,11 @@ case 'complete':
         },
         tools,
         model, // Pass the model parameter
-{ specContext, conversationId } // Pass conversationId for memory management
+        { specContext, conversationId } // Pass conversationId for memory management
       );
     } finally {
       // Clear the current agent loop instance
       this.currentAgentLoop = undefined;
-      this.logger.info('Agent loop instance cleared');
     }
   }
 
@@ -1040,8 +1014,6 @@ case 'complete':
       // Write file using VS Code API
       const buffer = Buffer.from(content, 'utf8');
       await vscode.workspace.fs.writeFile(fileUri, buffer);
-
-      this.logger.info(`File written successfully: ${fileUri.fsPath}`);
 
       // Show success notification
       vscode.window.showInformationMessage(`Changes applied to ${filePath}`);
@@ -1111,8 +1083,6 @@ case 'complete':
           vscode.TextEditorRevealType.InCenter
         );
       }
-
-      this.logger.info(`Opened file in editor: ${fileUri.fsPath}`);
     } catch (error) {
       this.logger.error(`Failed to open file ${filePath}`, error);
 
@@ -1151,8 +1121,6 @@ case 'complete':
       // Restore original content
       const buffer = Buffer.from(originalContent, 'utf8');
       await vscode.workspace.fs.writeFile(fileUri, buffer);
-
-      this.logger.info(`Changes undone successfully: ${fileUri.fsPath}`);
 
       // Show success notification
       vscode.window.showInformationMessage(`Changes undone for ${filePath}`);
@@ -1247,12 +1215,9 @@ case 'complete':
    * Handle stopping the agent loop
    */
   private handleStopAgentLoop(conversationId: string): void {
-    this.logger.info(`Stopping agent loop for conversation: ${conversationId}`);
-
     if (this.currentAgentLoop) {
       // Call stop() on the agent loop
       this.currentAgentLoop.stop();
-      this.logger.info('Agent loop stop requested');
 
       // Send stopped message to webview
       this.view?.webview.postMessage({
@@ -1281,9 +1246,6 @@ case 'complete':
    * Re-execute the failed operation by resending the last user message
    */
   private async handleRetryAfterError(conversationId: string, errorMessage: any): Promise<void> {
-    this.logger.info(`Retrying after error in conversation: ${conversationId}`);
-    this.logger.info(`Error message: ${JSON.stringify(errorMessage)}`);
-
     // Request conversation history from webview to get the last user message
     this.view?.webview.postMessage({
       type: 'requestConversationHistory',
@@ -1297,8 +1259,6 @@ case 'complete':
    */
   private async handleFetchOllamaModels(): Promise<void> {
     try {
-      this.logger.info('Fetching Ollama models from http://localhost:11434/api/tags');
-
       // Use node-fetch or http module to make the request
       const response = await fetch('http://localhost:11434/api/tags');
 
@@ -1307,7 +1267,6 @@ case 'complete':
       }
 
       const data = await response.json();
-      this.logger.info(`Successfully fetched ${data.models?.length || 0} models from Ollama`);
 
       // Send success response to webview
       this.view?.webview.postMessage({
@@ -1562,7 +1521,6 @@ case 'complete':
   }
 
   private onViewDisposed(): void {
-    this.logger.info('Webview disposed');
     this.view = undefined;
     this.dispose();
   }
@@ -1586,12 +1544,6 @@ case 'complete':
     );
 
     const nonce = this.getNonce();
-
-    this.logger.info(`Script URI: ${scriptUri.toString()}`);
-    this.logger.info(`Style Reset URI: ${styleResetUri.toString()}`);
-    this.logger.info(`Style URI: ${styleUri.toString()}`);
-    this.logger.info(`Logo URI: ${logoUri.toString()}`);
-    this.logger.info(`CSP nonce: ${nonce}`);
 
     return `<!DOCTYPE html>
 <html lang="en">

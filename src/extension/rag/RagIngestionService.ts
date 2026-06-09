@@ -1,4 +1,4 @@
-import type { Logger } from '../utils/Logger';
+﻿import type { Logger } from '../utils/Logger';
 import type { DocSourceId, ScrapedDocPage } from './types';
 import type { CancellationToken } from './scraper/DocSource';
 
@@ -125,14 +125,10 @@ export class RagIngestionService {
       }
 
       onProgress?.({ type: 'start', sourceId });
-      logger.info(`RAG ingestion: scraping sourceId=${sourceId}`);
 
       try {
         const result = await runner.run({ sourceId }, token);
         pagesBySource[sourceId] = result.pages;
-        logger.info(
-          `RAG ingestion: sourceId=${sourceId} pages=${result.pages.length} upserted=${result.chunksUpsert.upserted} skippedSame=${result.chunksUpsert.skippedSame}`
-        );
         onProgress?.({
           type: 'complete',
           sourceId,

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MonitoringMode
  *
  * Watches source files for changes and auto-runs affected tests.
@@ -42,7 +42,6 @@ export class MonitoringMode {
   public start(): void {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.logger.info('Monitoring mode started');
 
     const changeDisposable = this.watcher.onDidChange((uri) => this.handleFileChange(uri));
     const createDisposable = this.watcher.onDidCreate((uri) => this.handleFileChange(uri));
@@ -60,13 +59,11 @@ export class MonitoringMode {
   public stop(): void {
     this.isRunning = false;
     this.disposeWatcher?.();
-    this.logger.info('Monitoring mode stopped');
   }
 
   private async handleFileChange(uri: vscode.Uri): Promise<void> {
     if (!this.isRunning) return;
     const relative = path.relative(this.workspaceRoot, uri.fsPath);
-    this.logger.info(`File changed: ${relative}`);
 
     try {
       const result = this.runAffectedTests(uri.fsPath);
@@ -128,7 +125,6 @@ export class MonitoringMode {
       if (!this.isRunning) return;
       try {
         const report = await this.healthScanner.runAll();
-        this.logger.info(`Health scan: ${report.summary}`);
         if (!report.overallHealthy) {
           void vscode.window.showWarningMessage(`ForgeAI Health Scan: ${report.summary}`);
         }

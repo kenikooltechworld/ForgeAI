@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Base Agent class for multi-agent orchestration system
  * Provides common functionality for all agents (Planner, Executor, Critic)
  */
@@ -81,7 +81,6 @@ export abstract class BaseAgent implements IAgent {
    * Log info message
    */
   protected logInfo(message: string, ...args: any[]): void {
-    this.logger.info(message, ...args);
   }
 
   /**
@@ -96,7 +95,6 @@ export abstract class BaseAgent implements IAgent {
    */
   protected logDebug(message: string, ...args: any[]): void {
     // Logger doesn't have debug method, use info instead
-    this.logger.info(`[DEBUG] ${message}`, ...args);
   }
 
   /**

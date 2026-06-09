@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BugFixCommandHandler
  *
  * Handles the "forgeai.fixBug" command that developers invoke when they encounter a bug.
@@ -23,7 +23,6 @@ export class BugFixCommandHandler {
   public async handleFixBugCommand(agentLoop: {
     execute: (...args: unknown[]) => Promise<void>;
   }): Promise<void> {
-    this.logger.info('Bug fix command invoked');
 
     // Get error message from user
     const errorMessage = await vscode.window.showInputBox({
@@ -97,7 +96,6 @@ export class BugFixCommandHandler {
           const result = await this.orchestrator.fixBug(bugReport, agentLoop);
 
           if (result.finalStatus === 'success') {
-            this.logger.info(`Bug fix successful: ${result.bugId}`);
             void vscode.window.showInformationMessage(
               `✅ Bug fixed successfully! (${result.totalDurationMs}ms)`,
               'View Details'
@@ -113,9 +111,6 @@ export class BugFixCommandHandler {
 
           // Log all agent results
           for (const agentResult of result.results) {
-            this.logger.info(
-              `${agentResult.agentName}: ${agentResult.success ? 'SUCCESS' : 'FAILED'} - ${agentResult.summary}`
-            );
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -140,8 +135,6 @@ export class BugFixCommandHandler {
       context: `Diagnostic at line ${diagnostic.range.start.line + 1}`,
     };
 
-    this.logger.info(`Fixing diagnostic: ${bugReport.errorMessage}`);
-
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
@@ -154,7 +147,6 @@ export class BugFixCommandHandler {
           const result = await this.orchestrator.fixBug(bugReport, agentLoop);
 
           if (result.finalStatus === 'success') {
-            this.logger.info(`Diagnostic fixed: ${result.bugId}`);
             void vscode.window.showInformationMessage(
               `✅ Diagnostic fixed! (${result.totalDurationMs}ms)`
             );

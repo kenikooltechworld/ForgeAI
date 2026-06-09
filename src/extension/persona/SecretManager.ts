@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SecretManager
  *
  * Stores secrets in memory only for the current VS Code session.
@@ -32,7 +32,6 @@ export class SecretManager {
   public retrieve(key: string): string | null {
     const record = this.secrets.get(key);
     if (!record) return null;
-    this.logger.info(`Secret "${key}" accessed by ${record.tool || 'unknown'}`);
     return record.value;
   }
 

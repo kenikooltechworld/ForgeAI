@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DirectoryManager } from './DirectoryManager';
@@ -67,7 +67,6 @@ export class ForgeAIWorkspace {
 
     const alreadyInitialized = this.context.globalState.get<boolean>(stateKey, false);
     if (alreadyInitialized && this.isInitialized()) {
-      this.logger.info('[ForgeAIWorkspace] Workspace already initialized (tracked in globalState)');
       this.initialized = true;
       return true;
     }
@@ -86,7 +85,6 @@ export class ForgeAIWorkspace {
       if (!this.product.getOverview()) {
         const detected = this.product.detectFromWorkspace(workspaceRoot);
         this.product.saveOverview(detected);
-        this.logger.info('[ForgeAIWorkspace] Auto-generated product overview');
       }
 
       // Create default hooks
@@ -95,7 +93,6 @@ export class ForgeAIWorkspace {
       // Create default steering files
       this.steering.createDefaults();
 
-      this.logger.info('[ForgeAIWorkspace] Auto-initialized .forgeai/ workspace');
       return true;
     } catch (error) {
       this.logger.error('[ForgeAIWorkspace] Auto-init failed', error);
@@ -111,7 +108,6 @@ export class ForgeAIWorkspace {
     try {
       this.directoryManager.initialize();
       this.initialized = true;
-      this.logger.info('[ForgeAIWorkspace] .forgeai/ initialized successfully');
       vscode.window.showInformationMessage('ForgeAI workspace initialized at .forgeai/');
     } catch (error) {
       this.logger.error('[ForgeAIWorkspace] Failed to initialize workspace', error);

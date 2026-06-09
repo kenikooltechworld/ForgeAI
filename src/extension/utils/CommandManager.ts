@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import { Logger } from './Logger';
 
 /**
@@ -16,7 +16,6 @@ export class CommandManager implements vscode.Disposable {
   public registerCommand(command: string, callback: (...args: any[]) => any): void {
     const disposable = vscode.commands.registerCommand(command, async (...args) => {
       try {
-        this.logger.info(`Executing command: ${command}`);
         return await callback(...args);
       } catch (error) {
         this.logger.error(`Command ${command} failed`, error);

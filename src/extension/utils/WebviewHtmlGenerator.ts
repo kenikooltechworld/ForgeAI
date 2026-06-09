@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HTML generation for the ForgeAI webview.
  */
 
@@ -36,11 +36,6 @@ export function getHtmlForWebview(
   );
 
   const nonce = getNonce();
-
-  logger.info(`Script URI: ${scriptUri.toString()}`);
-  logger.info(`Style Reset URI: ${styleResetUri.toString()}`);
-  logger.info(`Style URI: ${styleUri.toString()}`);
-  logger.info(`CSP nonce: ${nonce}`);
 
   return `<!DOCTYPE html>
 <html lang="en">

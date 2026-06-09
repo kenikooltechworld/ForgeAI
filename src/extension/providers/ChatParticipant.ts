@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import { Logger } from '../utils/Logger';
 import { AgentLoop, AgentLoopUpdate } from '../ollama/AgentLoop';
 import { OllamaClient, OllamaMessage } from '../ollama/OllamaClient';
@@ -83,10 +83,6 @@ export class ChatParticipant {
     // Generate a stable conversation ID from the request context
     const conversationId = this.getConversationId(request, context);
 
-    this.logger.info(
-      `Chat request received: command=${request.command}, prompt=${request.prompt}, conversationId=${conversationId}`
-    );
-
     try {
       // Spec-generation intent detection for @forgeai chat
       if (this.isSpecGenerationIntent(request.prompt)) {
@@ -114,7 +110,6 @@ export class ChatParticipant {
       if (this.sessionContextInjector) {
         sessionContextMessage = await this.sessionContextInjector.getSessionContext(conversationId);
         if (sessionContextMessage) {
-          this.logger.info(`Loaded session context for conversation ${conversationId}`);
           // Inject session context as a system message at the beginning
           messages.unshift({
             role: 'system',
@@ -125,7 +120,6 @@ export class ChatParticipant {
 
       // Get available tools from registry (reuse existing tools!)
       const tools = this.toolRegistry.getToolDefinitions();
-      this.logger.info(`Using ${tools.length} tools from ToolRegistry`);
 
       // All requests go through AgentLoop (spec-driven architecture)
       let sentContentLength = 0;
@@ -158,7 +152,6 @@ export class ChatParticipant {
               break;
 
             case 'toolStart':
-              this.logger.info(`Tool started: ${update.toolCall?.function.name}`);
               if (update.toolCall) {
                 const toolName = update.toolCall.function.name.replace('forgeai_', '');
                 stream.progress(`🔧 ${toolName}...`);
@@ -166,7 +159,6 @@ export class ChatParticipant {
               break;
 
             case 'toolComplete':
-              this.logger.info(`Tool completed: ${update.toolCall?.function.name}`);
               if (update.toolCall) {
                 const toolName = update.toolCall.function.name.replace('forgeai_', '');
                 const duration = update.duration ? ` (${update.duration}ms)` : '';
@@ -183,7 +175,6 @@ export class ChatParticipant {
               break;
 
             case 'terminalOutput':
-              this.logger.info('Sending terminal output to chat');
               if (update.terminalData) {
                 stream.markdown(`\n**Command:** \`${update.terminalData.command}\`\n\n`);
                 if (update.terminalData.stdout) {
@@ -196,7 +187,6 @@ export class ChatParticipant {
               break;
 
             case 'complete':
-              this.logger.info('Agent loop complete');
               stream.progress('✅ Task complete');
               sentContentLength = 0;
               break;

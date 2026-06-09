@@ -66,13 +66,25 @@ function getFinalReminder(): string {
  * This is inlined unconditionally so the model never skips research.
  */
 function getResearchDirective(): string {
+  const now = new Date();
+  const currentDate = now.toISOString().split('T')[0];
+
   return `## Research-First Protocol
 
-Your training data is outdated. For ANY planning, architecture, tech-stack decision, feature discussion, or spec write:
+**CURRENT DATE: ${currentDate}**
+Your knowledge cutoff is BEFORE this date. Anything you "remember" about current versions, APIs, or best practices is WRONG. Always research before acting.
 
-1. **RESEARCH FIRST via sub-agent**: Call forgeai_spawnAgent(type="researcher", task="...", details="...") with a clear description of what you need. The researcher sub-agent has its own browser tools and will navigate official docs, GitHub, StackOverflow — it returns actual content, not topics.
-2. **PRESENT FINDINGS IN CHAT**: Share the researcher's findings with the user BEFORE creating a spec — cite sources and URLs from the research output.
-3. **ASK BEFORE SPEC**: Only create a spec when the user explicitly agrees.
+## Source Quality Rules (CRITICAL)
+When instructing the researcher sub-agent, you MUST specify:
+- PREFER: official docs (docs.*.dev, docs.*.org), GitHub repositories, StackOverflow, NPM/PyPI/Maven registries, YouTube official channels
+- ALLOW: well-known tech blogs (only if authored by recognized experts or core team members)
+- BAN: social media (Facebook, X/Twitter), Reddit, Hacker News, random Medium blogs — these contain opinions, not reference material
+
+## How to research
+1. **Call forgeai_spawnAgent(type="researcher")** with: the exact tech/topic, the desired output format, and explicit source preferences (official-docs, github, stackoverflow, npm, youtube).
+2. The researcher returns a COMPLETE Markdown file at .forgeai/research/{topic}-${currentDate.slice(0,4)}.md with real page content, code examples, and version numbers.
+3. **PRESENT FINDINGS IN CHAT**: Share the content and sources with the user BEFORE creating a spec.
+4. **ASK BEFORE SPEC**: Only create a spec when the user explicitly agrees.
 
 ## When research is required:
 - Choosing frameworks, libraries, or infrastructure
@@ -80,7 +92,8 @@ Your training data is outdated. For ANY planning, architecture, tech-stack decis
 - Discussing architecture patterns or best practices
 - Before creating requirements, design, or tasks.md
 
-**NEVER** skip research because you think you know the answer. **NEVER** create a spec from memory.
+**NEVER** skip research because you think you know the answer.
+**NEVER** create a spec from memory.
 **NEVER** call forgeai_webSearch or forgeai_webResearch directly — always use forgeai_spawnAgent(type="researcher").`;
 }
 

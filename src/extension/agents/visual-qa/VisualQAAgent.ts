@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VisualQAAgent
  *
  * Vision-based QA agent that analyzes UI screenshots for visual defects.
@@ -69,13 +69,11 @@ export class VisualQAAgent {
       const visionCandidates = models.filter(isVisionModel);
 
       if (visionCandidates.length === 0) {
-        this.logger.info('VisualQA: no vision-capable model found');
         return null;
       }
 
       visionCandidates.sort((a, b) => scoreModelForVision(b) - scoreModelForVision(a));
       this.selectedModel = visionCandidates[0].name;
-      this.logger.info(`VisualQA: selected vision model ${this.selectedModel}`);
       return this.selectedModel;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -95,7 +93,6 @@ export class VisualQAAgent {
     const model = this.selectedModel || (await this.selectVisionModel());
 
     if (!model) {
-      this.logger.info('VisualQA: falling back to pixel diff');
       return this.pixelDiffFallback(screenshotBuffer, designMockup);
     }
 

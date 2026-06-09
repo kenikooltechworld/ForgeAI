@@ -14,7 +14,7 @@ export class BrowserTools {
   private page: any = null;
   private lastActivity: number = 0;
   private idleTimeoutId: NodeJS.Timeout | null = null;
-  private readonly IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes for slow networks
 
   /**
    * Lazy initialization - browser starts on first use
@@ -121,7 +121,7 @@ export class BrowserTools {
    */
   browserNavigate(): Tool {
     return {
-      name: 'forgeai_browser_navigate',
+      name: 'forgeai_browserNavigate',
       description:
         '[REQUIRES PLAYWRIGHT] Navigate to a URL using a local browser. ' +
         'Use this when forgeai_fetchPage fails (e.g., JavaScript-rendered content, single-page apps). ' +
@@ -202,10 +202,10 @@ export class BrowserTools {
    */
   browserExtract(): Tool {
     return {
-      name: 'forgeai_browser_extract',
+      name: 'forgeai_browserExtract',
       description:
         '[REQUIRES PLAYWRIGHT] Extract text from the current browser page after navigation. ' +
-        'Call this after forgeai_browser_navigate to get the actual page content. ' +
+        'Call this after forgeai_browserNavigate to get the actual page content. ' +
         'For static pages, prefer forgeai_fetchPage which is faster and does not need Playwright.',
       inputSchema: {
         type: 'object',
@@ -298,7 +298,7 @@ export class BrowserTools {
    */
   browserClick(): Tool {
     return {
-      name: 'forgeai_browser_click',
+      name: 'forgeai_browserClick',
       description:
         'Click an element on the current page by selector. Use this to navigate pagination, expand sections, or interact with the page after extraction.',
       inputSchema: {
@@ -360,7 +360,7 @@ export class BrowserTools {
    */
   browserScreenshot(): Tool {
     return {
-      name: 'forgeai_browser_screenshot',
+      name: 'forgeai_browserScreenshot',
       description:
         'Take a screenshot of the current browser page. Returns a base64-encoded PNG image. Use this when visual context of the page is needed.',
       inputSchema: {
@@ -402,7 +402,7 @@ export class BrowserTools {
    */
   browserFill(): Tool {
     return {
-      name: 'forgeai_browser_fill',
+      name: 'forgeai_browserFill',
       description:
         'Fill an input field on the current page. Use this to enter search queries, form data, or interact with input elements after navigation.',
       inputSchema: {
@@ -456,7 +456,7 @@ export class BrowserTools {
    */
   browserScroll(): Tool {
     return {
-      name: 'forgeai_browser_scroll',
+      name: 'forgeai_browserScroll',
       description:
         'Scroll the current page up or down. Use this to view more content on a long page after extraction.',
       inputSchema: {
@@ -513,7 +513,7 @@ export class BrowserTools {
    */
   browserClose(): Tool {
     return {
-      name: 'forgeai_browser_close',
+      name: 'forgeai_browserClose',
       description:
         'Close the browser session and free resources. Call this when research is complete.',
       inputSchema: {

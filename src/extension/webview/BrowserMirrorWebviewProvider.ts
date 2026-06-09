@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import type { Logger } from '../utils/Logger';
 
 interface BrowserMirrorState {
@@ -75,7 +75,6 @@ export class BrowserMirrorWebviewProvider implements vscode.Disposable {
       this.panel.onDidDispose(() => this.dispose(), null, this.disposables)
     );
 
-    this.logger.info('[BrowserMirror] Panel created');
   }
 
   private async handleMessage(message: any): Promise<void> {
@@ -379,6 +378,5 @@ export class BrowserMirrorWebviewProvider implements vscode.Disposable {
     this.disposables.length = 0;
     this.panel = undefined;
 
-    this.logger.info('[BrowserMirror] Disposed');
   }
 }

@@ -47,5 +47,6 @@ export interface ResearchTopic {
   slug: string;
   query: string;
   rationale: string;
-  priority: number; // 1-10, higher = more critical
+  priority: number;
+  sources?: string[];
 }

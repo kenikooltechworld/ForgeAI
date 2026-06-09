@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import type { Logger } from '../utils/Logger';
 import type { StorageManager } from '../storage/StorageManager';
 import { RagConfigStorage } from '../rag/RagConfigStorage';
@@ -30,7 +30,6 @@ export class RagSettingsWebviewProvider implements vscode.WebviewViewProvider, v
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ): void {
-    this.logger.info('[RAG Webview] resolveWebviewView called — panel is being created');
     this.view = webviewView;
 
     webviewView.webview.options = {
@@ -42,7 +41,6 @@ export class RagSettingsWebviewProvider implements vscode.WebviewViewProvider, v
     };
 
     webviewView.webview.html = this.getHtml(webviewView.webview);
-    this.logger.info('[RAG Webview] HTML set, handlers registered');
 
     this.disposables.push(
       webviewView.webview.onDidReceiveMessage(

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Session Context Injector
  * Injects previous session context into system prompt
  * Allows AI to continue from where it left off
@@ -22,20 +22,15 @@ public async getSessionContext(conversationId: string): Promise<string | null> {
     const sessionData = await this.sessionMemory.loadSessionMemory(conversationId);
 
     if (!sessionData) {
-      this.logger.info(`No session memory found for conversation ${conversationId}`);
       return null; // No previous session
     }
 
     // Check if session is recent (within last 24 hours)
     const hoursSinceLastSession = (Date.now() - sessionData.timestamp) / (1000 * 60 * 60);
     if (hoursSinceLastSession > 24) {
-      this.logger.info(
-        `Session memory for ${conversationId} is older than 24 hours, not injecting`
-      );
       return null;
     }
 
-    this.logger.info(`Successfully loaded session memory for conversation ${conversationId}`);
     return this.createContextPrompt(sessionData);
   } catch (error) {
     this.logger.error(`Failed to get session context for ${conversationId}`, error);
@@ -111,7 +106,6 @@ Continue from where we left off. Use the context above to understand the current
         context
       );
 
-      this.logger.info(`Session memory saved for ${conversationId}`);
     } catch (error) {
       this.logger.error(`Failed to save session memory for ${conversationId}`, error);
     }

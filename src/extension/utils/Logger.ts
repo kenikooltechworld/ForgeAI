@@ -12,9 +12,11 @@ export class Logger implements vscode.Disposable {
     context.subscriptions.push(this.outputChannel);
   }
 
-  public info(message: string, ...args: any[]): void {
+  public info(message: string, ...args: any[]): void {}
+
+  public debug(message: string, ...args: any[]): void {
     const timestamp = new Date().toISOString();
-    const formatted = `[${timestamp}] [INFO] ${message}`;
+    const formatted = `[${timestamp}] [DEBUG] ${message}`;
     this.outputChannel.appendLine(formatted);
 
     if (args.length > 0) {

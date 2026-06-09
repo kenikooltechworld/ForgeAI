@@ -8,6 +8,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { getConfiguredModel } from '../config/ModelConfig';
 import { SpecOrchestrator, SpecOrchestratorDeps } from '../agents/spec/SpecOrchestrator';
 import { ToolRegistry } from '../tools/ToolRegistry';
 import { OllamaClient } from '../ollama/OllamaClient';
@@ -116,7 +117,7 @@ export class ProjectBuilderCommand {
             { execute: async (..._args: unknown[]) => {
               const [systemPrompt, userPrompt] = _args as [string, string];
               const response = await ollama.chat({
-                model: (ollama as any).defaultModel || 'gpt-oss:120b-cloud',
+                model: getConfiguredModel(),
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: userPrompt },

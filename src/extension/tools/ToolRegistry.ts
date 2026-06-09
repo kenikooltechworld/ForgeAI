@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+﻿import * as vscode from 'vscode';
 import { Logger } from '../utils/Logger';
 
 /**
@@ -95,17 +95,9 @@ export class ToolRegistry implements vscode.Disposable {
     this.registerTool(diagnosticsTools.getErrors());
     this.registerTool(diagnosticsTools.getDiagnostics());
 
-    // NOTE: Web search tools are NO LONGER registered here.
-    // The master AI must use forgeai_spawnAgent(type="researcher") instead.
-    // ResearchAgent internally calls WebSearchTools and BrowserTools directly.
-
-    // Browser, MCP, and UI/UX tools are NOT registered globally.
-    // They are scoped to individual sub-agents via SubAgentSpawner.buildScopedToolRegistry().
-    // The master AI must use forgeai_spawnAgent(type="researcher|browserMirror|uiux...") to access them.
-
-    // BrowserMirrorTools and VisualQATools are NOT registered globally.
-    // They require runtime dependencies (live ForgeBrowserSession, OllamaClient)
-    // and are created dynamically by PerTaskMultiAgentOrchestrator / BrowserMirrorStream.
+    // NOTE: Web search and Browser tools are NOT registered in the main registry.
+    // They are injected directly by SubAgentSpawner into each sub-agent's scoped registry.
+    // The main AI must use forgeai_spawnAgent(type="researcher|browserMirror") to access them.
 
     // Register Spec Tools (spec-driven development)
     const { SpecTools } = require('./SpecTools');
@@ -133,6 +125,11 @@ export class ToolRegistry implements vscode.Disposable {
     const { SubAgentSpawner } = require('../agents/SubAgentSpawner');
     const spawnAgentTool = SubAgentSpawner.createSpawnAgentTool();
     this.registerTool(spawnAgentTool);
+
+    // DEBUG: Log all registered tools
+    this.logger.info(
+      `[ToolRegistry] Registered ${this.tools.size} tools: ${Array.from(this.tools.keys()).join(', ')}`
+    );
   }
 
   /**
@@ -202,8 +199,6 @@ export class ToolRegistry implements vscode.Disposable {
             ]);
           }
 
-          this.logger.info(`Tool ${tool.name} completed successfully`);
-
           // Return result as LanguageModelToolResult
           return new vscode.LanguageModelToolResult([
             new vscode.LanguageModelTextPart(JSON.stringify(result)),
@@ -241,7 +236,7 @@ export class ToolRegistry implements vscode.Disposable {
       parameters: any;
     };
   }> {
-    return Array.from(this.tools.values()).map((tool) => ({
+    const defs = Array.from(this.tools.values()).map((tool) => ({
       type: 'function' as const,
       function: {
         name: tool.name,
@@ -249,6 +244,13 @@ export class ToolRegistry implements vscode.Disposable {
         parameters: tool.inputSchema,
       },
     }));
+
+    // DEBUG: Log tool definitions being returned
+    this.logger.debug(
+      `[ToolRegistry.getToolDefinitions] Returning ${defs.length} tools: ${defs.map((d) => d.function.name).join(', ')}`
+    );
+
+    return defs;
   }
 
   /**
@@ -258,16 +260,18 @@ export class ToolRegistry implements vscode.Disposable {
    * @param name Tool name
    * @param args Tool arguments
    * @param token Cancellation token
+   * @param onUpdate Callback for agent loop updates (for sub-agent streaming)
+   * @param agentId Agent ID (for sub-agents to register streaming callback)
    * @returns Tool execution result
    * Requirements: 5.4
    */
   public async executeTool(
     name: string,
     args: any,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
+    onUpdate?: (update: any) => void,
+    agentId?: string
   ): Promise<any> {
-    this.logger.info(`Executing tool: ${name} with args:`, args);
-
     const tool = this.tools.get(name);
     if (!tool) {
       const error = `Tool not found: ${name}`;
@@ -279,6 +283,13 @@ export class ToolRegistry implements vscode.Disposable {
       // Check cancellation before execution
       if (token?.isCancellationRequested) {
         throw new Error('Tool execution cancelled');
+      }
+
+      // For forgeai_spawnAgent, register the streaming callback BEFORE execution
+      // This allows sub-agent updates to be forwarded to the parent agent
+      if (name === 'forgeai_spawnAgent' && onUpdate && agentId) {
+        const { registerStreamingCallback } = require('../agents/SubAgentSpawner');
+        registerStreamingCallback(agentId, onUpdate);
       }
 
       const result = await tool.execute(args, token);
@@ -326,12 +337,8 @@ export class ToolRegistry implements vscode.Disposable {
    * Implements vscode.Disposable
    */
   public dispose(): void {
-    this.logger.info('Disposing tool registry');
-
     this.disposables.forEach((d) => d.dispose());
     this.disposables.length = 0;
     this.tools.clear();
-
-    this.logger.info('Tool registry disposed');
   }
 }

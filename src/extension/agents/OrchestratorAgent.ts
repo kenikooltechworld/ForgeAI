@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Orchestrator Agent
  * Breaks down tasks and delegates to specialized subagents
  * Manages context by keeping only results, not intermediate work
@@ -123,7 +123,6 @@ Return JSON with this structure:
    * Run explorer tasks (fast, parallel)
    */
   private async runExplorerTasks(tasks: string[]): Promise<void> {
-    this.logger.info(`Running ${tasks.length} explorer tasks in parallel`);
 
     const promises = tasks.map((task, index) =>
       this.explorer.execute(task).then((result) => {
@@ -143,7 +142,6 @@ Return JSON with this structure:
    * Run implementer tasks (sequential, full context)
    */
   private async runImplementerTasks(tasks: string[]): Promise<void> {
-    this.logger.info(`Running ${tasks.length} implementer tasks sequentially`);
 
     for (let i = 0; i < tasks.length; i++) {
       const task = tasks[i];
@@ -166,7 +164,6 @@ Return JSON with this structure:
    * Run reviewer tasks (validation)
    */
   private async runReviewerTasks(tasks: string[]): Promise<void> {
-    this.logger.info(`Running ${tasks.length} reviewer tasks`);
 
     const implementerResults = this.results
       .filter((r) => r.agentType === 'implementer')

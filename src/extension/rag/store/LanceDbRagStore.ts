@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   CleanedChunk,
   RagRetrievedContext,
   RAGSearchParams,
@@ -96,9 +96,6 @@ export class LanceDbRagStore implements RagStore {
     }
 
     if (isNewTable) {
-      this.logger.info(
-        `LanceDB: created table "${this.collectionName}" with ${records.length} records`
-      );
       return { upserted: records.length, skippedSame: 0 };
     }
 

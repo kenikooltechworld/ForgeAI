@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reviewer Agent
  * Tests, validates, and reviews code
  * Catches errors before returning to user
@@ -19,7 +19,6 @@ export class ReviewerAgent {
    */
   public async execute(task: string, implementerResults: string): Promise<string> {
     try {
-      this.logger.info(`Reviewer: Starting task: ${task}`);
 
       const systemPrompt = `You are a code reviewer. Your job is to:
 1. Test the code
@@ -44,7 +43,6 @@ Be thorough. Report any issues found or confirm success.`;
       const chatResponse = response as { message: { content: string } };
       const result = chatResponse.message.content;
 
-      this.logger.info(`Reviewer: Task completed`);
       return result;
     } catch (error) {
       this.logger.error('Reviewer task failed', error);
